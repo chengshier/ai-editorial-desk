@@ -25,8 +25,11 @@ class MediaCrawlerAdapter(BaseConnector):
         self.platform = platform
         self.settings = get_settings()
 
+    def _home(self) -> Path:
+        return Path(self.settings.mediacrawler_home).expanduser().resolve()
+
     async def health_check(self) -> dict[str, Any]:
-        home = Path(self.settings.mediacrawler_home)
+        home = self._home()
         entrypoint = home / "main.py"
         return {
             "status": "ok" if entrypoint.is_file() else "not_installed",
@@ -36,7 +39,7 @@ class MediaCrawlerAdapter(BaseConnector):
         }
 
     async def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
-        home = Path(self.settings.mediacrawler_home)
+        home = self._home()
         entrypoint = home / "main.py"
         if not entrypoint.is_file():
             raise MediaCrawlerAdapterError(
@@ -104,7 +107,12 @@ class MediaCrawlerAdapter(BaseConnector):
             or payload.get("id")
             or ""
         )
-        url = str(payload.get("url") or payload.get("note_url") or payload.get("aweme_url") or "")
+        url = str(
+            payload.get("url")
+            or payload.get("note_url")
+            or payload.get("aweme_url")
+            or ""
+        )
         if not external_id or not url:
             raise MediaCrawlerAdapterError("MediaCrawler payload lacks external_id or url")
 
