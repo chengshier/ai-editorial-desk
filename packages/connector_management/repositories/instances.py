@@ -18,14 +18,16 @@ class ConnectorInstanceRepository:
             .options(selectinload(ConnectorInstance.definition))
             .where(ConnectorInstance.id == instance_id)
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def get_by_name(self, definition_id: UUID, name: str) -> ConnectorInstance | None:
         statement = select(ConnectorInstance).where(
             ConnectorInstance.definition_id == definition_id,
             ConnectorInstance.name == name,
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def list(
         self,
