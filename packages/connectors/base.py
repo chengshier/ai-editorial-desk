@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import json
+import math
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -21,8 +25,10 @@ class CollectRequest:
 
 @dataclass(slots=True)
 class RawSignal:
+    """Connector-owned domain output with no ORM or transaction behavior."""
+
     platform: str
-    external_id: str
+    external_id: str | None
     url: str
     title: str | None = None
     text: str | None = None
@@ -32,6 +38,25 @@ class RawSignal:
     metrics: dict[str, int | float] = field(default_factory=dict)
     media: list[dict[str, Any]] = field(default_factory=list)
     raw_payload: dict[str, Any] = field(default_factory=dict)
+    language: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.published_at is not None and (
+            self.published_at.tzinfo is None or self.published_at.utcoffset() is None
+        ):
+            raise ValueError("published_at 必须包含时区")
+        for key, value in self.metrics.items():
+            if not isinstance(key, str):
+                raise TypeError("metrics 键必须是字符串")
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError("metrics 值必须是可序列化数值")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("metrics 浮点值必须是有限数值")
+        try:
+            json.dumps(self.media, ensure_ascii=False, allow_nan=False)
+            json.dumps(self.raw_payload, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("media 和 raw_payload 必须可 JSON 序列化") from exc
 
 
 class BaseConnector(ABC):
