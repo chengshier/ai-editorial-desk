@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Frontend
+node_modules/
+dist/
+apps/web/node_modules/
+apps/web/dist/
+
+# Runtime data
+logs/
+data/
+cache/
+media_cache/
+browser_data/
+
+# Database / local volumes
+postgres_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Third-party runtime artifacts
+third_party/MediaCrawler/data/
+third_party/MediaCrawler/browser_data/
