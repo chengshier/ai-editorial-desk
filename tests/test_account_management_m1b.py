@@ -48,16 +48,17 @@ async def test_account_credential_references_and_audit_are_safe(db_session) -> N
         )
     )
     assert log is not None
-    assert log.after_data["credential_configured"] is True
+    assert log.after_data["has_credential_reference"] is True
     assert "secret://" not in str(log.after_data)
 
 
 @pytest.mark.usefixtures("clean_database")
 async def test_account_manual_transition_rules(db_session) -> None:  # type: ignore[no-untyped-def]
     account = await _account(db_session)
+    account_id = account.id
     service = PlatformAccountService(db_session)
     restricted = await service.transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.RESTRICTED,
         reason="平台明确限制该测试账号",
         cooldown_until=None,
@@ -67,7 +68,7 @@ async def test_account_manual_transition_rules(db_session) -> None:  # type: ign
     assert restricted.manual_review_required is True
     with pytest.raises(InvalidStateTransitionError):
         await service.transition_status(
-            account_id=account.id,
+            account_id=account_id,
             target_status=AccountStatus.HEALTHY,
             reason="尝试直接恢复",
             cooldown_until=None,
@@ -75,7 +76,7 @@ async def test_account_manual_transition_rules(db_session) -> None:  # type: ign
             actor="reviewer",
         )
     reviewed = await service.transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.REVIEW_REQUIRED,
         reason="已进入人工复核流程",
         cooldown_until=None,
@@ -84,7 +85,7 @@ async def test_account_manual_transition_rules(db_session) -> None:  # type: ign
     )
     assert reviewed.status is AccountStatus.REVIEW_REQUIRED
     healthy = await service.transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.HEALTHY,
         reason="已人工登录平台确认账号正常",
         cooldown_until=None,
@@ -97,10 +98,11 @@ async def test_account_manual_transition_rules(db_session) -> None:  # type: ign
 @pytest.mark.usefixtures("clean_database")
 async def test_active_cooldown_requires_explicit_override(db_session) -> None:  # type: ignore[no-untyped-def]
     account = await _account(db_session)
+    account_id = account.id
     service = PlatformAccountService(db_session)
     until = datetime.now(UTC) + timedelta(hours=1)
     await service.transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.COOLDOWN,
         reason="连续失败后人工设置冷却",
         cooldown_until=until,
@@ -109,7 +111,7 @@ async def test_active_cooldown_requires_explicit_override(db_session) -> None:  
     )
     with pytest.raises(InvalidStateTransitionError):
         await service.transition_status(
-            account_id=account.id,
+            account_id=account_id,
             target_status=AccountStatus.HEALTHY,
             reason="冷却未结束",
             cooldown_until=None,
@@ -117,7 +119,7 @@ async def test_active_cooldown_requires_explicit_override(db_session) -> None:  
             actor="reviewer",
         )
     healthy = await service.transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.HEALTHY,
         reason="人工核验后提前解除冷却",
         cooldown_until=None,
