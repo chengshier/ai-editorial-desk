@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     database_url: SecretStr
     app_secret_key: SecretStr = Field(min_length=32)
+    app_admin_token: SecretStr = Field(min_length=24)
     database_echo: bool = False
     database_pool_size: int = Field(default=5, ge=1, le=50)
     database_max_overflow: int = Field(default=10, ge=0, le=100)
@@ -48,6 +49,12 @@ class Settings(BaseSettings):
         """Return the URL for trusted infrastructure code without logging it."""
 
         return self.database_url.get_secret_value()
+
+    @property
+    def admin_token_value(self) -> str:
+        """Return the internal admin token only for constant-time verification."""
+
+        return self.app_admin_token.get_secret_value()
 
 
 @lru_cache(maxsize=1)

@@ -11,18 +11,29 @@ from sqlalchemy.types import TypeDecorator
 
 EnumT = TypeVar("EnumT", bound=StrEnum)
 
-SENSITIVE_CONTEXT_KEYS = frozenset(
+SENSITIVE_CONTEXT_KEY_NAMES = frozenset(
     {
-        "api_key",
         "apikey",
         "authorization",
+        "clientsecret",
         "cookie",
-        "credentials",
+        "credential",
         "password",
-        "proxy_authorization",
+        "proxyauthorization",
+        "refreshtoken",
         "secret",
-        "set_cookie",
+        "session",
+        "setcookie",
         "token",
+        "accesstoken",
+    }
+)
+SAFE_BOOLEAN_CONTEXT_KEYS = frozenset(
+    {
+        "browserprofileconfigured",
+        "browserprofilereferencechanged",
+        "credentialreferencechanged",
+        "hascredentialreference",
     }
 )
 REDACTED_VALUE = "[REDACTED]"
@@ -57,20 +68,37 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC)
 
 
-def _normalized_key(key: str) -> str:
-    return key.strip().casefold().replace("-", "_").replace(" ", "_")
+def normalized_sensitive_key(key: str) -> str:
+    """Normalize common case, separator and header-name variants."""
+
+    return "".join(character for character in key.casefold() if character.isalnum())
+
+
+def is_sensitive_key(key: str) -> bool:
+    """Return whether a key likely contains a credential or authentication secret."""
+
+    normalized = normalized_sensitive_key(key)
+    return any(
+        normalized == marker or normalized.startswith(marker) or normalized.endswith(marker)
+        for marker in SENSITIVE_CONTEXT_KEY_NAMES
+    )
 
 
 def sanitize_context(value: Any) -> Any:
-    """Recursively redact common credential/header keys before JSONB persistence."""
+    """Recursively redact credential-like values before JSONB persistence."""
 
     if isinstance(value, Mapping):
-        return {
-            str(key): REDACTED_VALUE
-            if _normalized_key(str(key)) in SENSITIVE_CONTEXT_KEYS
-            else sanitize_context(item)
-            for key, item in value.items()
-        }
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            string_key = str(key)
+            normalized_key = normalized_sensitive_key(string_key)
+            if normalized_key in SAFE_BOOLEAN_CONTEXT_KEYS and isinstance(item, bool):
+                sanitized[string_key] = item
+            elif is_sensitive_key(string_key):
+                sanitized[string_key] = REDACTED_VALUE
+            else:
+                sanitized[string_key] = sanitize_context(item)
+        return sanitized
     if isinstance(value, list):
         return [sanitize_context(item) for item in value]
     if isinstance(value, tuple):
@@ -92,7 +120,7 @@ class SanitizedJSONB(TypeDecorator[dict[str, Any]]):
             return None
         sanitized = sanitize_context(value)
         if not isinstance(sanitized, dict):
-            raise TypeError("risk context must be a JSON object")
+            raise TypeError("sanitized JSONB value must be a JSON object")
         return sanitized
 
 

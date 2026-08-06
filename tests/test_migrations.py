@@ -12,6 +12,7 @@ EXPECTED_TABLES = {
     "connector_runs",
     "connector_checkpoints",
     "platform_risk_events",
+    "configuration_change_logs",
 }
 
 

@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from apps.api.errors import register_exception_handlers
+from apps.api.routers.admin import router as admin_router
 from packages.common.config import get_settings
 from packages.database.exceptions import DatabaseUnavailableError
 from packages.database.session import check_database_ready, dispose_database
@@ -21,10 +23,12 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.2.0",
+    version="0.3.0",
     debug=settings.app_debug,
     lifespan=lifespan,
 )
+register_exception_handlers(app)
+app.include_router(admin_router)
 
 
 @app.get("/health", tags=["system"])
