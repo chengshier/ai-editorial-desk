@@ -28,6 +28,14 @@ SENSITIVE_CONTEXT_KEY_NAMES = frozenset(
         "accesstoken",
     }
 )
+SAFE_BOOLEAN_CONTEXT_KEYS = frozenset(
+    {
+        "browserprofileconfigured",
+        "browserprofilereferencechanged",
+        "credentialreferencechanged",
+        "hascredentialreference",
+    }
+)
 REDACTED_VALUE = "[REDACTED]"
 
 
@@ -80,10 +88,17 @@ def sanitize_context(value: Any) -> Any:
     """Recursively redact credential-like values before JSONB persistence."""
 
     if isinstance(value, Mapping):
-        return {
-            str(key): REDACTED_VALUE if is_sensitive_key(str(key)) else sanitize_context(item)
-            for key, item in value.items()
-        }
+        sanitized: dict[str, Any] = {}
+        for key, item in value.items():
+            string_key = str(key)
+            normalized_key = normalized_sensitive_key(string_key)
+            if normalized_key in SAFE_BOOLEAN_CONTEXT_KEYS and isinstance(item, bool):
+                sanitized[string_key] = item
+            elif is_sensitive_key(string_key):
+                sanitized[string_key] = REDACTED_VALUE
+            else:
+                sanitized[string_key] = sanitize_context(item)
+        return sanitized
     if isinstance(value, list):
         return [sanitize_context(item) for item in value]
     if isinstance(value, tuple):
