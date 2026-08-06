@@ -2,9 +2,10 @@ import httpx
 import pytest
 
 from apps.api.main import app
+from packages.common.config import get_settings
 from packages.connector_management.services import ConnectorDefinitionSyncService
 
-ADMIN_HEADERS = {"X-Admin-Token": "test-only-admin-token-at-least-24-characters"}
+ADMIN_HEADERS = {"X-Admin-Token": get_settings().admin_token_value}
 
 
 @pytest.mark.usefixtures("clean_database")
