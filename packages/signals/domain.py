@@ -38,7 +38,7 @@ class NormalizedSignal:
         connector_type: str,
         signal: RawSignal,
         canonical_url: str,
-    ) -> "NormalizedSignal":
+    ) -> NormalizedSignal:
         published_at = signal.published_at
         if published_at is not None:
             if published_at.tzinfo is None or published_at.utcoffset() is None:
