@@ -13,6 +13,7 @@ os.environ.setdefault(
     "postgresql+asyncpg://ai_editorial:ai_editorial_test@127.0.0.1:55432/ai_editorial_test",
 )
 os.environ.setdefault("APP_SECRET_KEY", "test-only-secret-key-that-is-at-least-32-characters")
+os.environ.setdefault("APP_ADMIN_TOKEN", "test-only-admin-token-at-least-24-characters")
 
 from packages.database.session import (  # noqa: E402
     dispose_database,
@@ -21,6 +22,7 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "configuration_change_logs",
     "platform_risk_events",
     "connector_checkpoints",
     "connector_runs",
