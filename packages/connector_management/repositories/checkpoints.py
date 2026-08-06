@@ -36,7 +36,8 @@ class ConnectorCheckpointRepository:
             ConnectorCheckpoint.mode == mode,
             ConnectorCheckpoint.scope_key == scope_key,
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def get_or_create(
         self,
