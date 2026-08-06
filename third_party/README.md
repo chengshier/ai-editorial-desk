@@ -2,13 +2,13 @@
 
 ## MediaCrawler
 
-MediaCrawler 将在后续步骤引入到：
+MediaCrawler 已通过 Git Subtree 引入到：
 
 ```text
 third_party/MediaCrawler
 ```
 
-当前骨架提交不直接复制上游源码，避免在未确定同步方式前混入大量第三方历史。
+上游源码采用 squash subtree 导入；具体上游版本见 `MEDIACRAWLER_UPSTREAM.md`。
 
 计划约束：
 
