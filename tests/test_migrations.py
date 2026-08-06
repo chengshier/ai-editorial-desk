@@ -13,6 +13,10 @@ EXPECTED_TABLES = {
     "connector_checkpoints",
     "platform_risk_events",
     "configuration_change_logs",
+    "sources",
+    "raw_signals",
+    "collection_budgets",
+    "collection_budget_usage",
 }
 
 
