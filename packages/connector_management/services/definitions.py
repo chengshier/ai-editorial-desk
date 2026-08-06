@@ -1,5 +1,5 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 from uuid import UUID
 
 from jsonschema import Draft202012Validator
