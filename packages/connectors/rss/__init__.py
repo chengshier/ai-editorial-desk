@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
@@ -24,6 +25,7 @@ RSS_CONTENT_TYPES = frozenset(
     }
 )
 RSS_PARSER_VERSION = "rss-atom-v1"
+FeedEntryParser = Callable[[ElementTree.Element, str], RawSignal]
 
 
 class RSSParseError(ValueError):
@@ -183,6 +185,7 @@ def parse_feed(
     except ElementTree.ParseError as exc:
         raise RSSParseError("Feed XML 无法解析") from exc
 
+    parser: FeedEntryParser
     root_name = _local_name(root.tag)
     if root_name == "rss":
         channel = _first_child(root, "channel")
