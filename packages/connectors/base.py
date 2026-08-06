@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -21,6 +20,7 @@ class CollectRequest:
     account_id: str | None = None
     risk_policy_id: str | None = None
     checkpoint: dict[str, Any] | None = None
+    parameters: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -30,6 +30,7 @@ class RawSignal:
     platform: str
     external_id: str | None
     url: str
+    canonical_url: str | None = None
     title: str | None = None
     text: str | None = None
     author_id: str | None = None
@@ -59,6 +60,22 @@ class RawSignal:
             raise TypeError("media 和 raw_payload 必须可 JSON 序列化") from exc
 
 
+@dataclass(slots=True, frozen=True)
+class CollectionItemError:
+    code: str
+    message: str
+    external_ref: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class CollectionResult:
+    signals: tuple[RawSignal, ...]
+    checkpoint: dict[str, Any] | None = None
+    not_modified: bool = False
+    errors: tuple[CollectionItemError, ...] = ()
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class BaseConnector(ABC):
     """Stable boundary between platform collectors and the editorial system."""
 
@@ -69,9 +86,7 @@ class BaseConnector(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
-        """Return an async stream; implementations may use an async generator."""
-
+    async def collect(self, request: CollectRequest) -> CollectionResult:
         raise NotImplementedError
 
     async def fetch_detail(self, external_id: str) -> RawSignal:
