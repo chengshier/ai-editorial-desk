@@ -42,29 +42,17 @@ class ConnectorDefinition(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     platform: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     capabilities: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     config_schema: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     ui_schema: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     implementation_version: Mapped[str] = mapped_column(String(64), nullable=False)
     is_enabled: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        server_default=text("true"),
+        Boolean, nullable=False, default=True, server_default=text("true")
     )
 
     instances: Mapped[list[ConnectorInstance]] = relationship(back_populates="definition")
@@ -76,50 +64,31 @@ class ConnectorInstance(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "connector_instances"
     __table_args__ = (
         UniqueConstraint(
-            "definition_id",
-            "name",
-            name="uq_connector_instances_definition_name",
+            "definition_id", "name", name="uq_connector_instances_definition_name"
         ),
         CheckConstraint("config_version >= 1", name="config_version_positive"),
         Index("ix_connector_instances_enabled_status", "enabled", "status"),
     )
 
     definition_id: Mapped[UUID] = mapped_column(
-        ForeignKey("connector_definitions.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        ForeignKey("connector_definitions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     enabled: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=text("false"),
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     status: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="configured",
-        server_default=text("'configured'"),
+        String(50), nullable=False, default="configured", server_default=text("'configured'")
     )
     config: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     schedule_config: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     credential_ref: Mapped[str | None] = mapped_column(String(500))
     config_version: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=1,
-        server_default=text("1"),
+        Integer, nullable=False, default=1, server_default=text("1")
     )
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_error_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
@@ -151,9 +120,7 @@ class PlatformAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
-        ForeignKey("connector_instances.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        ForeignKey("connector_instances.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     platform: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -167,44 +134,27 @@ class PlatformAccount(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=text("'healthy'"),
     )
     risk_level: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        default="unknown",
-        server_default=text("'unknown'"),
+        String(50), nullable=False, default="unknown", server_default=text("'unknown'")
     )
     last_success_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_warning_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_warning_code: Mapped[str | None] = mapped_column(String(100))
     consecutive_failures: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     cooldown_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
     manual_review_required: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=text("false"),
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
     daily_request_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     daily_item_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     daily_comment_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
+    updated_by: Mapped[str | None] = mapped_column(String(255))
 
     connector_instance: Mapped[ConnectorInstance] = relationship(back_populates="accounts")
