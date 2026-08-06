@@ -1,0 +1,55 @@
+import os
+from collections.abc import AsyncIterator, Iterator
+
+import pytest
+import pytest_asyncio
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://ai_editorial:ai_editorial_test@127.0.0.1:55432/ai_editorial_test",
+)
+os.environ.setdefault("APP_SECRET_KEY", "test-only-secret-key-that-is-at-least-32-characters")
+
+from packages.database.session import (  # noqa: E402
+    dispose_database,
+    get_async_engine,
+    get_async_sessionmaker,
+)
+
+TABLES_IN_DELETE_ORDER = (
+    "platform_risk_events",
+    "connector_checkpoints",
+    "connector_runs",
+    "platform_accounts",
+    "connector_instances",
+    "connector_definitions",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_database() -> Iterator[None]:
+    config = Config("alembic.ini")
+    command.upgrade(config, "head")
+    yield
+
+
+@pytest_asyncio.fixture
+async def clean_database(migrated_database: None) -> AsyncIterator[None]:
+    del migrated_database
+    async with get_async_engine().begin() as connection:
+        await connection.execute(text(f"TRUNCATE {', '.join(TABLES_IN_DELETE_ORDER)} CASCADE"))
+    yield
+    await dispose_database()
+
+
+@pytest_asyncio.fixture
+async def db_session(clean_database: None) -> AsyncIterator[AsyncSession]:
+    del clean_database
+    session_factory = get_async_sessionmaker()
+    async with session_factory() as session:
+        yield session
+        await session.rollback()

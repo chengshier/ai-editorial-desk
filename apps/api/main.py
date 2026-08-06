@@ -1,15 +1,29 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from packages.common.config import get_settings
+from packages.database.exceptions import DatabaseUnavailableError
+from packages.database.session import check_database_ready, dispose_database
 
 settings = get_settings()
 
+
+@asynccontextmanager
+async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+    del application
+    yield
+    await dispose_database()
+
+
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
+    version="0.2.0",
     debug=settings.app_debug,
+    lifespan=lifespan,
 )
 
 
@@ -25,8 +39,15 @@ async def health_check() -> dict[str, str]:
     }
 
 
-@app.get("/ready", tags=["system"])
-async def readiness_check() -> dict[str, str]:
-    """Initial readiness endpoint; database checks are added in M1."""
+@app.get("/ready", tags=["system"], response_model=None)
+async def readiness_check() -> dict[str, str] | JSONResponse:
+    """Report readiness only when PostgreSQL answers within the configured timeout."""
 
-    return {"status": "ready"}
+    try:
+        await check_database_ready()
+    except DatabaseUnavailableError:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "database": "unavailable"},
+        )
+    return {"status": "ready", "database": "available"}

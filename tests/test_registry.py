@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+
 import pytest
 
 from packages.connectors.base import BaseConnector, CollectRequest, RawSignal
@@ -10,7 +12,8 @@ class DummyConnector(BaseConnector):
     async def health_check(self) -> dict[str, str]:
         return {"status": "ok"}
 
-    async def collect(self, request: CollectRequest):  # type: ignore[no-untyped-def]
+    async def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
+        del request
         if False:
             yield RawSignal(platform="dummy", external_id="1", url="https://example.com")
 

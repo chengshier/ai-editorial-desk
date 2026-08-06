@@ -11,6 +11,24 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ai_editorial
+          POSTGRES_PASSWORD: ai_editorial_ci
+          POSTGRES_DB: ai_editorial_test
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_editorial -d ai_editorial_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://ai_editorial:ai_editorial_ci@127.0.0.1:55432/ai_editorial_test
+      APP_SECRET_KEY: ci-only-secret-key-that-is-at-least-32-characters
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,5 +45,14 @@ jobs:
       - name: Ruff
         run: ruff check .
 
+      - name: Mypy
+        run: mypy apps packages
+
       - name: Pytest
         run: pytest
+
+      - name: Alembic round trip
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
