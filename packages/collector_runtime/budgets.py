@@ -143,14 +143,14 @@ class CollectionBudgetService:
                 source_id=source_id,
             )
             if not budgets:
-                budget, created = await self.repository.ensure_default(
+                default_budget, created = await self.repository.ensure_default(
                     connector_instance_id=connector_instance_id,
                     connector_type=connector_type,
                     actor=actor,
                 )
-                budgets = [budget]
+                budgets = [default_budget]
                 if created:
-                    self._audit_default(budget, actor)
+                    self._audit_default(default_budget, actor)
 
             reservations: list[BudgetReservation] = []
             now = datetime.now(UTC)
