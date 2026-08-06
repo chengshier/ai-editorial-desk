@@ -96,7 +96,7 @@ class SanitizedJSONB(TypeDecorator[dict[str, Any]]):
         return sanitized
 
 
-def string_enum(enum_type: type[EnumT], *, name: str) -> SqlEnum[EnumT]:
+def string_enum(enum_type: type[EnumT], *, name: str) -> SqlEnum:
     """Create a portable string-backed enum with a database CHECK constraint."""
 
     values = [member.value for member in enum_type]

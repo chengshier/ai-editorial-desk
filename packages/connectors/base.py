@@ -44,7 +44,9 @@ class BaseConnector(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
+    def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
+        """Return an async stream; implementations may use an async generator."""
+
         raise NotImplementedError
 
     async def fetch_detail(self, external_id: str) -> RawSignal:
