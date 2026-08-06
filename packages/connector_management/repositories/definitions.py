@@ -19,7 +19,8 @@ class ConnectorDefinitionRepository:
             ConnectorDefinition.connector_type == connector_type,
             ConnectorDefinition.platform == platform,
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def list(
         self,
