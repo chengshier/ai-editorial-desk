@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from packages.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
-from packages.database.types import UTCDateTime, string_enum, utc_now
+from packages.database.types import SanitizedJSONB, UTCDateTime, string_enum, utc_now
 
 JSON_OBJECT_DEFAULT = text("'{}'::jsonb")
 
@@ -53,13 +53,10 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
-        ForeignKey("connector_instances.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        ForeignKey("connector_instances.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     platform_account_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("platform_accounts.id", ondelete="SET NULL"),
-        index=True,
+        ForeignKey("platform_accounts.id", ondelete="SET NULL"), index=True
     )
     mode: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[ConnectorRunStatus] = mapped_column(
@@ -71,42 +68,27 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     requested_limit: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     collected_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     inserted_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     duplicate_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
     retry_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default=text("0"),
+        Integer, nullable=False, default=0, server_default=text("0")
     )
     checkpoint_before: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     checkpoint_after: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     run_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
-        JSONB,
+        SanitizedJSONB(),
         nullable=False,
         default=dict,
         server_default=JSON_OBJECT_DEFAULT,
@@ -131,13 +113,10 @@ class ConnectorCheckpoint(UUIDPrimaryKeyMixin, Base):
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
-        ForeignKey("connector_instances.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
+        ForeignKey("connector_instances.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     platform_account_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("platform_accounts.id", ondelete="RESTRICT"),
-        index=True,
+        ForeignKey("platform_accounts.id", ondelete="RESTRICT"), index=True
     )
     mode: Mapped[str] = mapped_column(String(100), nullable=False)
     scope_key: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -146,16 +125,10 @@ class ConnectorCheckpoint(UUIDPrimaryKeyMixin, Base):
     last_external_id: Mapped[str | None] = mapped_column(String(500))
     last_published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     checkpoint_data: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        server_default=JSON_OBJECT_DEFAULT,
+        JSONB, nullable=False, default=dict, server_default=JSON_OBJECT_DEFAULT
     )
     version: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=1,
-        server_default=text("1"),
+        Integer, nullable=False, default=1, server_default=text("1")
     )
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
