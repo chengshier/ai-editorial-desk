@@ -1,18 +1,24 @@
-class CollectorRuntimeError(RuntimeError):
-    """Safe collector runtime failure."""
+from packages.connector_management.exceptions import ConnectorManagementError
+
+
+class CollectorRuntimeError(ConnectorManagementError):
+    """Safe collector runtime failure rendered by the common API handler."""
+
+    status_code = 409
+    code = "collector_runtime_error"
 
 
 class PreflightRejectedError(CollectorRuntimeError):
-    pass
+    code = "collector_preflight_rejected"
 
 
 class ConnectorImplementationUnavailableError(PreflightRejectedError):
-    pass
+    code = "connector_implementation_unavailable"
 
 
 class RunClaimConflictError(CollectorRuntimeError):
-    pass
+    code = "run_claim_conflict"
 
 
 class BudgetExceededError(PreflightRejectedError):
-    pass
+    code = "collection_budget_exceeded"
