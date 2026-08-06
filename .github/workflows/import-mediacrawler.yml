@@ -1,0 +1,92 @@
+name: Import MediaCrawler subtree
+
+on:
+  push:
+    branches:
+      - chore/import-mediacrawler
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout import branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: chore/import-mediacrawler
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Import upstream as a squashed subtree
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -d third_party/MediaCrawler ]; then
+            echo "third_party/MediaCrawler already exists; refusing to import twice."
+            exit 1
+          fi
+
+          git fetch --no-tags https://github.com/NanmiCoder/MediaCrawler.git main
+          UPSTREAM_SHA="$(git rev-parse FETCH_HEAD)"
+          git subtree add \
+            --prefix=third_party/MediaCrawler \
+            https://github.com/NanmiCoder/MediaCrawler.git \
+            main \
+            --squash
+
+          IMPORT_DATE="$(date -u +%Y-%m-%d)"
+          cat > third_party/MEDIACRAWLER_UPSTREAM.md <<EOF
+          # MediaCrawler upstream record
+
+          - Upstream repository: NanmiCoder/MediaCrawler
+          - Import method: Git subtree with \`--squash\`
+          - Import directory: \`third_party/MediaCrawler\`
+          - Upstream branch: \`main\`
+          - Upstream commit: \`${UPSTREAM_SHA}\`
+          - Import date (UTC): \`${IMPORT_DATE}\`
+          - License: NON-COMMERCIAL LEARNING LICENSE 1.1
+
+          ## Local enhancement boundary
+
+          Only the following enhancements are planned inside the vendored source:
+
+          1. Checkpoint and resumable collection
+          2. Incremental collection watermarks
+          3. Account and browser-profile abstraction
+          4. Signature-provider decoupling
+          5. Limited HomeFeed and hot-list discovery
+          6. Standardized platform risk-error output
+
+          AI scoring, event clustering, editorial drafting, provider routing and the
+          product UI remain in the main application and must not be implemented in
+          MediaCrawler.
+          EOF
+
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("third_party/README.md")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "MediaCrawler 将在后续步骤引入到：",
+              "MediaCrawler 已通过 Git Subtree 引入到：",
+          )
+          text = text.replace(
+              "当前骨架提交不直接复制上游源码，避免在未确定同步方式前混入大量第三方历史。",
+              "上游源码采用 squash subtree 导入；具体上游版本见 `MEDIACRAWLER_UPSTREAM.md`。",
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          rm .github/workflows/import-mediacrawler.yml
+          git add third_party/MEDIACRAWLER_UPSTREAM.md third_party/README.md \
+            .github/workflows/import-mediacrawler.yml
+          git commit -m "docs: record MediaCrawler upstream import"
+          git push origin HEAD:chore/import-mediacrawler
