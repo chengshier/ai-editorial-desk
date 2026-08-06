@@ -14,7 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
+    text as sql_text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -22,8 +22,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from packages.database.base import Base, CreatedAtMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from packages.database.types import SanitizedJSONB, UTCDateTime, utc_now
 
-JSON_OBJECT_DEFAULT = text("'{}'::jsonb")
-JSON_ARRAY_DEFAULT = text("'[]'::jsonb")
+JSON_OBJECT_DEFAULT = sql_text("'{}'::jsonb")
+JSON_ARRAY_DEFAULT = sql_text("'[]'::jsonb")
 
 
 class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -61,13 +61,13 @@ class Source(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Boolean,
         nullable=False,
         default=True,
-        server_default=text("true"),
+        server_default=sql_text("true"),
     )
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="active",
-        server_default=text("'active'"),
+        server_default=sql_text("'active'"),
     )
     last_collected_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     last_error_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
@@ -114,7 +114,7 @@ class RawSignalRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         UTCDateTime(),
         nullable=False,
         default=utc_now,
-        server_default=text("CURRENT_TIMESTAMP"),
+        server_default=sql_text("CURRENT_TIMESTAMP"),
     )
     metrics: Mapped[dict[str, int | float]] = mapped_column(
         JSONB,
@@ -157,28 +157,34 @@ class CollectionBudget(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scope_type: Mapped[str] = mapped_column(String(50), nullable=False)
     scope_key: Mapped[str] = mapped_column(String(500), nullable=False)
     max_runs_per_day: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=100, server_default=text("100")
+        Integer, nullable=False, default=100, server_default=sql_text("100")
     )
     max_items_per_run: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=100, server_default=text("100")
+        Integer, nullable=False, default=100, server_default=sql_text("100")
     )
     max_items_per_day: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=5000, server_default=text("5000")
+        Integer, nullable=False, default=5000, server_default=sql_text("5000")
     )
     max_comments_per_run: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     max_comments_per_day: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     max_concurrency: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default=text("1")
+        Integer, nullable=False, default=1, server_default=sql_text("1")
     )
     timezone: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="Asia/Shanghai", server_default=text("'Asia/Shanghai'")
+        String(64),
+        nullable=False,
+        default="Asia/Shanghai",
+        server_default=sql_text("'Asia/Shanghai'"),
     )
     enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=text("true")
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=sql_text("true"),
     )
     updated_by: Mapped[str | None] = mapped_column(String(255))
 
@@ -207,33 +213,33 @@ class CollectionBudgetUsage(UUIDPrimaryKeyMixin, Base):
     )
     usage_date: Mapped[date] = mapped_column(Date, nullable=False)
     runs_reserved: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     runs_completed: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     items_reserved: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     items_used: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     comments_reserved: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     comments_used: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     active_runs: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=text("0")
+        Integer, nullable=False, default=0, server_default=sql_text("0")
     )
     version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default=text("1")
+        Integer, nullable=False, default=1, server_default=sql_text("1")
     )
     updated_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,
         default=utc_now,
-        server_default=text("CURRENT_TIMESTAMP"),
+        server_default=sql_text("CURRENT_TIMESTAMP"),
         onupdate=utc_now,
     )
