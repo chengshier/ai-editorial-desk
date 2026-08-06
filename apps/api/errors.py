@@ -10,10 +10,10 @@ from packages.database.exceptions import DatabaseUnavailableError
 
 
 def error_payload(code: str, message: str, details: Any | None = None) -> dict[str, Any]:
-    payload: dict[str, Any] = {"error": {"code": code, "message": message}}
+    error: dict[str, Any] = {"code": code, "message": message}
     if details is not None:
-        payload["error"]["details"] = details
-    return payload
+        error["details"] = details
+    return {"error": error}
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -38,7 +38,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "message": error["msg"],
                 "type": error["type"],
             }
-            for error in exc.errors(include_input=False, include_url=False)
+            for error in exc.errors()
         ]
         return JSONResponse(
             status_code=422,
