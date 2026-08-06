@@ -68,7 +68,7 @@ def _account_snapshot(account: PlatformAccount) -> dict[str, Any]:
         "platform": account.platform,
         "display_name": account.display_name,
         "account_identifier": account.account_identifier,
-        "credential_configured": bool(account.credential_ref),
+        "has_credential_reference": bool(account.credential_ref),
         "browser_profile_configured": bool(account.browser_profile_ref),
         "status": account.status.value,
         "risk_level": account.risk_level,
