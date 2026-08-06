@@ -19,7 +19,8 @@ class PlatformAccountRepository:
             .options(selectinload(PlatformAccount.connector_instance))
             .where(PlatformAccount.id == account_id)
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def get_by_identifier(
         self,
@@ -32,7 +33,8 @@ class PlatformAccountRepository:
             PlatformAccount.platform == platform,
             PlatformAccount.account_identifier == account_identifier,
         )
-        return await self.session.scalar(statement)
+        result = await self.session.execute(statement)
+        return result.scalar_one_or_none()
 
     async def list(
         self,
