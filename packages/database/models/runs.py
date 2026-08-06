@@ -43,17 +43,22 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("collected_count >= 0", name="collected_count_nonnegative"),
         CheckConstraint("inserted_count >= 0", name="inserted_count_nonnegative"),
         CheckConstraint("duplicate_count >= 0", name="duplicate_count_nonnegative"),
+        CheckConstraint("failed_count >= 0", name="failed_count_nonnegative"),
         CheckConstraint("retry_count >= 0", name="retry_count_nonnegative"),
         CheckConstraint(
             "finished_at IS NULL OR started_at IS NULL OR finished_at >= started_at",
             name="finished_after_started",
         ),
         Index("ix_connector_runs_instance_created", "connector_instance_id", "created_at"),
+        Index("ix_connector_runs_source_created", "source_id", "created_at"),
         Index("ix_connector_runs_status_started", "status", "started_at"),
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
         ForeignKey("connector_instances.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("sources.id", ondelete="SET NULL"), index=True
     )
     platform_account_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("platform_accounts.id", ondelete="SET NULL"), index=True
@@ -77,6 +82,9 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         Integer, nullable=False, default=0, server_default=text("0")
     )
     duplicate_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    failed_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
     error_code: Mapped[str | None] = mapped_column(String(100))

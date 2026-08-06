@@ -8,8 +8,16 @@ from packages.database.models.connectors import (
 )
 from packages.database.models.risk import PlatformRiskEvent
 from packages.database.models.runs import ConnectorCheckpoint, ConnectorRun, ConnectorRunStatus
+from packages.database.models.signals import (
+    CollectionBudget,
+    CollectionBudgetUsage,
+    RawSignalRecord,
+    Source,
+)
 
 __all__ = [
+    "CollectionBudget",
+    "CollectionBudgetUsage",
     "ConfigurationChangeLog",
     "ConnectorCheckpoint",
     "ConnectorDefinition",
@@ -18,4 +26,6 @@ __all__ = [
     "ConnectorRunStatus",
     "PlatformAccount",
     "PlatformRiskEvent",
+    "RawSignalRecord",
+    "Source",
 ]
