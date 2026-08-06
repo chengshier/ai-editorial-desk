@@ -190,6 +190,7 @@ async def test_risk_event_filter_resolve_and_no_account_recovery(db_session) -> 
     db_session.add(event)
     await db_session.commit()
     await db_session.refresh(event)
+    event_id = event.id
     assert event.request_context["Cookie"] == "[REDACTED]"
 
     service = PlatformRiskEventService(db_session)
@@ -206,14 +207,14 @@ async def test_risk_event_filter_resolve_and_no_account_recovery(db_session) -> 
     assert page.total == 1
     await db_session.rollback()
     resolved = await service.resolve(
-        event_id=event.id,
+        event_id=event_id,
         resolution_note="已人工核对来源，无需恢复任何账号",
         actor="reviewer",
     )
     assert resolved.resolved_by == "reviewer"
     with pytest.raises(ConflictError):
         await service.resolve(
-            event_id=event.id,
+            event_id=event_id,
             resolution_note="重复处理",
             actor="reviewer",
         )
