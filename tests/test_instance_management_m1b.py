@@ -52,9 +52,10 @@ async def test_instance_create_update_version_and_noop(db_session) -> None:  # t
 @pytest.mark.usefixtures("clean_database")
 async def test_instance_conflict_schema_and_sensitive_failure_leave_no_audit(db_session) -> None:  # type: ignore[no-untyped-def]
     definition = await _rss_definition(db_session)
+    definition_id = definition.id
     service = ConnectorInstanceService(db_session)
     await service.create(
-        definition_id=definition.id,
+        definition_id=definition_id,
         name="同名实例",
         config={"feed_urls": ["https://example.com/a.xml"]},
         schedule_config={},
@@ -62,7 +63,7 @@ async def test_instance_conflict_schema_and_sensitive_failure_leave_no_audit(db_
     )
     with pytest.raises(ConflictError):
         await service.create(
-            definition_id=definition.id,
+            definition_id=definition_id,
             name="同名实例",
             config={"feed_urls": ["https://example.com/b.xml"]},
             schedule_config={},
@@ -70,7 +71,7 @@ async def test_instance_conflict_schema_and_sensitive_failure_leave_no_audit(db_
         )
     with pytest.raises(SchemaValidationError):
         await service.create(
-            definition_id=definition.id,
+            definition_id=definition_id,
             name="敏感实例",
             config={"feed_urls": ["https://example.com/c.xml"], "api-key": "x"},
             schedule_config={},
@@ -91,18 +92,20 @@ async def test_instance_enable_disable_archive_preserves_history(db_session) -> 
         schedule_config={},
         actor="editor",
     )
-    await service.enable(instance_id=instance.id, actor="editor")
-    await service.disable(instance_id=instance.id, actor="editor")
+    instance_id = instance.id
+    await service.enable(instance_id=instance_id, actor="editor")
+    await service.disable(instance_id=instance_id, actor="editor")
     run = ConnectorRun(
-        connector_instance_id=instance.id,
+        connector_instance_id=instance_id,
         mode="feed",
         requested_limit=10,
     )
     db_session.add(run)
     await db_session.commit()
-    archived = await service.archive(instance_id=instance.id, actor="editor")
+    run_id = run.id
+    archived = await service.archive(instance_id=instance_id, actor="editor")
     assert archived.enabled is False
     assert archived.status == "archived"
-    assert await db_session.get(ConnectorRun, run.id) is not None
     with pytest.raises(ConflictError):
-        await service.enable(instance_id=instance.id, actor="editor")
+        await service.enable(instance_id=instance_id, actor="editor")
+    assert await db_session.get(ConnectorRun, run_id) is not None
