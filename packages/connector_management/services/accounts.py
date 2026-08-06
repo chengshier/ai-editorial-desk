@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -169,23 +169,49 @@ class PlatformAccountService:
             account = await self.repository.get(account_id)
             if account is None:
                 raise ResourceNotFoundError("平台账号不存在")
+
             before = _account_snapshot(account)
+            actual_changed = False
+            credential_reference_changed = False
+            browser_profile_reference_changed = False
+
             if "display_name" in changes:
-                account.display_name = str(changes["display_name"]).strip()
+                display_name = str(changes["display_name"]).strip()
+                if display_name != account.display_name:
+                    account.display_name = display_name
+                    actual_changed = True
+
             if "credential_ref" in changes:
-                account.credential_ref = changes["credential_ref"]
+                credential_ref = cast(str | None, changes["credential_ref"])
+                if credential_ref != account.credential_ref:
+                    account.credential_ref = credential_ref
+                    credential_reference_changed = True
+                    actual_changed = True
+
             if "browser_profile_ref" in changes:
-                account.browser_profile_ref = changes["browser_profile_ref"]
-            if before == _account_snapshot(account):
+                browser_profile_ref = cast(str | None, changes["browser_profile_ref"])
+                if browser_profile_ref != account.browser_profile_ref:
+                    account.browser_profile_ref = browser_profile_ref
+                    browser_profile_reference_changed = True
+                    actual_changed = True
+
+            if not actual_changed:
                 return account
+
             account.updated_by = actor
+            after = _account_snapshot(account)
+            if credential_reference_changed:
+                after["credential_reference_changed"] = True
+            if browser_profile_reference_changed:
+                after["browser_profile_reference_changed"] = True
+
             self.audit.add(
                 entity_type="platform_account",
                 entity_id=account.id,
                 action="update",
                 actor=actor,
                 before_data=before,
-                after_data=_account_snapshot(account),
+                after_data=after,
             )
         return account
 
