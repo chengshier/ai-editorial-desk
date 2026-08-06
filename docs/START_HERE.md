@@ -2,7 +2,7 @@
 
 ## 当前阶段
 
-项目已完成 **M1-B：连接器配置管理、运行记录与检查点服务**，下一步建议进入 M1-C。
+项目已完成 **M1-C：原始信号、真实基础连接器与受控采集运行时** 的开发实现，当前等待 PR 验收与合并。下一步应进入 **M1-D**，不直接进入 M2。
 
 ## 必读文档顺序
 
@@ -12,84 +12,82 @@
 4. `AI编辑部_PRD_V1.2.md`
 5. `CHANGELOG.md`
 
-如文档存在冲突，优先级为：
-
-1. `DECISIONS.md`
-2. 综合开发实施规划
-3. 技术开发文档
-4. PRD
-
-## 已确认决策摘要
-
-- 主仓库为 `ai-editorial-desk`；
-- MediaCrawler 作为 `third_party/MediaCrawler` 内置第三方采集模块；
-- MVP 通过 Adapter + 子进程调用 MediaCrawler，不要求单独启动 HTTP 服务；
-- PostgreSQL + pgvector 通过 Docker Desktop 运行；
-- MVP 默认使用云 Embedding，同时保留本地 Provider 接口；
-- 平台连接器、AI Provider、模型路由和调度采用可视化配置；
-- MediaCrawler 只承担平台采集，不承载事件、AI 编辑或产品工作台；
-- 必须实现平台账号风险保护、预算、熔断和人工恢复；
-- 不实现验证码破解、指纹伪造、封禁后自动换号或绕过平台限制。
+冲突优先级：DECISIONS → 综合开发实施规划 → 技术开发文档 → PRD。
 
 ## 已完成基线
 
 ### M1-A
 
-- SQLAlchemy 2.x 异步 Engine、Session、FastAPI 依赖和统一 Declarative Base；
-- UUID、UTC、JSONB、字符串枚举和数据库异常规范；
-- 异步 Alembic 和首份可往返迁移；
-- connector definitions、instances、platform accounts、runs、checkpoints、platform risk events 六组基础表；
-- `/health`、数据库 `/ready` 和 PostgreSQL 16 + pgvector CI；
-- Risk Guard 账号状态、错误分类和风险上下文脱敏。
+- Async SQLAlchemy、统一 ORM Base、UUID、UTC、JSONB 和异步 Alembic；
+- Definition、Instance、Account、Run、Checkpoint、Risk Event 基础表；
+- PostgreSQL 16 + pgvector CI 和 Risk Guard 基础模型。
 
 ### M1-B
 
-- 11 个首批 Connector Definition Manifest；
-- 幂等 Definition 同步命令和版本更新策略；
-- Draft 2020-12 Connector config 与公共 schedule config 校验；
-- 普通配置敏感字段递归拒绝；
-- Connector Definition 只读管理 API；
-- Connector Instance 创建、查询、更新、启停和归档；
-- 配置变化版本递增和轻量配置审计；
-- Platform Account 创建、查询、引用更新和人工状态转换；
-- Connector Run 内部状态服务与管理查询 API；
-- Checkpoint 获取、创建和 expected_version 乐观更新；
-- Risk Event 查询和人工处理；
-- `APP_ADMIN_TOKEN` + `X-Admin-Token` 最小内部管理保护；
-- 修改接口 `X-Actor-ID` 操作者记录；
-- 第二份独立 migration，不修改 M1-A 初始 migration。
+- 11 个代码 Definition Manifest 与幂等同步；
+- JSON Schema 配置校验、实例与账号管理、Run/Checkpoint 服务；
+- Admin Token、Actor、配置审计与风险事件人工处理。
 
-## M1-B 明确边界
+### M1-C
 
-本批只建立管理闭环，不执行真实采集。未包含：
+- 新增 `sources`、`raw_signals`、`collection_budgets`、`collection_budget_usage`；
+- 新增独立 `20260806_0003` migration，不修改 M1-A/M1-B migration；
+- Connector 统一输出独立 RawSignal 领域模型；
+- URL 规范化、稳定内容哈希和 v1 幂等键；
+- PostgreSQL `ON CONFLICT` Raw Signal 并发幂等写入；
+- RSS 2.0 / Atom、ETag、Last-Modified、304 和有界网络请求；
+- 手工 URL 导入、有限页面提取和逐跳 SSRF 防护；
+- 明确 Implementation Registry，仅 RSS 与手工 URL 可运行；
+- CollectionTask 可 JSON 序列化并支持 manual/test/scheduled/retry；
+- Run 使用数据库条件更新原子领取和终态转换；
+- 数据库预算预留、自然日 usage 与并发限制；
+- Runtime 将预检、网络、分批入库、Checkpoint、终态和预算结算拆为短事务；
+- Risk Guard 接入运行时，普通 HTTP 错误与平台风险分开；
+- Source、Raw Signal、Budget、test-run 和 manual-import 管理 API；
+- 全部网络测试使用 Fixture、MockTransport 或不抓取模式。
 
-- MediaCrawler 子进程执行和平台实跑；
-- Scheduler、Worker、队列或定时任务；
+## 当前真实实现状态
+
+- RSS：registered=true、implemented=true、enabled 取数据库状态、validated=false；
+- 手工 URL：registered=true、implemented=true、enabled 取数据库状态、validated=false；
+- MediaCrawler 七个平台、Reddit、热榜：仅 registered，尚未 implemented/validated。
+
+Definition、Implementation Registry 和运营启停是三个独立概念，不得混用。
+
+## 事务与安全边界
+
+- 网络请求不能占用长数据库事务；
+- Run 领取、每批信号写入、Checkpoint 推进、Run 终态和预算结算分别使用短事务；
+- Checkpoint 只跟随已提交信号推进；入库失败不得推进；
+- Raw Signal 不存 Cookie、Authorization、访问 Token 或完整请求头；
+- 手工 URL 拒绝 localhost、私网、IPv6 本地地址、链路本地、多播、保留和云元数据地址；
+- Redirect 每一跳重新解析并验证；
+- 不自动换号、切换代理、处理验证码或绕过平台限制。
+
+## M1-C 明确未做
+
+- Scheduler、APScheduler、Celery、Redis Worker；
 - 前端配置中心；
-- Secret Manager、明文凭据存储或完整加密系统；
-- 完整用户、角色、权限和多租户；
-- 完整配置快照、差异页面和一键回滚；
-- Signal、Event、去重、聚类、Embedding、AI Provider 和稿件生成；
-- 自动账号恢复、自动换号、代理轮换、验证码或反检测能力。
+- MediaCrawler 子进程和平台实跑；
+- 浏览器登录、Cookie 扫码、HomeFeed 和评论采集；
+- Signal 之后的 Event、聚类、Embedding、AI Provider、评分、证据和稿件；
+- 自动恢复账号、代理轮换、验证码破解和指纹伪造。
 
-## 下一步 M1-C 建议
+## M1-D 建议
 
-1. 建立 Raw Signal、Source 和幂等入库模型；
-2. 实现 RSS 与手工 URL 的真实连接器；
-3. 建立受控 Collector Runtime，不接 Scheduler；
-4. 将 Run、Checkpoint、Risk Guard 串入一次手工触发的任务流程；
-5. 增加连接器测试运行接口，但继续禁止凭据回读；
-6. 建立采集预算基础模型和任务前检查；
-7. 为后续 Scheduler/Worker 明确任务协议和事务边界。
-
-M1-C 仍不应一次进入事件聚类、Embedding 或 AI 稿件生成。
+1. 建立 Event 候选与 Raw Signal → Event 的显式领域边界；
+2. 增加 Signal 质量与来源可信度基础字段，但暂不调用 LLM；
+3. 完善 Collector Runtime 的崩溃 Run 识别、人工重试和运行详情；
+4. 为 Scheduler/Worker 落地任务存储与租约协议，但继续保持连接器接口不变；
+5. 补充 RSS/手工 URL 的真实低量验收流程和 validated 状态管理；
+6. 再评估何时进入 MediaCrawler Adapter，不提前做平台增强。
 
 ## 开发原则
 
 - 每次只开发一个可验收模块；
-- 不擅自扩大当前迭代范围；
-- 不把事件聚类、AI 评分、稿件和前端业务写入 MediaCrawler；
-- 新增运营配置优先考虑后台可视化；
-- 密钥只能进入环境变量或独立凭据存储；
+- 不擅自扩大迭代范围；
+- 代码 Definition 只表示注册，不冒充已实现或已验证；
+- Connector 不创建 ORM、不提交事务、不承担聚类或 AI 判断；
+- 密钥只进入环境变量或独立凭据存储；
 - 风控信号不进入普通重试循环；
-- 代码 Definition 只声明注册能力，不冒充已实现、已启用或已验证。
+- 不修改第三方 MediaCrawler 平台业务源码来承载主系统职责。

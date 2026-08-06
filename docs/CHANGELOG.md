@@ -1,5 +1,26 @@
 # 文档与架构变更记录
 
+## 2026-08-06 — M1-C
+
+- 新增 `sources`、`raw_signals`、`collection_budgets` 和 `collection_budget_usage` 四组正式模型；
+- 新增独立 `20260806_0003_m1c_collector_runtime.py` migration，不修改 M1-A/M1-B migration；
+- Connector 统一输出独立 RawSignal 领域模型，不直接创建 ORM 或提交事务；
+- 新增 HTTP/HTTPS URL 规范化、有限跟踪参数移除、稳定 content hash 和 v1 幂等键；
+- Raw Signal 使用 PostgreSQL `ON CONFLICT DO NOTHING RETURNING`，支持并发单条创建；
+- 实现 RSS 2.0、Atom、ETag、Last-Modified、304、条目级错误和安全 Checkpoint；
+- 实现手工 URL 导入、有限 HTML/文本提取、用户内容回退和内容来源标记；
+- 新增逐跳 DNS/重定向 SSRF 防护、超时、响应体、Content-Type 和安全请求头限制；
+- 新增显式 Implementation Registry，仅注册 RSS 与手工 URL 的真实实现；
+- 新增可序列化 CollectionTask，预留 manual/test/scheduled/retry 触发类型；
+- 将 Run 领取和终态转换改为带旧状态条件的数据库原子更新；
+- 新增数据库预算规则、按时区自然日 usage、行锁预留和并发限制；
+- 建立受控 Collector Runtime，网络调用不占用长事务，信号提交后才推进 Checkpoint；
+- 接入 Risk Guard，真实平台风险可写事件并进入 `PAUSED_RISK`，普通 RSS/HTTP 错误不误判为封禁；
+- 新增 Source、Raw Signal、Budget、test-run 和 manual-import 内部管理 API；
+- Definition API 增加 registered、implemented、enabled、validated 计算状态；
+- 新增 RSS、Atom、304、SSRF、重定向、超时、响应限制、幂等、预算和 Run 并发测试；
+- 本批未接 Scheduler/Worker，未执行 MediaCrawler，未进入 Event、Embedding、LLM 或稿件生成。
+
 ## 2026-08-06 — M1-B
 
 - 增加 11 个代码管理的 Connector Definition Manifest，覆盖 MediaCrawler 七个平台、RSS、Reddit、热榜和手工 URL；
