@@ -8,12 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.connectors.registry import ConnectorRegistry
 from packages.database.models import (
-    CollectionBudget,
     ConnectorDefinition,
     ConnectorRun,
     ConnectorRunStatus,
     RawSignalRecord,
-    Source,
 )
 
 
@@ -39,7 +37,7 @@ class ConnectorDefinitionRuntimeResponse(BaseModel):
         cls,
         definition: ConnectorDefinition,
         registry: ConnectorRegistry,
-    ) -> "ConnectorDefinitionRuntimeResponse":
+    ) -> ConnectorDefinitionRuntimeResponse:
         return cls(
             id=definition.id,
             connector_type=definition.connector_type,
@@ -90,7 +88,7 @@ class ConnectorRunRuntimeResponse(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_orm_model(cls, run: ConnectorRun) -> "ConnectorRunRuntimeResponse":
+    def from_orm_model(cls, run: ConnectorRun) -> ConnectorRunRuntimeResponse:
         return cls(
             id=run.id,
             connector_instance_id=run.connector_instance_id,
@@ -141,7 +139,7 @@ class SourceUpdate(BaseModel):
     enabled: bool | None = None
 
     @model_validator(mode="after")
-    def reject_invalid_nulls(self) -> "SourceUpdate":
+    def reject_invalid_nulls(self) -> SourceUpdate:
         for name in ("name", "config", "enabled"):
             if name in self.model_fields_set and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
@@ -201,7 +199,7 @@ class RawSignalResponse(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_orm_model(cls, signal: RawSignalRecord) -> "RawSignalResponse":
+    def from_orm_model(cls, signal: RawSignalRecord) -> RawSignalResponse:
         return cls.model_validate(signal, from_attributes=True)
 
 
@@ -237,7 +235,7 @@ class CollectionBudgetUpdate(BaseModel):
     enabled: bool | None = None
 
     @model_validator(mode="after")
-    def reject_explicit_nulls(self) -> "CollectionBudgetUpdate":
+    def reject_explicit_nulls(self) -> CollectionBudgetUpdate:
         for name in self.model_fields_set:
             if getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null")
