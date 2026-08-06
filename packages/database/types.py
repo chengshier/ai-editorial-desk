@@ -11,18 +11,21 @@ from sqlalchemy.types import TypeDecorator
 
 EnumT = TypeVar("EnumT", bound=StrEnum)
 
-SENSITIVE_CONTEXT_KEYS = frozenset(
+SENSITIVE_CONTEXT_KEY_NAMES = frozenset(
     {
-        "api_key",
         "apikey",
         "authorization",
+        "clientsecret",
         "cookie",
-        "credentials",
+        "credential",
         "password",
-        "proxy_authorization",
+        "proxyauthorization",
+        "refreshtoken",
         "secret",
-        "set_cookie",
+        "session",
+        "setcookie",
         "token",
+        "accesstoken",
     }
 )
 REDACTED_VALUE = "[REDACTED]"
@@ -57,18 +60,28 @@ class UTCDateTime(TypeDecorator[datetime]):
         return value.astimezone(UTC)
 
 
-def _normalized_key(key: str) -> str:
-    return key.strip().casefold().replace("-", "_").replace(" ", "_")
+def normalized_sensitive_key(key: str) -> str:
+    """Normalize common case, separator and header-name variants."""
+
+    return "".join(character for character in key.casefold() if character.isalnum())
+
+
+def is_sensitive_key(key: str) -> bool:
+    """Return whether a key likely contains a credential or authentication secret."""
+
+    normalized = normalized_sensitive_key(key)
+    return any(
+        normalized == marker or normalized.startswith(marker) or normalized.endswith(marker)
+        for marker in SENSITIVE_CONTEXT_KEY_NAMES
+    )
 
 
 def sanitize_context(value: Any) -> Any:
-    """Recursively redact common credential/header keys before JSONB persistence."""
+    """Recursively redact credential-like values before JSONB persistence."""
 
     if isinstance(value, Mapping):
         return {
-            str(key): REDACTED_VALUE
-            if _normalized_key(str(key)) in SENSITIVE_CONTEXT_KEYS
-            else sanitize_context(item)
+            str(key): REDACTED_VALUE if is_sensitive_key(str(key)) else sanitize_context(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -92,7 +105,7 @@ class SanitizedJSONB(TypeDecorator[dict[str, Any]]):
             return None
         sanitized = sanitize_context(value)
         if not isinstance(sanitized, dict):
-            raise TypeError("risk context must be a JSON object")
+            raise TypeError("sanitized JSONB value must be a JSON object")
         return sanitized
 
 
