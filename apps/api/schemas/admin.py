@@ -5,7 +5,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.database.models import (
-    ConnectorDefinition,
     ConnectorInstance,
     ConnectorRun,
     ConnectorRunStatus,
