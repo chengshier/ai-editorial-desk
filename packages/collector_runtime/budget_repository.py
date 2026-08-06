@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 from datetime import date
 from uuid import UUID
 
@@ -41,7 +42,7 @@ class CollectionBudgetRepository:
         scope_type: str | None,
         enabled: bool | None,
     ) -> Page[CollectionBudget]:
-        filters: list[ColumnElement[bool]] = []
+        filters: builtins.list[ColumnElement[bool]] = []
         if scope_type is not None:
             filters.append(CollectionBudget.scope_type == scope_type)
         if enabled is not None:
@@ -62,7 +63,7 @@ class CollectionBudgetRepository:
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
-        items = list((await self.session.scalars(statement)).all())
+        items = builtins.list((await self.session.scalars(statement)).all())
         return Page(items=items, page=page, page_size=page_size, total=total)
 
     async def applicable(
@@ -72,8 +73,8 @@ class CollectionBudgetRepository:
         connector_instance_id: UUID,
         platform_account_id: UUID | None,
         source_id: UUID,
-    ) -> list[CollectionBudget]:
-        clauses: list[ColumnElement[bool]] = [
+    ) -> builtins.list[CollectionBudget]:
+        clauses: builtins.list[ColumnElement[bool]] = [
             (CollectionBudget.scope_type == "platform")
             & (CollectionBudget.scope_key == platform),
             (CollectionBudget.scope_type == "connector")
@@ -91,7 +92,7 @@ class CollectionBudgetRepository:
             .where(CollectionBudget.enabled.is_(True), or_(*clauses))
             .order_by(CollectionBudget.id)
         )
-        return list((await self.session.scalars(statement)).all())
+        return builtins.list((await self.session.scalars(statement)).all())
 
     async def ensure_default(
         self,
