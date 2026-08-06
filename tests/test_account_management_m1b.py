@@ -121,17 +121,6 @@ async def test_same_references_are_idempotent_and_keep_updated_by(db_session) ->
     account = await _account(db_session)
     account_id = account.id
     original_updated_by = account.updated_by
-    before_count = int(
-        await db_session.scalar(
-            select(func.count())
-            .select_from(ConfigurationChangeLog)
-            .where(
-                ConfigurationChangeLog.entity_id == account_id,
-                ConfigurationChangeLog.action == "update",
-            )
-        )
-        or 0
-    )
 
     updated = await PlatformAccountService(db_session).update(
         account_id=account_id,
@@ -142,7 +131,7 @@ async def test_same_references_are_idempotent_and_keep_updated_by(db_session) ->
         actor="noop-editor",
     )
 
-    after_count = int(
+    update_count = int(
         await db_session.scalar(
             select(func.count())
             .select_from(ConfigurationChangeLog)
@@ -154,7 +143,7 @@ async def test_same_references_are_idempotent_and_keep_updated_by(db_session) ->
         or 0
     )
     assert updated.updated_by == original_updated_by
-    assert before_count == after_count == 0
+    assert update_count == 0
 
 
 @pytest.mark.usefixtures("clean_database")
