@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Add M1-C sources, raw signals, budgets, and collector runtime fields.
 
 Revision ID: 20260806_0003
