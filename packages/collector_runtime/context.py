@@ -33,3 +33,4 @@ class PreflightContext:
     definition: ConnectorDefinition
     source: Source
     account: PlatformAccount | None
+    runtime_context: object | None = None
