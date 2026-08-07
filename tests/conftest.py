@@ -12,8 +12,14 @@ os.environ.setdefault(
     "DATABASE_URL",
     "postgresql+asyncpg://ai_editorial:ai_editorial_test@127.0.0.1:55432/ai_editorial_test",
 )
-os.environ.setdefault("APP_SECRET_KEY", "test-only-secret-key-that-is-at-least-32-characters")
-os.environ.setdefault("APP_ADMIN_TOKEN", "test-only-admin-token-at-least-24-characters")
+os.environ.setdefault(
+    "APP_SECRET_KEY",
+    "test-only-secret-key-that-is-at-least-32-characters",
+)
+os.environ.setdefault(
+    "APP_ADMIN_TOKEN",
+    "test-only-admin-token-at-least-24-characters",
+)
 
 from packages.database.session import (  # noqa: E402
     dispose_database,
@@ -27,6 +33,7 @@ TABLES_IN_DELETE_ORDER = (
     "scheduler_instances",
     "connector_validation_records",
     "configuration_change_logs",
+    "raw_signal_comments",
     "raw_signals",
     "collection_budget_usage",
     "collection_budgets",
@@ -51,7 +58,9 @@ def migrated_database() -> Iterator[None]:
 async def clean_database(migrated_database: None) -> AsyncIterator[None]:
     del migrated_database
     async with get_async_engine().begin() as connection:
-        await connection.execute(text(f"TRUNCATE {', '.join(TABLES_IN_DELETE_ORDER)} CASCADE"))
+        await connection.execute(
+            text(f"TRUNCATE {', '.join(TABLES_IN_DELETE_ORDER)} CASCADE")
+        )
     yield
     await dispose_database()
 
