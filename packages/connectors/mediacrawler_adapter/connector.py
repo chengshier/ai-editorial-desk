@@ -220,18 +220,14 @@ class MediaCrawlerConnector(BaseConnector):
         try:
             return MediaCrawlerCheckpoint.model_validate(raw)
         except ValidationError:
-            cursor = (
-                raw.get("cursor")
-                if isinstance(raw.get("cursor"), dict)
-                else None
-            )
+            cursor_value = raw.get("cursor")
+            cursor = cursor_value if isinstance(cursor_value, dict) else None
             page_value = raw.get("page")
             if page_value is None and cursor is not None:
                 page_value = cursor.get("page")
-            metadata = (
-                raw.get("metadata")
-                if isinstance(raw.get("metadata"), dict)
-                else {}
+            metadata_value = raw.get("metadata")
+            metadata: dict[str, Any] = (
+                metadata_value if isinstance(metadata_value, dict) else {}
             )
             return MediaCrawlerCheckpoint(
                 platform=platform,
