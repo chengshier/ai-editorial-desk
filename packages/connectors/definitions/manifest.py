@@ -8,6 +8,8 @@ from packages.connectors.mediacrawler_adapter.platforms.specs import (
     build_ui_schema,
 )
 
+M2D_DEFAULT_ENABLED_PLATFORMS = frozenset({"weibo", "bilibili", "zhihu"})
+
 
 @dataclass(frozen=True, slots=True)
 class ConnectorDefinitionManifest:
@@ -47,6 +49,7 @@ def _mediacrawler_definition(platform: str) -> ConnectorDefinitionManifest:
         config_schema=build_config_schema(spec),
         ui_schema=build_ui_schema(spec),
         implementation_version=M2C_IMPLEMENTATION_VERSION,
+        is_enabled_default=spec.platform in M2D_DEFAULT_ENABLED_PLATFORMS,
     )
 
 
