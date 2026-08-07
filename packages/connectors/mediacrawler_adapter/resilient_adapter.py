@@ -36,7 +36,17 @@ class MediaCrawlerResilienceAdapter(MediaCrawlerAdapter):
         return {**base, "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION}
 
     async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
-        envelope = await self.runner.run(invocation)
+        try:
+            envelope = await self.runner.run(invocation)
+        except MediaCrawlerAdapterError as exc:
+            if exc.is_risk:
+                raise to_platform_risk_error(
+                    exc,
+                    platform=invocation.platform.value,
+                    account_ref=invocation.account_ref,
+                ) from exc
+            raise
+
         if envelope.protocol_version != MEDIACRAWLER_PROTOCOL_VERSION:
             raise ConnectorFetchError(
                 "PROTOCOL_VERSION_MISMATCH",
