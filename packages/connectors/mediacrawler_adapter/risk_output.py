@@ -9,7 +9,12 @@ from packages.connectors.mediacrawler_adapter.protocol import (
 )
 
 _CRITICAL_CODES = frozenset(
-    {"ACCOUNT_RESTRICTED", "ACCOUNT_ABNORMAL", "AUTOMATION_DETECTED", "CAPTCHA_REQUIRED"}
+    {
+        "ACCOUNT_RESTRICTED",
+        "ACCOUNT_ABNORMAL",
+        "AUTOMATION_DETECTED",
+        "CAPTCHA_REQUIRED",
+    }
 )
 _RISK_CODES = frozenset(
     {
@@ -24,8 +29,19 @@ _RISK_CODES = frozenset(
     }
 )
 _TECHNICAL_RETRY_CODES = frozenset(
-    {"SUBPROCESS_TIMEOUT", "NETWORK_TIMEOUT", "DNS_ERROR", "BROWSER_DISCONNECTED"}
+    {
+        "SUBPROCESS_TIMEOUT",
+        "NETWORK_TIMEOUT",
+        "DNS_ERROR",
+        "BROWSER_DISCONNECTED",
+    }
 )
+_SOURCE_CODE_BY_STANDARD = {
+    "PERMISSION_DENIED": "403",
+    "AUTOMATION_DETECTED": "406",
+    "RATE_LIMITED": "429",
+    "ACCOUNT_ABNORMAL": "-104",
+}
 
 
 def is_platform_risk_code(code: str) -> bool:
@@ -33,7 +49,7 @@ def is_platform_risk_code(code: str) -> bool:
 
 
 def is_technical_retry_error(error: ConnectorFetchError) -> bool:
-    return error.retryable and error.code in _TECHNICAL_RETRY_CODES
+    return error.code in _TECHNICAL_RETRY_CODES
 
 
 def risk_signal_from_error(
@@ -45,21 +61,22 @@ def risk_signal_from_error(
 ) -> PlatformRiskSignal:
     code = error.code
     manual = is_platform_risk_code(code)
+    if isinstance(error, MediaCrawlerAdapterError):
+        manual = error.is_risk
     if code in _CRITICAL_CODES:
         severity = MediaCrawlerRiskSeverity.CRITICAL
     elif manual:
         severity = MediaCrawlerRiskSeverity.ERROR
     else:
         severity = MediaCrawlerRiskSeverity.WARNING
-    if isinstance(error, MediaCrawlerAdapterError):
-        manual = error.is_risk
+    retryable = is_technical_retry_error(error) and not manual
     return PlatformRiskSignal(
         platform=platform,
-        source_error_code=source_error_code,
+        source_error_code=source_error_code or _SOURCE_CODE_BY_STANDARD.get(code),
         standard_error_code=code,
         severity=severity,
-        retryable=is_technical_retry_error(error) and not manual,
-        action_hint="manual_review" if manual else ("limited_retry" if error.retryable else "stop"),
+        retryable=retryable,
+        action_hint="manual_review" if manual else ("limited_retry" if retryable else "stop"),
         requires_manual_review=manual,
         message=error.safe_message,
         checkpoint_safe_to_commit=checkpoint_safe_to_commit,
