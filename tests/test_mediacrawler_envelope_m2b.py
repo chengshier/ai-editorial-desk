@@ -11,7 +11,9 @@ from packages.connectors.mediacrawler_adapter.errors import (
 )
 from packages.connectors.mediacrawler_adapter.protocol import (
     MEDIACRAWLER_PROTOCOL_VERSION,
+    MediaCrawlerCheckpoint,
     MediaCrawlerCounters,
+    MediaCrawlerMode,
     MediaCrawlerPlatform,
     MediaCrawlerResultEnvelope,
     MediaCrawlerResultStatus,
@@ -27,7 +29,12 @@ def _envelope(items, comments):  # type: ignore[no-untyped-def]
         status=MediaCrawlerResultStatus.PARTIAL,
         items=items,
         comments=comments,
-        checkpoint={"cursor": "next"},
+        checkpoint=MediaCrawlerCheckpoint(
+            platform=MediaCrawlerPlatform.WEIBO,
+            mode=MediaCrawlerMode.SEARCH,
+            page=2,
+            cursor={"fixture": "next"},
+        ),
         counters=MediaCrawlerCounters(items=len(items), comments=len(comments)),
         warnings=[],
         risk_events=[],
@@ -39,7 +46,9 @@ def _envelope(items, comments):  # type: ignore[no-untyped-def]
 
 def _connector() -> MediaCrawlerConnector:
     return MediaCrawlerConnector(
-        adapter=SimpleNamespace(settings=SimpleNamespace(mediacrawler_timeout_seconds=30))  # type: ignore[arg-type]
+        adapter=SimpleNamespace(
+            settings=SimpleNamespace(mediacrawler_timeout_seconds=30)
+        )  # type: ignore[arg-type]
     )
 
 
