@@ -28,6 +28,7 @@ PINNED_SEARCH_RESULT_FLOORS: dict[str, int] = {
     "zhihu": 20,
     "weibo": 10,
 }
+BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH = True
 
 LOGIN_STATE_MARKERS: dict[str, tuple[str, ...]] = {
     "bilibili": ("SESSDATA", "DedeUserID"),
@@ -79,14 +80,22 @@ class SmokePreparationAudit:
 def audit_platform(platform: str) -> SmokePreparationAudit:
     if platform not in M2D_TARGET_PLATFORMS:
         raise SmokeSafetyError(f"{platform} is not an M2-D first-batch real-smoke platform")
-    floor = PINNED_SEARCH_RESULT_FLOORS[platform]
-    blockers = (
-        (
-            f"pinned MediaCrawler search returns at least {floor} results per first page, "
+    pinned_floor = PINNED_SEARCH_RESULT_FLOORS[platform]
+    low_volume_ready = (
+        platform == "bilibili" and BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH
+    ) or pinned_floor <= MAX_SMOKE_ITEMS
+    effective_floor = 1 if low_volume_ready else pinned_floor
+    blockers: list[str] = []
+    if not low_volume_ready:
+        blockers.append(
+            f"pinned MediaCrawler search returns at least {pinned_floor} results per first page, "
             f"which exceeds the M2-D limit of {MAX_SMOKE_ITEMS}"
-        ),
-        "real smoke requires a dedicated pre-authenticated low-value test account",
-        "real smoke requires a stable visible browser profile controlled by the operator",
+        )
+    blockers.extend(
+        (
+            "real smoke requires a dedicated pre-authenticated low-value test account",
+            "real smoke requires a stable visible browser profile controlled by the operator",
+        )
     )
     return SmokePreparationAudit(
         platform=platform,
@@ -100,9 +109,9 @@ def audit_platform(platform: str) -> SmokePreparationAudit:
         max_items=MAX_SMOKE_ITEMS,
         max_comments_per_content=MAX_SMOKE_COMMENTS,
         subcomments=False,
-        search_result_floor=floor,
-        search_low_volume_ready=floor <= MAX_SMOKE_ITEMS,
-        blockers=blockers,
+        search_result_floor=effective_floor,
+        search_low_volume_ready=low_volume_ready,
+        blockers=tuple(blockers),
     )
 
 
@@ -186,6 +195,7 @@ def build_smoke_registry(settings: Settings | None = None) -> ConnectorRegistry:
 
 
 __all__ = [
+    "BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH",
     "LOGIN_STATE_MARKERS",
     "M2D_DEFERRED_PLATFORMS",
     "M2D_TARGET_PLATFORMS",
