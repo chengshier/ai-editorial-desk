@@ -51,7 +51,10 @@ async def list_schedules(
         page=page, page_size=page_size, enabled=enabled, source_id=source_id
     )
     return SchedulePage(
-        items=[ScheduleResponse.model_validate(item, from_attributes=True) for item in result.items],
+        items=[
+            ScheduleResponse.model_validate(item, from_attributes=True)
+            for item in result.items
+        ],
         page=result.page,
         page_size=result.page_size,
         total=result.total,
