@@ -1,0 +1,6 @@
+{
+  "item": {"note_id":"tb-1","title":"贴吧 fixture 标题","desc":"贴吧 fixture 正文","note_url":"https://tieba.baidu.com/p/tb-1","publish_time":"2026-08-07 16:00:00","creator_hash":"tb-author-hash","user_nickname":"测***户","tieba_name":"AI吧","tieba_link":"https://tieba.baidu.com/f?kw=AI","total_replay_num":33,"total_replay_page":2,"source_keyword":"AI","session":"fixture-value-session"},
+  "optional_item": {"note_id":"tb-2","title":"贴吧可选字段测试","note_url":"https://tieba.baidu.com/p/tb-2","tieba_name":"AI吧","tieba_link":"https://tieba.baidu.com/f?kw=AI"},
+  "malformed_item": {"title":"missing id"},
+  "comment": {"comment_id":"tbc-1","parent_comment_id":"","content":"贴吧评论","creator_hash":"tb-commenter-hash","user_nickname":"评***者","publish_time":"2026-08-07 16:01:00","sub_comment_count":1,"note_id":"tb-1","note_url":"https://tieba.baidu.com/p/tb-1","tieba_id":"1","tieba_name":"AI吧","tieba_link":"https://tieba.baidu.com/f?kw=AI","cookie":"fixture-value-cookie"}
+}

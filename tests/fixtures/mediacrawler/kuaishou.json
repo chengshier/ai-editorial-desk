@@ -1,0 +1,6 @@
+{
+  "item": {"video_id":"ks-1","video_type":"1","title":"快手 fixture 文案","desc":"快手 fixture 文案","create_time":1786086000000,"creator_hash":"ks-author-hash","nickname":"测***户","liked_count":"100","viewd_count":"1.2万","video_url":"https://www.kuaishou.com/short-video/ks-1","video_cover_url":"https://p.example.invalid/ks-cover.jpg","video_play_url":"https://v.example.invalid/ks.mp4","source_keyword":"AI","api_key":"fixture-value-api"},
+  "optional_item": {"video_id":"ks-2","video_url":"https://www.kuaishou.com/short-video/ks-2"},
+  "malformed_item": {"title":"missing id"},
+  "comment": {"comment_id":"ksc-1","create_time":1786086010000,"video_id":"ks-1","content":"快手评论","creator_hash":"ks-commenter-hash","nickname":"评***者","sub_comment_count":"0","password":"fixture-value-password"}
+}

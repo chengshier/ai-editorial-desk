@@ -1,0 +1,6 @@
+{
+  "item": {"content_id":"zh-1","content_type":"answer","content_text":"知乎回答正文","content_url":"https://www.zhihu.com/question/100/answer/zh-1","question_id":"100","title":"知乎 fixture 问题","desc":"回答摘要","created_time":1786086000,"updated_time":1786087000,"voteup_count":88,"comment_count":9,"creator_hash":"zh-author-hash","user_nickname":"测***户","cookie":"fixture-value-cookie","token":"fixture-value-token","authorization":"fixture-value-auth","api_key":"fixture-value-api","session":"fixture-value-session","password":"fixture-value-password"},
+  "optional_item": {"content_id":"zh-2","content_type":"article","content_url":"https://zhuanlan.zhihu.com/p/zh-2","content_text":""},
+  "malformed_item": {"content_type":"answer","content_text":"missing id"},
+  "comment": {"comment_id":"zhc-1","parent_comment_id":"","content":"知乎评论","publish_time":1786086010,"sub_comment_count":0,"like_count":7,"dislike_count":0,"content_id":"zh-1","content_type":"answer","creator_hash":"zh-commenter-hash","user_nickname":"评***者","authorization":"fixture-value-comment-auth"}
+}

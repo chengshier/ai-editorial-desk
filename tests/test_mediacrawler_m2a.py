@@ -63,9 +63,15 @@ def _envelope(invocation: MediaCrawlerInvocation, **overrides):  # type: ignore[
         "status": MediaCrawlerResultStatus.SUCCESS,
         "items": [
             {
-                "external_id": "post-1",
-                "url": "https://example.com/post/1",
-                "title": "fixture",
+                "note_id": "post-1",
+                "content": "fixture",
+                "create_time": 1786086000,
+                "liked_count": "1",
+                "comments_count": "2",
+                "shared_count": "3",
+                "note_url": "https://m.weibo.cn/detail/post-1",
+                "creator_hash": "creator-hash",
+                "nickname": "测***户",
             }
         ],
         "comments": [],
@@ -113,7 +119,7 @@ def test_result_loader_rejects_malformed_version_missing_and_oversized(tmp_path:
         expected_platform=invocation.platform.value,
         max_bytes=1024 * 1024,
     )
-    assert loaded.items[0]["external_id"] == "post-1"
+    assert loaded.items[0]["note_id"] == "post-1"
 
     result_path.write_text("{broken", encoding="utf-8")
     with pytest.raises(MediaCrawlerAdapterError) as malformed:
@@ -220,11 +226,12 @@ class FixtureRunner(MediaCrawlerSubprocessRunner):
         assert "--enable_ip_proxy" in command
         assert command[command.index("--enable_ip_proxy") + 1] == "false"
         if self.write_result:
+
             def write() -> None:
                 path = data_root / "wb" / "jsonl"
                 path.mkdir(parents=True, exist_ok=True)
                 content = "{broken\n" if self.malformed else (
-                    '{"external_id":"post-1","url":"https://example.com/post/1",'
+                    '{"note_id":"post-1","note_url":"https://m.weibo.cn/detail/post-1",'
                     '"cookie":"drop"}\n'
                 )
                 (path / "search_contents_fixture.jsonl").write_text(
@@ -252,7 +259,7 @@ async def test_subprocess_success_and_result_sanitization(tmp_path: Path) -> Non
     )
     result = await runner.run(invocation)
     assert result.status is MediaCrawlerResultStatus.SUCCESS
-    assert result.items[0]["external_id"] == "post-1"
+    assert result.items[0]["note_id"] == "post-1"
     assert "cookie" not in result.items[0]
 
 

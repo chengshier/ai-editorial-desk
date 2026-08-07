@@ -1,0 +1,6 @@
+{
+  "item": {"video_id":"BV1fixture","video_type":"video","title":"B站 fixture 标题","desc":"B站 fixture 简介","create_time":1786086000,"creator_hash":"bili-author-hash","nickname":"测***户","liked_count":"120","disliked_count":"2","video_play_count":"1.2万","video_favorite_count":"30","video_share_count":"8","video_coin_count":"10","video_danmaku":"40","video_comment":"20","video_url":"https://www.bilibili.com/video/BV1fixture","video_cover_url":"https://i.example.invalid/bili-cover.jpg","source_keyword":"AI","cookie":"cookie-secret","token":"token-secret","authorization":"Bearer secret","api_key":"api-secret","session":"session-secret","password":"password-secret"},
+  "optional_item": {"video_id":"BV2fixture","video_url":"https://www.bilibili.com/video/BV2fixture"},
+  "malformed_item": {"title":"missing id"},
+  "comment": {"comment_id":"bc-1","parent_comment_id":"0","create_time":1786086010,"video_id":"BV1fixture","content":"B站评论","creator_hash":"bili-commenter-hash","nickname":"评***者","sub_comment_count":"0","like_count":5,"token":"comment-token-secret"}
+}

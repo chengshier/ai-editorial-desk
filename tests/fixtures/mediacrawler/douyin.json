@@ -1,0 +1,6 @@
+{
+  "item": {"aweme_id":"dy-1","aweme_type":"0","title":"抖音 fixture 文案","desc":"抖音 fixture 文案","create_time":1786086000,"creator_hash":"dy-author-hash","nickname":"测***户","liked_count":"120","collected_count":"20","comment_count":"8","share_count":"3","aweme_url":"https://www.douyin.com/video/dy-1","cover_url":"https://p.example.invalid/dy-cover.jpg","video_download_url":"https://v.example.invalid/dy.mp4","music_download_url":"https://a.example.invalid/dy.mp3","note_download_url":"https://p.example.invalid/dy-1.jpg,https://p.example.invalid/dy-2.jpg","token":"fixture-value-token","cookie":"fixture-value-cookie"},
+  "optional_item": {"aweme_id":"dy-2","aweme_url":"https://www.douyin.com/video/dy-2"},
+  "malformed_item": {"desc":"missing id"},
+  "comment": {"comment_id":"dyc-1","create_time":1786086010,"aweme_id":"dy-1","content":"抖音评论","creator_hash":"dy-commenter-hash","nickname":"评***者","sub_comment_count":"0","like_count":4,"parent_comment_id":"0","pictures":"https://p.example.invalid/comment.jpg","session":"fixture-value-session"}
+}

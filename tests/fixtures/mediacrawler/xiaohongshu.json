@@ -1,0 +1,6 @@
+{
+  "item": {"note_id":"xhs-1","type":"normal","title":"小红书 fixture 标题","desc":"小红书 fixture 正文","video_url":"","time":1786086000000,"last_update_time":1786087000000,"creator_hash":"xhs-author-hash","nickname":"测***户","liked_count":"66","collected_count":"21","comment_count":"9","share_count":"2","image_list":"https://sns.example.invalid/xhs-1.jpg,https://sns.example.invalid/xhs-2.jpg","tag_list":"AI,编辑","note_url":"https://www.xiaohongshu.com/explore/xhs-1?xsec_token=fixture-value-xsec&xsec_source=pc_search","source_keyword":"AI","xsec_token":"fixture-value-xsec","authorization":"fixture-value-auth"},
+  "optional_item": {"note_id":"xhs-2","type":"normal","title":"","desc":"","note_url":"https://www.xiaohongshu.com/explore/xhs-2?xsec_token=fixture-value-xsec"},
+  "malformed_item": {"title":"missing id"},
+  "comment": {"comment_id":"xhsc-1","create_time":1786086010000,"note_id":"xhs-1","content":"小红书评论","creator_hash":"xhs-commenter-hash","nickname":"评***者","sub_comment_count":0,"pictures":"https://sns.example.invalid/comment.jpg","parent_comment_id":"","like_count":3,"token":"fixture-value-token"}
+}
