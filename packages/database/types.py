@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, TypeVar
+from typing import Any, TypeVar, overload
 
 from sqlalchemy import DateTime
 from sqlalchemy import Enum as SqlEnum
@@ -82,6 +82,22 @@ def is_sensitive_key(key: str) -> bool:
         normalized == marker or normalized.startswith(marker) or normalized.endswith(marker)
         for marker in SENSITIVE_CONTEXT_KEY_NAMES
     )
+
+
+@overload
+def sanitize_context(value: dict[str, Any]) -> dict[str, Any]: ...
+
+
+@overload
+def sanitize_context(value: list[Any]) -> list[Any]: ...
+
+
+@overload
+def sanitize_context(value: tuple[Any, ...]) -> list[Any]: ...
+
+
+@overload
+def sanitize_context(value: Any) -> Any: ...
 
 
 def sanitize_context(value: Any) -> Any:
