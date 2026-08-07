@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import func, select
 
 from packages.collector_runtime import CollectionTask, CollectorRuntime, TriggerType
+from packages.collector_runtime.budgets import CollectionBudgetService
 from packages.connector_management.exceptions import VersionConflictError
 from packages.connector_management.services import (
     ConnectorDefinitionSyncService,
@@ -33,6 +34,7 @@ from packages.database.models import (
     ConnectorRunStatus,
     PlatformAccount,
     PlatformRiskEvent,
+    RawSignalCommentRecord,
     RawSignalRecord,
 )
 from packages.database.session import get_async_sessionmaker
@@ -253,6 +255,21 @@ async def test_comment_mapping_partial_keeps_main_signal_but_not_checkpoint(db_s
         db_session,
         include_comments=True,
     )
+    await CollectionBudgetService(db_session).create(
+        scope_type="connector",
+        scope_key=str(instance_id),
+        values={
+            "max_runs_per_day": 2,
+            "max_items_per_run": 1,
+            "max_items_per_day": 2,
+            "max_comments_per_run": 5,
+            "max_comments_per_day": 5,
+            "max_concurrency": 1,
+            "timezone": "UTC",
+            "enabled": True,
+        },
+        actor="m2c-tester",
+    )
     adapter = ResumeAdapter(
         [
             {
@@ -268,9 +285,23 @@ async def test_comment_mapping_partial_keeps_main_signal_but_not_checkpoint(db_s
             }
         ]
     )
-    result = await _runtime(adapter).execute(_task(instance_id, source_id, account_id))
+    result = await _runtime(adapter).execute(
+        _task(instance_id, source_id, account_id, requested_limit=1)
+    )
     assert result.status is ConnectorRunStatus.PARTIAL
     assert result.inserted_count == 1
+    assert int(
+        await db_session.scalar(
+            select(func.count())
+            .select_from(RawSignalRecord)
+            .where(RawSignalRecord.source_id == source_id)
+        )
+        or 0
+    ) == 1
+    assert int(
+        await db_session.scalar(select(func.count()).select_from(RawSignalCommentRecord))
+        or 0
+    ) == 0
     checkpoint = await db_session.scalar(
         select(ConnectorCheckpoint).where(
             ConnectorCheckpoint.connector_instance_id == instance_id
