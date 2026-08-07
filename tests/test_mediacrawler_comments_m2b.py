@@ -20,7 +20,6 @@ from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerCounters,
     MediaCrawlerInvocation,
     MediaCrawlerMode,
-    MediaCrawlerPlatform,
     MediaCrawlerResultEnvelope,
     MediaCrawlerResultStatus,
 )
