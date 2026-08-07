@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from packages.collector_runtime import CollectionTask, CollectorRuntime, TriggerType
 from packages.database.models import (
-    CollectionSchedule,
     ConnectorRunStatus,
     ScheduleTriggerStatus,
     Source,
