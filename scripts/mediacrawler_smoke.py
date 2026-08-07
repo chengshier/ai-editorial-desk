@@ -112,9 +112,17 @@ async def _execute(args: argparse.Namespace) -> int:
         definition = await session.get(ConnectorDefinition, instance.definition_id)
         if definition is None:
             raise SmokeSafetyError("smoke Connector Definition does not exist")
-        if definition.connector_type != "mediacrawler" or definition.platform != args.platform:
-            raise SmokeSafetyError("smoke platform does not match the selected Connector Definition")
-        if source.connector_instance_id != instance.id or account.connector_instance_id != instance.id:
+        if (
+            definition.connector_type != "mediacrawler"
+            or definition.platform != args.platform
+        ):
+            raise SmokeSafetyError(
+                "smoke platform does not match the selected Connector Definition"
+            )
+        if (
+            source.connector_instance_id != instance.id
+            or account.connector_instance_id != instance.id
+        ):
             raise SmokeSafetyError("smoke source/account must belong to the selected instance")
         if source.mode != args.mode:
             raise SmokeSafetyError("smoke mode must match the configured Source mode")
@@ -122,7 +130,10 @@ async def _execute(args: argparse.Namespace) -> int:
             raise SmokeSafetyError("real smoke requires a stable browser_profile_ref")
 
         source_config = dict(source.config)
-        include_comments = bool(source_config.get("include_comments", False)) or args.mode == "comments"
+        include_comments = (
+            bool(source_config.get("include_comments", False))
+            or args.mode == "comments"
+        )
         raw_comment_limit = source_config.get("comment_limit", 0)
         comment_limit = raw_comment_limit if isinstance(raw_comment_limit, int) else 0
         include_subcomments = bool(source_config.get("include_subcomments", False))
@@ -198,9 +209,12 @@ async def _execute(args: argparse.Namespace) -> int:
 
 
 async def _run(args: argparse.Namespace) -> int:
-    if args.execute:
-        return await _execute(args)
-    return _audit(args.platform)
+    try:
+        if args.execute:
+            return await _execute(args)
+        return _audit(args.platform)
+    finally:
+        await dispose_database()
 
 
 def main() -> None:
@@ -210,8 +224,6 @@ def main() -> None:
     except SmokeSafetyError as exc:
         _print({"status": "blocked", "reason": str(exc), "real_network_started": False})
         raise SystemExit(2) from exc
-    finally:
-        asyncio.run(dispose_database())
 
 
 if __name__ == "__main__":
