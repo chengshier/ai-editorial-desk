@@ -46,11 +46,13 @@ class ConnectorCheckpointRepository:
         platform_account_id: UUID | None,
         mode: str,
         scope_key: str,
+        source_id: UUID | None = None,
     ) -> ConnectorCheckpoint:
         statement = (
             insert(ConnectorCheckpoint)
             .values(
                 connector_instance_id=connector_instance_id,
+                source_id=source_id,
                 platform_account_id=platform_account_id,
                 mode=mode,
                 scope_key=scope_key,
@@ -69,6 +71,9 @@ class ConnectorCheckpointRepository:
         )
         if checkpoint is None:
             raise RuntimeError("checkpoint insert did not produce a row")
+        if checkpoint.source_id is None and source_id is not None:
+            checkpoint.source_id = source_id
+            await self.session.flush()
         return checkpoint
 
     async def optimistic_update(

@@ -46,6 +46,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     requested_items=task.requested_limit,
                     actor=task.triggered_by,
                 )
+            budget_metadata = self.budget_metadata(reservations)
             async with self.session_factory() as session:
                 await ConnectorRunService(session).claim(run_id=run.id)
             claimed = True
@@ -129,6 +130,11 @@ class CollectorRuntime(CollectorRuntimeSupport):
             metadata = {
                 **collection.metadata,
                 "task": task.to_dict(),
+                "budget": {
+                    "reservations": budget_metadata,
+                    "actual_items": collected_count,
+                    "completed": True,
+                },
                 "error_samples": [
                     {
                         "code": item.code,
@@ -147,7 +153,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     inserted_count=inserted_count,
                     duplicate_count=duplicate_count,
                     failed_count=failed_count,
-                    retry_count=0,
+                    retry_count=task.retry_count,
                     error_code=error_code,
                     error_message=error_message,
                     checkpoint_after=(
@@ -203,6 +209,14 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     platform=context.definition.platform,
                     error=exc,
                     actor=task.triggered_by,
+                    metadata={
+                        "task": task.to_dict(),
+                        "budget": {
+                            "reservations": self.budget_metadata(reservations),
+                            "actual_items": 0,
+                            "completed": True,
+                        },
+                    },
                 )
             await self.settle(reservations, actual_items=0, completed=True)
             async with self.session_factory() as session:
@@ -230,9 +244,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     run_id=run.id,
                     target_status=ConnectorRunStatus.CANCELLED,
                     failed_count=0,
+                    retry_count=task.retry_count,
                     error_code="budget_rejected",
                     error_message="采集预算不足，未启动网络请求",
-                    metadata={"task": task.to_dict()},
+                    metadata={"task": task.to_dict(), "budget": {"rejected": True}},
                 )
             raise
         except Exception as exc:
@@ -250,10 +265,17 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         inserted_count=inserted_count,
                         duplicate_count=duplicate_count,
                         failed_count=1,
-                        retry_count=0,
+                        retry_count=task.retry_count,
                         error_code=code,
                         error_message=self.safe_error_message(exc),
-                        metadata={"task": task.to_dict()},
+                        metadata={
+                            "task": task.to_dict(),
+                            "budget": {
+                                "reservations": self.budget_metadata(reservations),
+                                "actual_items": collected_count,
+                                "completed": True,
+                            },
+                        },
                     )
                 await self.settle(
                     reservations,
@@ -281,3 +303,14 @@ class CollectorRuntime(CollectorRuntimeSupport):
             if reservations:
                 await self.settle(reservations, actual_items=0, completed=False)
             raise
+
+    @staticmethod
+    def budget_metadata(reservations: tuple[BudgetReservation, ...]) -> list[dict[str, object]]:
+        return [
+            {
+                "budget_id": str(item.budget_id),
+                "usage_date": item.usage_date,
+                "reserved_items": item.reserved_items,
+            }
+            for item in reservations
+        ]

@@ -11,7 +11,11 @@ from packages.connector_management.exceptions import (
 )
 from packages.connector_management.repositories import ConnectorRunRepository, Page
 from packages.connector_management.validation import validate_no_sensitive_fields
-from packages.database.models import ConnectorRun, ConnectorRunStatus
+from packages.database.models import (
+    ConnectorRun,
+    ConnectorRunStatus,
+    ConnectorRunTriggerType,
+)
 from packages.database.types import sanitize_context
 
 TERMINAL_RUN_STATUSES = frozenset(
@@ -51,21 +55,24 @@ class ConnectorRunService:
         source_id: UUID | None = None,
         checkpoint_before: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        trigger_type: ConnectorRunTriggerType = ConnectorRunTriggerType.MANUAL,
+        parent_run_id: UUID | None = None,
+        retry_count: int = 0,
     ) -> ConnectorRun:
-        if requested_limit < 0:
-            raise BusinessValidationError("requested_limit 不能为负数")
-        validate_no_sensitive_fields(
-            checkpoint_before or {},
-            field_name="checkpoint_before",
-        )
+        if requested_limit < 0 or retry_count < 0:
+            raise BusinessValidationError("requested_limit 和 retry_count 不能为负数")
+        validate_no_sensitive_fields(checkpoint_before or {}, field_name="checkpoint_before")
         async with self.session.begin():
             run = ConnectorRun(
                 connector_instance_id=connector_instance_id,
                 source_id=source_id,
                 platform_account_id=platform_account_id,
+                parent_run_id=parent_run_id,
+                trigger_type=trigger_type,
                 mode=mode,
                 status=ConnectorRunStatus.PENDING,
                 requested_limit=requested_limit,
+                retry_count=retry_count,
                 checkpoint_before=checkpoint_before,
                 run_metadata=sanitize_context(metadata or {}),
             )
@@ -103,12 +110,13 @@ class ConnectorRunService:
         )
 
     async def claim(self, *, run_id: UUID) -> ConnectorRun:
+        now = datetime.now(UTC)
         async with self.session.begin():
             run = await self.repository.atomic_transition(
                 run_id=run_id,
                 expected_statuses=frozenset({ConnectorRunStatus.PENDING}),
                 target_status=ConnectorRunStatus.RUNNING,
-                values={"started_at": datetime.now(UTC)},
+                values={"started_at": now, "progress_updated_at": now},
             )
             if run is not None:
                 return run
@@ -133,10 +141,7 @@ class ConnectorRunService:
     ) -> ConnectorRun:
         if target_status not in TERMINAL_RUN_STATUSES:
             raise BusinessValidationError("finalize 只能写入终态")
-        validate_no_sensitive_fields(
-            checkpoint_after or {},
-            field_name="checkpoint_after",
-        )
+        validate_no_sensitive_fields(checkpoint_after or {}, field_name="checkpoint_after")
         effective_finished = finished_at or datetime.now(UTC)
         if effective_finished.tzinfo is None or effective_finished.utcoffset() is None:
             raise BusinessValidationError("finished_at 必须包含时区")
@@ -149,10 +154,7 @@ class ConnectorRunService:
             existing = await self.repository.get(run_id)
             if existing is None:
                 raise ResourceNotFoundError("连接器运行记录不存在")
-            if (
-                existing.started_at is not None
-                and effective_finished < existing.started_at
-            ):
+            if existing.started_at is not None and effective_finished < existing.started_at:
                 raise BusinessValidationError("完成时间不能早于开始时间")
             counts = [
                 existing.collected_count if collected_count is None else collected_count,
@@ -169,6 +171,7 @@ class ConnectorRunService:
                 target_status=target_status,
                 values={
                     "finished_at": effective_finished,
+                    "progress_updated_at": effective_finished,
                     "collected_count": counts[0],
                     "inserted_count": counts[1],
                     "duplicate_count": counts[2],
@@ -217,13 +220,7 @@ class ConnectorRunService:
         failed_count: int = 0,
         metadata: dict[str, Any] | None = None,
     ) -> ConnectorRun:
-        counts = [
-            collected_count,
-            inserted_count,
-            duplicate_count,
-            failed_count,
-            retry_count,
-        ]
+        counts = [collected_count, inserted_count, duplicate_count, failed_count, retry_count]
         if any(value < 0 for value in counts):
             raise BusinessValidationError("Run 计数不能为负数")
         values: dict[str, Any] = {
@@ -232,14 +229,12 @@ class ConnectorRunService:
             "duplicate_count": duplicate_count,
             "failed_count": failed_count,
             "retry_count": retry_count,
+            "progress_updated_at": datetime.now(UTC),
         }
         if metadata is not None:
             values["run_metadata"] = sanitize_context(metadata)
         async with self.session.begin():
-            run = await self.repository.atomic_progress(
-                run_id=run_id,
-                values=values,
-            )
+            run = await self.repository.atomic_progress(run_id=run_id, values=values)
             if run is not None:
                 return run
             existing = await self.repository.get(run_id)
@@ -248,9 +243,7 @@ class ConnectorRunService:
             raise InvalidStateTransitionError("只有 RUNNING Run 可以更新进度")
 
     async def _raise_transition_error(
-        self,
-        run_id: UUID,
-        target_status: ConnectorRunStatus,
+        self, run_id: UUID, target_status: ConnectorRunStatus
     ) -> None:
         existing = await self.repository.get(run_id)
         if existing is None:

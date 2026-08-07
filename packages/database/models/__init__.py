@@ -7,7 +7,21 @@ from packages.database.models.connectors import (
     PlatformAccount,
 )
 from packages.database.models.risk import PlatformRiskEvent
-from packages.database.models.runs import ConnectorCheckpoint, ConnectorRun, ConnectorRunStatus
+from packages.database.models.runs import (
+    ConnectorCheckpoint,
+    ConnectorRun,
+    ConnectorRunStatus,
+    ConnectorRunTriggerType,
+)
+from packages.database.models.scheduling import (
+    CollectionSchedule,
+    CollectionScheduleTrigger,
+    ConnectorValidationRecord,
+    ConnectorValidationStatus,
+    SchedulerInstance,
+    ScheduleTriggerStatus,
+    ScheduleType,
+)
 from packages.database.models.signals import (
     CollectionBudget,
     CollectionBudgetUsage,
@@ -18,14 +32,22 @@ from packages.database.models.signals import (
 __all__ = [
     "CollectionBudget",
     "CollectionBudgetUsage",
+    "CollectionSchedule",
+    "CollectionScheduleTrigger",
     "ConfigurationChangeLog",
     "ConnectorCheckpoint",
     "ConnectorDefinition",
     "ConnectorInstance",
     "ConnectorRun",
     "ConnectorRunStatus",
+    "ConnectorRunTriggerType",
+    "ConnectorValidationRecord",
+    "ConnectorValidationStatus",
     "PlatformAccount",
     "PlatformRiskEvent",
     "RawSignalRecord",
+    "ScheduleTriggerStatus",
+    "SchedulerInstance",
+    "ScheduleType",
     "Source",
 ]

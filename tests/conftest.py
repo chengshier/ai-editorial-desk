@@ -22,6 +22,10 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "collection_schedule_triggers",
+    "collection_schedules",
+    "scheduler_instances",
+    "connector_validation_records",
     "configuration_change_logs",
     "raw_signals",
     "collection_budget_usage",

@@ -27,6 +27,7 @@ from packages.database.models import (
     ConnectorCheckpoint,
     ConnectorInstance,
     ConnectorRun,
+    ConnectorRunTriggerType,
     PlatformAccount,
     Source,
 )
@@ -89,30 +90,23 @@ class CollectorRuntimeSupport:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
             return PreflightContext(
-                instance=instance,
-                definition=definition,
-                source=source,
-                account=account,
+                instance=instance, definition=definition, source=source, account=account
             )
 
     async def load_checkpoint(
-        self,
-        task: CollectionTask,
-        context: PreflightContext,
+        self, task: CollectionTask, context: PreflightContext
     ) -> ConnectorCheckpoint | None:
         if not bool(context.definition.capabilities.get("supports_checkpoint")):
             return None
         async with self.session_factory() as session:
             checkpoint = await ConnectorCheckpointService(session).get_or_create(
                 connector_instance_id=context.instance.id,
+                source_id=context.source.id,
                 platform_account_id=task.platform_account_id,
                 mode=task.mode,
                 scope_key=context.source.scope_key,
             )
-        if (
-            task.checkpoint_version is not None
-            and checkpoint.version != task.checkpoint_version
-        ):
+        if task.checkpoint_version is not None and checkpoint.version != task.checkpoint_version:
             raise PreflightRejectedError("expected_checkpoint_version 不匹配")
         return checkpoint
 
@@ -130,11 +124,12 @@ class CollectorRuntimeSupport:
                 mode=task.mode,
                 requested_limit=task.requested_limit,
                 checkpoint_before=(
-                    dict(checkpoint.checkpoint_data)
-                    if checkpoint is not None
-                    else None
+                    dict(checkpoint.checkpoint_data) if checkpoint is not None else None
                 ),
                 metadata={"task": task.to_dict()},
+                trigger_type=ConnectorRunTriggerType(task.trigger_type.value),
+                parent_run_id=task.parent_run_id,
+                retry_count=task.retry_count,
             )
 
     async def advance_checkpoint(
@@ -157,9 +152,7 @@ class CollectorRuntimeSupport:
                 expected_version=expected_version,
                 cursor=None,
                 watermark=(
-                    last_published_at.isoformat()
-                    if last_published_at is not None
-                    else None
+                    last_published_at.isoformat() if last_published_at is not None else None
                 ),
                 last_external_id=last_external_id,
                 last_published_at=last_published_at,

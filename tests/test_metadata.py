@@ -16,6 +16,10 @@ EXPECTED_TABLES = {
     "raw_signals",
     "collection_budgets",
     "collection_budget_usage",
+    "collection_schedules",
+    "collection_schedule_triggers",
+    "scheduler_instances",
+    "connector_validation_records",
 }
 
 

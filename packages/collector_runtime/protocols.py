@@ -27,7 +27,9 @@ class CollectionTask:
     triggered_by: str
     created_at: datetime
     dry_run: bool = False
-    schema_version: str = "1.0"
+    parent_run_id: UUID | None = None
+    retry_count: int = 0
+    schema_version: str = "1.1"
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -41,6 +43,7 @@ class CollectionTask:
                 if self.platform_account_id is not None
                 else None
             ),
+            "parent_run_id": str(self.parent_run_id) if self.parent_run_id is not None else None,
             "trigger_type": self.trigger_type.value,
             "created_at": self.created_at.isoformat(),
         }

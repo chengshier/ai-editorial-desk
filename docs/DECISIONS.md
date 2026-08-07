@@ -92,3 +92,73 @@ RSS 与手工 URL 共享安全 HTTP 边界：
 - 不发送 Cookie、Authorization 或用户凭据；
 - 限制跳转、连接/读取时间、响应体大小和 Content-Type；
 - 错误响应不暴露内部网络、原始响应体或敏感请求头。
+
+## D-014 M1-D Scheduler 采用数据库持久化轮询
+
+M1-D Scheduler 采用 `asyncio + PostgreSQL` 轮询，而不是 Redis/Celery/APScheduler 内存 Job：
+
+- `collection_schedules` 保存调度配置与下一次运行时间；
+- `collection_schedule_triggers` 以 `(schedule_id, scheduled_for_at)` 唯一约束保存时间槽；
+- `scheduler_instances` 保存实例 heartbeat；
+- Scheduler 只生成现有 `CollectionTask` 并调用 `CollectorRuntime`，不能直接调用 Connector 绕过 Runtime；
+- Budget、Risk Guard、Run 原子领取、Checkpoint 和 RawSignal 幂等继续由现有 Runtime 负责。
+
+该设计优先满足单机/少量多实例的 M1 可靠性，不提前引入大规模 Worker 集群。
+
+## D-015 Scheduler Lease 与崩溃恢复
+
+同一 Schedule 的到期触发必须使用数据库条件更新取得 Lease，不能仅依赖进程 mutex。时间槽唯一约束是重复触发的数据库最终保护。
+
+Lease 过期允许其他 Scheduler 重新取得调度所有权；如果发现上一个时间槽已经进入 RUNNING 但执行 Lease 过期，不自动盲目重跑，而是暂停该调度并要求人工检查 stale Run。
+
+stale RUNNING Run 只提供识别、人工标记失败/取消和人工 retry。Retry 创建新的 Run，使用 `parent_run_id` / `retry_count` 保留关系，并重新经过 Budget、Risk Guard、Checkpoint 和 RawSignal 幂等；禁止无限自动 retry。
+
+## D-016 M1 国内热榜选择百度实时热榜
+
+M1-D 首个国内热榜选择百度官方实时热榜：
+
+- 官方公开页面：`https://top.baidu.com/board?tab=realtime`；
+- Connector 使用公开 JSON：`https://top.baidu.com/api/board?platform=wise&tab=realtime`；
+- 2026-08-07 开发验收时，公开页面可直接读取榜单，JSON 入口返回 `application/json`；
+- 不依赖账号登录、Cookie、验证码、签名破解、浏览器指纹或代理轮换；
+- 采集保持低频、小条数、明确 User-Agent、超时、响应大小和 Content-Type 限制；
+- 继续复用 SafeHTTPFetcher 的 DNS/Redirect SSRF 防护；
+- CI 只使用 fixture/mock，不连接该外部来源。
+
+公开可访问不被解释为永久授权保证。如果后续来源明确限制自动访问、出现验证码或平台风控，应立即停用并重新选择低风险公开来源，不实施绕过。
+
+## D-017 Connector Validation 必须与真实人工验收分离
+
+`registered`、`implemented`、`enabled`、`validated` 是四个独立状态。
+
+M1-D 使用 `connector_validation_records` 保存 NOT_TESTED / PASSED / FAILED / EXPIRED：
+
+- Definition 注册或 CI Mock 通过不能自动写 PASSED；
+- PASSED 必须由带 `X-Actor-ID` 的人工操作写入；
+- 服务端拒绝 CI/Mock 环境的 PASSED；
+- PASSED 必须声明 `real_smoke_test=true` 并绑定同一 Definition 下状态为 SUCCEEDED 的 Test/Manual Run ID；
+- 验真证据必须脱敏，不能保存 Cookie、Token、Authorization、API Key 等；
+- implementation_version 变化后旧结果按 EXPIRED 解释。
+
+实际外部 Smoke 仍由管理员以低量 Test Run / Manual Import 执行，继续受 Budget、Risk Guard、SSRF、Checkpoint 和幂等约束。
+
+## D-018 M1 Web 工作台仍是内部管理 MVP
+
+`apps/web` 使用 React + Vite + TypeScript，为 M1 提供连接器管理而不是最终编辑工作台：
+
+- Definitions、Instances、Sources、Schedules、Runs、Checkpoints、Accounts/Risk；
+- Instance/Source 的新增、编辑、启停/归档和 Test Run；
+- Instance Run Now、调度 pause/resume/run-now；
+- JSON Schema / UI Schema 驱动基础动态表单；
+- Checkpoint reset 明确作为高风险操作；
+- Admin Token 不硬编码进仓库，前端只在会话范围持有；
+- 写操作继续携带 Actor；
+- Web 不显示 credential_ref、browser_profile_ref、Cookie、Token、Authorization 或 API Key 原值。
+
+完整用户登录和 RBAC 不属于 M1。
+
+## D-019 M1 收口边界
+
+M1 完成后只进入 M2，不在 M1-D 中提前实现 Event、EventSignal、Embedding、pgvector 相似检索、事件聚类、人工合并/拆分、AI Gateway、AI Provider、AI 评分、证据提取或稿件生成。
+
+MediaCrawler 七个平台真实运行与五项增强同样没有在 M1-D 中提前执行。

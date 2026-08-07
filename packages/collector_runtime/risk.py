@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.collector_runtime.exceptions import PreflightRejectedError
@@ -15,6 +15,7 @@ from packages.database.models import (
     PlatformAccount,
     PlatformRiskEvent,
 )
+from packages.database.types import sanitize_context
 from packages.risk_guard.models import AccountStatus, PlatformRiskError, RiskAction
 
 
@@ -54,6 +55,7 @@ class RuntimeRiskGuard:
         platform: str,
         error: PlatformRiskError,
         actor: str,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         event = error.event
         now = datetime.now(UTC)
@@ -105,21 +107,18 @@ class RuntimeRiskGuard:
                             "risk_code": event.code,
                         },
                     )
-            await session.execute(
-                update(ConnectorRun)
-                .where(
-                    ConnectorRun.id == run_id,
-                    ConnectorRun.status == ConnectorRunStatus.RUNNING,
-                )
-                .values(
-                    status=ConnectorRunStatus.PAUSED_RISK,
-                    finished_at=now,
-                    error_code=event.code,
-                    error_message=event.message,
-                    failed_count=1,
-                    run_metadata={
+            run = await session.get(ConnectorRun, run_id)
+            if run is not None and run.status is ConnectorRunStatus.RUNNING:
+                run.status = ConnectorRunStatus.PAUSED_RISK
+                run.finished_at = now
+                run.progress_updated_at = now
+                run.error_code = event.code
+                run.error_message = event.message
+                run.failed_count = 1
+                run.run_metadata = sanitize_context(
+                    {
+                        **(metadata or run.run_metadata),
                         "risk_action": event.action.value,
                         "risk_disposition": event.disposition.value,
-                    },
+                    }
                 )
-            )

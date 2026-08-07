@@ -151,7 +151,7 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
     ConnectorDefinitionManifest(
         connector_type="hotlist",
         platform="hotlist",
-        display_name="热榜",
+        display_name="国内公开热榜",
         capabilities={
             "registration_state": "registered",
             "hotlist": True,
@@ -159,25 +159,40 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
             "supports_checkpoint": True,
         },
         config_schema=_object_schema(
-            title="热榜来源配置",
+            title="国内公开热榜来源配置",
             required=("sources",),
             properties={
                 "sources": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 50,
+                    "maxItems": 1,
                     "uniqueItems": True,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "items": {"type": "string", "enum": ["baidu_realtime"]},
+                    "default": ["baidu_realtime"],
+                    "description": "M1 仅开放百度官方实时热搜公开 JSON 入口",
                 },
                 "categories": {
                     "type": "array",
                     "maxItems": 30,
                     "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "description": "保留后续公开热榜分类能力，M1 百度实时榜暂不使用",
                 },
             },
         ),
-        ui_schema={"sources": {"widget": "checkbox_group"}},
-        implementation_version="0.1.0",
+        ui_schema={
+            "sources": {
+                "widget": "checkbox_group",
+                "label": "公开热榜来源",
+                "help": "当前仅允许无需登录的百度官方实时热搜入口",
+                "order": 10,
+            },
+            "categories": {
+                "widget": "tags",
+                "label": "分类",
+                "order": 20,
+            },
+        },
+        implementation_version="0.2.0",
     ),
     ConnectorDefinitionManifest(
         connector_type="manual",
