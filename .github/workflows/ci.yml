@@ -50,27 +50,17 @@ jobs:
         run: mypy apps packages
 
       - name: Pytest
-        shell: bash
-        run: |
-          set -o pipefail
-          pytest -x -vv 2>&1 | tee pytest.log
+        run: pytest
 
-      - name: Print pytest failure log
-        if: failure()
-        run: cat pytest.log
-
-      - name: Alembic M1-C round trip
+      - name: Full Alembic round trip
         run: |
           alembic upgrade head
           alembic downgrade -1
+          alembic upgrade head
+          alembic downgrade base
           alembic upgrade head
 
       - name: Connector definition sync is idempotent
         run: |
           python -m scripts.sync_connector_definitions
           python -m scripts.sync_connector_definitions
-
-      - name: Full migration round trip
-        run: |
-          alembic downgrade base
-          alembic upgrade head
