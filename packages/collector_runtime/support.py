@@ -86,6 +86,9 @@ class CollectorRuntimeSupport:
                 )
             if not bool(definition.capabilities.get(task.mode)):
                 raise PreflightRejectedError("连接器不支持请求的运行模式")
+            allowed_modes = definition.capabilities.get("allowed_modes")
+            if isinstance(allowed_modes, list) and task.mode not in allowed_modes:
+                raise PreflightRejectedError("平台当前不允许请求的运行模式")
             if bool(definition.capabilities.get("requires_account")) and account is None:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
