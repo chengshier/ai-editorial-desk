@@ -39,9 +39,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
         actual_comments = 0
 
         try:
-            requested_comments = self.requested_comment_limit(
+            requested_comments = self.requested_comment_budget(
                 context.source.config,
                 task.mode,
+                task.requested_limit,
             )
             async with self.session_factory() as session:
                 reservations = await CollectionBudgetService(session).reserve(
@@ -110,6 +111,18 @@ class CollectorRuntime(CollectorRuntimeSupport):
             signal_by_external_id: dict[str, UUID] = {}
             comment_inserted_count = 0
             comment_duplicate_count = 0
+            reported_comment_count = self.reported_comment_count(collection.metadata)
+            reported_comment_count += len(collection.comments)
+            comment_candidates = collection.comments
+            if reported_comment_count > requested_comments:
+                runtime_errors.append(
+                    CollectionItemError(
+                        code="comment_result_exceeds_budget",
+                        message="评论结果超过本次已预留评论预算，超出部分未入库",
+                    )
+                )
+                comment_candidates = collection.comments[:requested_comments]
+            actual_comments = min(reported_comment_count, requested_comments)
 
             if not task.dry_run:
                 for offset in range(0, len(normalized), INGESTION_BATCH_SIZE):
@@ -123,7 +136,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         if signal.external_id:
                             signal_by_external_id[signal.external_id] = result.signal_id
 
-                for comment in collection.comments:
+                for comment in comment_candidates:
                     raw_signal_id = signal_by_external_id.get(
                         comment.content_external_id
                     )
@@ -154,7 +167,6 @@ class CollectorRuntime(CollectorRuntimeSupport):
                                 external_ref=comment.external_comment_id,
                             )
                         )
-                actual_comments = len(collection.comments)
 
             checkpoint_error: VersionConflictError | None = None
             if (
@@ -392,13 +404,26 @@ class CollectorRuntime(CollectorRuntimeSupport):
             raise
 
     @staticmethod
-    def requested_comment_limit(config: dict[str, object], mode: str) -> int:
+    def requested_comment_budget(
+        config: dict[str, object],
+        mode: str,
+        requested_items: int,
+    ) -> int:
         if mode != "comments" and config.get("include_comments") is not True:
             return 0
         value = config.get("comment_limit", 20)
         if isinstance(value, bool) or not isinstance(value, int):
-            return 20
-        return max(0, min(50, value))
+            per_item_limit = 20
+        else:
+            per_item_limit = max(0, min(50, value))
+        return per_item_limit * max(0, requested_items)
+
+    @staticmethod
+    def reported_comment_count(metadata: dict[str, object]) -> int:
+        value = metadata.get("failed_comment_map_count", 0)
+        if isinstance(value, bool) or not isinstance(value, int):
+            return 0
+        return max(0, value)
 
     @staticmethod
     def budget_metadata(
