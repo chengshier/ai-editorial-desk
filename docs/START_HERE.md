@@ -7,16 +7,19 @@
 - **M1-C：已完成并合并**；
 - **M1-D：已完成并通过 CI，PR #6 已合并**；
 - **M1：已形成当前 `main` 完整基线**；
-- **M2-A：当前开发阶段，仅建立 MediaCrawler 主系统集成层**；
-- **M2-B / M2-C / M2-D：尚未开始**。
+- **M2-A：已完成并合并**；
+- **M2-B：已完成开发与 CI 验收，等待 PR #8 合并**；
+- **M2-C：未开始**；
+- **M2-D：未开始**；
+- **M2 整体：尚未完成**。
 
-M2-A 分支必须从最新 `main` 创建，当前分支为：
+当前 M2-B 分支：
 
 ```text
-feature/m2a-mediacrawler-integration
+feature/m2b-platform-mappers
 ```
 
-M2-A PR 合并前不要从 feature 分支派生 M2-B，也不要提前进入后续子阶段。
+下一步必须在 PR #8 合并后，从最新 `main` 独立创建 M2-C 分支；不要从 M2-B feature 分支继续派生，也不要提前进入 M2-C / M2-D。
 
 ## 必读文档顺序
 
@@ -50,9 +53,9 @@ M1 已建立：
 
 详细验收证据见 `M1_ACCEPTANCE_REPORT.md`。
 
-## M2-A 唯一目标
+## M2-A 已完成边界
 
-只建立以下正式边界：
+M2-A 建立以下正式边界：
 
 ```text
 CollectionTask
@@ -65,7 +68,7 @@ CollectionTask
 → RawSignal
 ```
 
-不得重建第二套 Runtime、Run、Checkpoint、Risk Guard、RawSignal 或 Registry。
+没有重建第二套 Runtime、Run、Checkpoint、Risk Guard、RawSignal 或 Registry。
 
 ## MediaCrawler 固定边界
 
@@ -83,7 +86,7 @@ third_party/MediaCrawler/
 
 许可证：`NON-COMMERCIAL LEARNING LICENSE 1.1`。
 
-M2-A 不更新上游版本。本阶段通过 Wrapper / Adapter 完成集成，**不修改 vendored MediaCrawler 业务源码**。上游来源、LICENSE 与 third-party 记录必须保留。
+M2-A / M2-B 均不更新上游版本，通过 Wrapper / Adapter / Mapper 完成主系统集成，**不修改 vendored MediaCrawler 业务源码**。上游来源、LICENSE 与 third-party 记录必须保留。
 
 ## M2-A Versioned Protocol
 
@@ -197,24 +200,68 @@ Adapter 只报告标准错误；现有 Risk Guard 决定处置。以下风险候
 - 主系统 `connector_checkpoints` 始终权威；
 - Invocation 可携带 checkpoint，Result 可返回 candidate；
 - 只有 RawSignal 成功提交后 Runtime 才推进 Checkpoint；
-- M2-A 不依赖 MediaCrawler 内部数据库。
+- M2-A / M2-B 不依赖 MediaCrawler 内部数据库。
+
+## M2-B 七平台 Mapper 与配置能力
+
+M2-B 在 M2-A Result Envelope 之后新增显式平台映射层：
+
+```text
+MediaCrawlerResultEnvelope
+→ Platform Mapper Registry
+→ 七平台 Mapper
+→ RawSignal / CollectedComment
+→ CollectionResult
+→ CollectorRuntime ingestion
+```
+
+七平台当前有效运行能力：
+
+| 平台 | search | detail/id | creator | comments | homefeed | hotlist |
+|---|---:|---:|---:|---:|---:|---:|
+| 微博 | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| B站 | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| 知乎 | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| 抖音 | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| 小红书 | ✅ | ❌ | ❌ | ✅* | ❌ | ❌ |
+| 快手 | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| 百度贴吧 | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+
+`*` 小红书当前只开放 `search` 运行模式，可在 search 中显式附带 comments；detail/creator 不开放。
+
+关键保守边界：
+
+- 微博 / B站 / 抖音 / 快手 / 百度贴吧：开放 search/detail/creator/comments；
+- 知乎：vendored core 存在 creator 逻辑，但 pinned CLI 未正确把 `creator_id` 接入 `ZHIHU_CREATOR_URL_LIST`，因此当前 creator 有效能力为 false；
+- 小红书：detail/creator 依赖带 `xsec_token` 的 URL，普通 config 不允许保存这类敏感值，因此当前仅开放 search，并允许 search 附带 comments；
+- 七平台：homefeed / hotlist 均未开放，不提前进入 M2-C。
+
+M2-B 同时完成：
+
+- 七平台独立 Mapper 与显式 Mapper Registry；
+- 七平台 `capabilities` / `config_schema` / `ui_schema`；
+- `implementation_version=mediacrawler-m2b-v1`；
+- `CollectedComment` Domain Model；
+- PostgreSQL `raw_signal_comments`；
+- 评论统一幂等与数据库并发唯一保护；
+- 评论 Budget 预留/结算；
+- Web 动态 SchemaForm 条件显示增强。
 
 ## Definition 状态语义
 
-M2-A 完成后 MediaCrawler 可以表达：
+连接器状态必须继续区分：
 
 ```text
-registered = true
-implemented = true / adapter available
-enabled = 取运营数据库状态
-validated = 仍需后续真实人工低量验证
+registered != implemented != validated
 ```
 
-**Fixture / Mock CI 不得自动生成 PASSED validation。**
+- `registered`：Definition 已注册；
+- `implemented`：主系统已有可调用实现；
+- `validated`：真实人工低量验证状态。
 
-M2-A 不包含七平台完整 Mapper / Schema，因此“implementation available”不等于七平台已经可用于真实生产采集。
+**Fixture / Mock CI 不得自动生成 PASSED validation。** M2-B 没有任何真实平台被 CI 自动标记 PASSED。
 
-## M2-A 测试边界
+## M2-A / M2-B 测试边界
 
 全部离线：
 
@@ -222,13 +269,17 @@ M2-A 不包含七平台完整 Mapper / Schema，因此“implementation availabl
 - Result 正常/malformed/version mismatch/missing fields/oversized；
 - subprocess success/timeout/cancel/nonzero/no result/malformed/partial；
 - 403/406/429/CAPTCHA/login expired/permission/automation/account restricted/network timeout/browser disconnect；
-- Fake MediaCrawler Runtime：Run 状态、RawSignal 入库、幂等、Checkpoint、Risk、Budget。
+- Fake MediaCrawler Runtime：Run 状态、RawSignal 入库、幂等、Checkpoint、Risk、Budget；
+- 七平台真实 JSONL 结构 Fixture Mapper；
+- 评论 Domain / FK / 幂等 / 并发唯一 / parent / CASCADE / raw_payload 脱敏；
+- capability / allowed_modes 在 subprocess 前拒绝；
+- Web mode 与评论字段条件展示。
 
 不连接真实平台，不登录，不扫码，不使用真实 Cookie。
 
 ## CI
 
-M2-A 继续执行现有完整 CI：
+M2-B 继续执行现有完整 CI：
 
 ```bash
 ruff check .
@@ -254,25 +305,23 @@ npm run build
 
 `third_party/MediaCrawler` 不纳入根 Ruff。
 
-## M2-A 明确禁止范围
+## 当前未开始范围
 
-本阶段不做：
+M2-C / M2-D 仍未开始，当前不做：
 
-- 七平台完整 Mapper；
-- 七平台专属 Schema；
 - 真实登录 / Cookie / 扫码；
 - 真实平台联网或真实 Smoke；
 - vendored Checkpoint / Incremental 增强；
 - Account/Profile vendored 增强；
 - SignatureProvider；
-- HomeFeed / 热榜发现；
-- 微博 / B站 / 知乎 / 抖音 / 小红书 / 快手 / 贴吧实跑；
+- HomeFeed / Hotlist 真实发现；
+- 微博 / B站 / 知乎 / 抖音 / 小红书 / 快手 / 贴吧真实低量验证；
 - Event / EventSignal；
 - Embedding；
 - 去重 / 聚类；
 - AI。
 
-这些属于 M2-B / M2-C / M2-D 或之后阶段。
+PR #8 合并后才进入 M2-C；M2-D 继续等待后续阶段。
 
 ## 开发原则
 
