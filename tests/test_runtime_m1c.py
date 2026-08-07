@@ -325,8 +325,10 @@ async def test_preflight_and_budget_rejections_happen_before_network(db_session)
 @pytest.mark.usefixtures("clean_database")
 async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> None:  # type: ignore[no-untyped-def]
     instance, source, platform = await _enabled_source(db_session)
+    instance_id = instance.id
+    source_id = source.id
     account = await PlatformAccountService(db_session).create(
-        connector_instance_id=instance.id,
+        connector_instance_id=instance_id,
         platform=platform,
         display_name="account",
         account_identifier="account-1",
@@ -346,7 +348,7 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
         )
     )
     risk_result = await _runtime(FakeConnector(error=risk_error)).execute(
-        _task(instance.id, source.id, platform_account_id=account_id)
+        _task(instance_id, source_id, platform_account_id=account_id)
     )
     assert risk_result.status is ConnectorRunStatus.PAUSED_RISK
     refreshed = await db_session.get(PlatformAccount, account_id)
@@ -376,7 +378,7 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
         )
     )
     ordinary_result = await _runtime(ordinary).execute(
-        _task(instance.id, source.id, platform_account_id=account_id)
+        _task(instance_id, source_id, platform_account_id=account_id)
     )
     assert ordinary_result.status is ConnectorRunStatus.FAILED
     assert int(
