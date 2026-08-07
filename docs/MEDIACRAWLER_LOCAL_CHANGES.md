@@ -286,3 +286,71 @@ registered != implemented != validated
 ```
 
 M2-B 没有连接真实平台、没有登录、没有扫码、没有使用真实 Cookie，也没有生成真实 PASSED validation。真实低量验证仍属于后续 M2-D；vendored Checkpoint / Incremental / Account Profile / SignatureProvider / HomeFeed / Hotlist 增强仍属于 M2-C 或后续阶段。
+
+## M2-D B站低量 search page-size compatibility patch
+
+### 修改范围
+
+本地 vendored 修改严格限定为：
+
+```text
+third_party/MediaCrawler/media_platform/bilibili/core.py
+```
+
+pinned upstream 继续保持：
+
+```text
+071c8c0acaece3e82f2532cffb19faeddc9ec1c3
+```
+
+许可证仍为 `NON-COMMERCIAL LEARNING LICENSE 1.1`，未更新 upstream、未改变来源记录。
+
+### pinned upstream 原行为
+
+B站 normal search 的 pinned core 将 API 单页大小固定为 20；当 `CRAWLER_MAX_NOTES_COUNT < 20` 时，还会直接把 `CRAWLER_MAX_NOTES_COUNT` 上抬为 20。结果是主系统即使给出 `requested_limit=1~5`，真实 B站 search client 仍会发出 `page_size=20` 的请求。
+
+这不满足 M2-D 的低量真实验证门槛。仅在 Wrapper / Adapter 层截断 Result Envelope 只能减少主系统最终处理/保存的条数，**无法减少 third-party 已经发出的真实平台请求规模**，因此 Wrapper 无法完全解决这一兼容问题。
+
+### 本地最小 patch
+
+本地 patch 只调整 B站 `search_by_keywords` 的 page-size / pagination：
+
+- 移除 `<20 → 20` 的 `CRAWLER_MAX_NOTES_COUNT` 强制上抬；
+- 继续使用 B站现有 client 已正式支持的 `page_size` 参数，不新增或猜测 API 参数；
+- 单次 normal search 使用稳定 `page_size=min(20, CRAWLER_MAX_NOTES_COUNT)`；
+- `requested_limit=1/3/5/20` 时首次 client 调用的 `page_size` 分别为 `1/3/5/20`；
+- `requested_limit>20` 时保持固定 `page_size=20`，以 `page + page_size` 的既有分页模型继续请求；
+- 使用有限 `page_count=ceil(requested_limit/page_size)`，避免无限循环；
+- page number 从 `START_PAGE` 连续递增，单次运行不改变 page_size，避免因分页窗口移动产生重复或漏页；
+- 最后一页仅处理剩余 requested items；若服务端提前返回短页则停止继续翻页。
+
+离线回归测试直接抽取并执行 vendored `search_by_keywords` 方法，对 fake client 记录的 `(page, page_size)` 调用进行断言。因此 `requested_limit=5 → 首次真实 client 参数 page_size=5` 的工程语义由测试覆盖，而不是“请求 20 后本地截断 5”。
+
+### 明确未修改
+
+本次 patch **不涉及**：
+
+- B站登录方式；
+- Cookie；
+- Browser Profile / CDP；
+- Signature；
+- Risk Guard / 风险映射；
+- proxy / IP 轮换；
+- stealth / 指纹；
+- 账号状态；
+- CAPTCHA；
+- 其他平台；
+- MediaCrawler upstream commit。
+
+本次仍未进行真实联网、登录、扫码或真实 Smoke。
+
+### 后续 subtree pull 检查点
+
+未来重新同步 / subtree pull MediaCrawler 时，必须重点检查：
+
+```text
+third_party/MediaCrawler/media_platform/bilibili/core.py
+BilibiliCrawler.search_by_keywords
+```
+
+重点确认上游是否仍存在固定 `page_size=20` 或 `<20 → 20` 的强制上抬逻辑，以及上游是否已经提供等价的低量分页能力。若上游已经原生解决，应优先删除本地 patch；若发生冲突，不得机械保留或覆盖，应重新验证 `page + page_size` 窗口、`START_PAGE`、requested limit 与最终页语义。
