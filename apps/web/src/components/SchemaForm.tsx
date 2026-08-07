@@ -35,6 +35,7 @@ export function validateSchemaValue(schema: JsonSchema, value: Record<string, un
     }
   }
   for (const [key, field] of Object.entries(schema.properties || {})) {
+    if (errors[key]) continue
     const current = value[key]
     if (typeof current === 'number') {
       if (field.minimum !== undefined && current < field.minimum) errors[key] = `不得小于 ${field.minimum}`
