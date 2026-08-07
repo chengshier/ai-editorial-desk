@@ -138,12 +138,14 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         continue
                     try:
                         async with self.session_factory() as session:
-                            result = await RawSignalCommentService(session).ingest(
+                            comment_result = await RawSignalCommentService(
+                                session
+                            ).ingest(
                                 raw_signal_id=raw_signal_id,
                                 comment=comment,
                             )
-                        comment_inserted_count += int(result.created)
-                        comment_duplicate_count += int(result.duplicate)
+                        comment_inserted_count += int(comment_result.created)
+                        comment_duplicate_count += int(comment_result.duplicate)
                     except Exception:
                         runtime_errors.append(
                             CollectionItemError(

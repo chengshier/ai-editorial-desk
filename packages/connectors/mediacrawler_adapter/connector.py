@@ -256,5 +256,7 @@ class MediaCrawlerConnector(BaseConnector):
         maximum: int,
     ) -> int:
         if isinstance(value, bool) or not isinstance(value, int):
-            return max(minimum, min(maximum, default))
-        return max(minimum, min(maximum, value))
+            resolved = default
+        else:
+            resolved = int(value)
+        return max(minimum, min(maximum, resolved))
