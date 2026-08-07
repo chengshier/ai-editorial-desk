@@ -334,10 +334,11 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
         browser_profile_ref=None,
         actor="admin",
     )
+    account_id = account.id
     risk_error = PlatformRiskError(
         RiskEvent.now(
             platform=platform,
-            account_id=str(account.id),
+            account_id=str(account_id),
             code="restricted",
             message="platform restriction",
             disposition=ErrorDisposition.MANUAL_REVIEW,
@@ -345,10 +346,10 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
         )
     )
     risk_result = await _runtime(FakeConnector(error=risk_error)).execute(
-        _task(instance.id, source.id, platform_account_id=account.id)
+        _task(instance.id, source.id, platform_account_id=account_id)
     )
     assert risk_result.status is ConnectorRunStatus.PAUSED_RISK
-    refreshed = await db_session.get(PlatformAccount, account.id)
+    refreshed = await db_session.get(PlatformAccount, account_id)
     assert refreshed is not None
     await db_session.refresh(refreshed)
     assert refreshed.status is AccountStatus.REVIEW_REQUIRED
@@ -359,7 +360,7 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
     await db_session.rollback()
 
     await PlatformAccountService(db_session).transition_status(
-        account_id=account.id,
+        account_id=account_id,
         target_status=AccountStatus.HEALTHY,
         reason="人工确认恢复",
         cooldown_until=None,
@@ -375,7 +376,7 @@ async def test_runtime_risk_and_ordinary_http_error_are_distinct(db_session) -> 
         )
     )
     ordinary_result = await _runtime(ordinary).execute(
-        _task(instance.id, source.id, platform_account_id=account.id)
+        _task(instance.id, source.id, platform_account_id=account_id)
     )
     assert ordinary_result.status is ConnectorRunStatus.FAILED
     assert int(
