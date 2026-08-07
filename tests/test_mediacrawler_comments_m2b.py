@@ -24,8 +24,10 @@ from packages.connectors.base import CollectedComment
 from packages.connectors.mediacrawler_adapter.connector import MediaCrawlerConnector
 from packages.connectors.mediacrawler_adapter.protocol import (
     MEDIACRAWLER_PROTOCOL_VERSION,
+    MediaCrawlerCheckpoint,
     MediaCrawlerCounters,
     MediaCrawlerInvocation,
+    MediaCrawlerMode,
     MediaCrawlerResultEnvelope,
     MediaCrawlerResultStatus,
 )
@@ -85,7 +87,13 @@ class CommentFixtureAdapter:
                 },
                 {"comment_id": "broken-comment", "content": "缺少 note_id"},
             ],
-            checkpoint={"cursor": "after-comments"},
+            checkpoint=MediaCrawlerCheckpoint(
+                platform=invocation.platform,
+                mode=MediaCrawlerMode.SEARCH,
+                page=2,
+                last_external_id="comment-post-1",
+                metadata={"legacy_test": "m2b-comments"},
+            ),
             counters=MediaCrawlerCounters(items=1, comments=2),
             warnings=[],
             risk_events=[],
@@ -145,7 +153,7 @@ async def _setup(
         display_name="fixture account",
         account_identifier=f"fixture-{uuid4()}",
         credential_ref=None,
-        browser_profile_ref="fixture-profile-ref",
+        browser_profile_ref=None,
         actor="admin",
     )
     ids = (instance.id, source.id, account.id)
@@ -239,8 +247,8 @@ async def test_comments_persist_idempotently_without_rolling_back_signal(
         )
     )
     assert checkpoint is not None
-    assert checkpoint.checkpoint_data == {"cursor": "after-comments"}
-    assert checkpoint.version == 3
+    assert checkpoint.checkpoint_data == {}
+    assert checkpoint.version == 1
 
 
 @pytest.mark.usefixtures("clean_database")
