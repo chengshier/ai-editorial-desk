@@ -13,7 +13,7 @@ from packages.connectors.mediacrawler_adapter.platforms.registry import (
     mediacrawler_mapper_registry,
 )
 from packages.connectors.mediacrawler_adapter.platforms.specs import (
-    M2B_IMPLEMENTATION_VERSION,
+    M2C_IMPLEMENTATION_VERSION,
     PLATFORM_SPECS,
 )
 
@@ -32,9 +32,7 @@ MEDIA_PLATFORMS = {"bilibili", "douyin", "xiaohongshu", "kuaishou"}
 
 def _fixture(platform: str) -> dict[str, object]:
     filename = FIXTURES[platform][0]
-    return json.loads(
-        (FIXTURE_ROOT / filename).read_text(encoding="utf-8")
-    )
+    return json.loads((FIXTURE_ROOT / filename).read_text(encoding="utf-8"))
 
 
 @pytest.mark.parametrize("platform", FIXTURES)
@@ -90,17 +88,13 @@ def test_platform_mapper_normalizes_real_vendored_shape(platform: str) -> None:
 def test_platform_mapper_optional_malformed_and_comment(platform: str) -> None:
     fixture = _fixture(platform)
     mapper = mediacrawler_mapper_registry.get(platform)
-    optional = mapper.map_item(
-        fixture["optional_item"]  # type: ignore[arg-type]
-    )
+    optional = mapper.map_item(fixture["optional_item"])  # type: ignore[arg-type]
     assert optional.external_id
 
     with pytest.raises(MapperDataError):
         mapper.map_item(fixture["malformed_item"])  # type: ignore[arg-type]
 
-    comment = mapper.map_comment(
-        fixture["comment"]  # type: ignore[arg-type]
-    )
+    comment = mapper.map_comment(fixture["comment"])  # type: ignore[arg-type]
     assert comment.platform == platform
     assert comment.external_comment_id == FIXTURES[platform][2]
     assert comment.content_external_id == FIXTURES[platform][1]
@@ -124,13 +118,14 @@ def test_mapper_registry_and_definition_capabilities_are_one_to_one() -> None:
 
     for platform, spec in PLATFORM_SPECS.items():
         definition = definitions[platform]
-        assert definition.implementation_version == M2B_IMPLEMENTATION_VERSION
+        assert definition.implementation_version == M2C_IMPLEMENTATION_VERSION
         assert definition.capabilities == spec.capabilities
         assert definition.capabilities["homefeed"] is False
         assert definition.capabilities["hotlist"] is False
-        mode_enum = definition.config_schema["properties"]["modes"]["items"][
-            "enum"
-        ]
+        assert definition.capabilities["incremental_search"] is True
+        assert definition.capabilities["incremental_detail"] is False
+        assert definition.capabilities["incremental_creator"] is False
+        mode_enum = definition.config_schema["properties"]["modes"]["items"]["enum"]
         assert mode_enum == list(spec.allowed_modes)
         valid = {
             "modes": ["search"],
