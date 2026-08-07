@@ -12,9 +12,11 @@ from packages.collector_runtime.support import CollectorRuntimeSupport
 from packages.connector_management.exceptions import VersionConflictError
 from packages.connector_management.services import ConnectorRunService
 from packages.connectors import CollectRequest
+from packages.connectors.base import CollectionItemError
 from packages.connectors.http import ConnectorFetchError
 from packages.database.models import ConnectorRunStatus
 from packages.risk_guard.models import PlatformRiskError
+from packages.signals.comment_service import RawSignalCommentService
 from packages.signals.domain import NormalizedSignal
 from packages.signals.services import RawSignalService, SourceService
 from packages.signals.urls import normalize_http_url
@@ -34,8 +36,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
         collected_count = 0
         inserted_count = 0
         duplicate_count = 0
+        actual_comments = 0
 
         try:
+            requested_comments = self.requested_comment_limit(context.source.config, task.mode)
             async with self.session_factory() as session:
                 reservations = await CollectionBudgetService(session).reserve(
                     platform=context.definition.platform,
@@ -44,6 +48,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     platform_account_id=task.platform_account_id,
                     source_id=context.source.id,
                     requested_items=task.requested_limit,
+                    requested_comments=requested_comments,
                     actor=task.triggered_by,
                 )
             budget_metadata = self.budget_metadata(reservations)
@@ -58,29 +63,13 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     mode=task.mode,
                     query=context.source.external_ref,
                     limit=task.requested_limit,
-                    account_id=(
-                        str(task.platform_account_id)
-                        if task.platform_account_id is not None
-                        else None
-                    ),
-                    checkpoint=(
-                        dict(checkpoint.checkpoint_data)
-                        if checkpoint is not None
-                        else None
-                    ),
+                    account_id=str(task.platform_account_id) if task.platform_account_id is not None else None,
+                    checkpoint=dict(checkpoint.checkpoint_data) if checkpoint is not None else None,
                     parameters=dict(context.source.config),
                     run_id=str(run.id),
                     platform=context.definition.platform,
-                    account_ref=(
-                        str(context.account.id)
-                        if context.account is not None
-                        else None
-                    ),
-                    browser_profile_ref=(
-                        context.account.browser_profile_ref
-                        if context.account is not None
-                        else None
-                    ),
+                    account_ref=str(context.account.id) if context.account is not None else None,
+                    browser_profile_ref=context.account.browser_profile_ref if context.account is not None else None,
                 )
             )
 
@@ -96,6 +85,11 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 for signal in collection.signals
             ]
             collected_count = len(collection.signals)
+            runtime_errors = list(collection.errors)
+            signal_by_external_id: dict[str, UUID] = {}
+            comment_inserted_count = 0
+            comment_duplicate_count = 0
+
             if not task.dry_run:
                 for offset in range(0, len(normalized), INGESTION_BATCH_SIZE):
                     batch = normalized[offset : offset + INGESTION_BATCH_SIZE]
@@ -104,6 +98,38 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     signal_ids.extend(item.signal_id for item in results)
                     inserted_count += sum(1 for item in results if item.created)
                     duplicate_count += sum(1 for item in results if item.duplicate)
+                    for signal, result in zip(batch, results, strict=True):
+                        if signal.external_id:
+                            signal_by_external_id[signal.external_id] = result.signal_id
+
+                for comment in collection.comments:
+                    raw_signal_id = signal_by_external_id.get(comment.content_external_id)
+                    if raw_signal_id is None:
+                        runtime_errors.append(
+                            CollectionItemError(
+                                code="comment_parent_signal_missing",
+                                message="评论对应主内容未在本次结果中成功入库",
+                                external_ref=comment.external_comment_id,
+                            )
+                        )
+                        continue
+                    try:
+                        async with self.session_factory() as session:
+                            result = await RawSignalCommentService(session).ingest(
+                                raw_signal_id=raw_signal_id,
+                                comment=comment,
+                            )
+                        comment_inserted_count += int(result.created)
+                        comment_duplicate_count += int(result.duplicate)
+                    except Exception:
+                        runtime_errors.append(
+                            CollectionItemError(
+                                code="comment_ingestion_failed",
+                                message="单条评论持久化失败",
+                                external_ref=comment.external_comment_id,
+                            )
+                        )
+                actual_comments = len(collection.comments)
 
             checkpoint_error: VersionConflictError | None = None
             if (
@@ -122,7 +148,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 except VersionConflictError as exc:
                     checkpoint_error = exc
 
-            failed_count = len(collection.errors) + int(checkpoint_error is not None)
+            failed_count = len(runtime_errors) + int(checkpoint_error is not None)
             if failed_count and normalized:
                 target_status = ConnectorRunStatus.PARTIAL
             elif failed_count:
@@ -132,12 +158,12 @@ class CollectorRuntime(CollectorRuntimeSupport):
             error_code = (
                 "checkpoint_conflict"
                 if checkpoint_error is not None
-                else ("partial_parse_failure" if collection.errors else None)
+                else ("partial_parse_failure" if runtime_errors else None)
             )
             error_message = (
                 "Checkpoint 版本冲突，已提交信号将在重试时按幂等规则去重"
                 if checkpoint_error is not None
-                else ("部分条目解析失败" if collection.errors else None)
+                else ("部分条目或评论处理失败" if runtime_errors else None)
             )
             metadata = {
                 **collection.metadata,
@@ -145,15 +171,17 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 "budget": {
                     "reservations": budget_metadata,
                     "actual_items": collected_count,
+                    "actual_comments": actual_comments,
                     "completed": True,
                 },
+                "comments": {
+                    "mapped": len(collection.comments),
+                    "inserted": comment_inserted_count,
+                    "duplicates": comment_duplicate_count,
+                },
                 "error_samples": [
-                    {
-                        "code": item.code,
-                        "message": item.message,
-                        "external_ref": item.external_ref,
-                    }
-                    for item in collection.errors[:5]
+                    {"code": item.code, "message": item.message, "external_ref": item.external_ref}
+                    for item in runtime_errors[:5]
                 ],
                 "dry_run": task.dry_run,
             }
@@ -168,37 +196,22 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     retry_count=task.retry_count,
                     error_code=error_code,
                     error_message=error_message,
-                    checkpoint_after=(
-                        collection.checkpoint
-                        if not task.dry_run and checkpoint_error is None
-                        else None
-                    ),
+                    checkpoint_after=(collection.checkpoint if not task.dry_run and checkpoint_error is None else None),
                     metadata=metadata,
                 )
             async with self.session_factory() as session:
                 source_service = SourceService(session)
-                if target_status in {
-                    ConnectorRunStatus.SUCCEEDED,
-                    ConnectorRunStatus.PARTIAL,
-                }:
+                if target_status in {ConnectorRunStatus.SUCCEEDED, ConnectorRunStatus.PARTIAL}:
                     await source_service.mark_success(context.source.id)
                 else:
-                    await source_service.mark_error(
-                        context.source.id,
-                        error_code or "collection_failed",
-                    )
+                    await source_service.mark_error(context.source.id, error_code or "collection_failed")
             await self.settle(
                 reservations,
                 actual_items=collected_count,
+                actual_comments=actual_comments,
                 completed=True,
             )
-            self.log_result(
-                context=context,
-                run=finalized,
-                failed_count=failed_count,
-                latency=monotonic() - started,
-                risk_action=None,
-            )
+            self.log_result(context=context, run=finalized, failed_count=failed_count, latency=monotonic() - started, risk_action=None)
             return RuntimeResult(
                 run_id=finalized.id,
                 status=finalized.status,
@@ -221,35 +234,14 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     platform=context.definition.platform,
                     error=exc,
                     actor=task.triggered_by,
-                    metadata={
-                        "task": task.to_dict(),
-                        "budget": {
-                            "reservations": self.budget_metadata(reservations),
-                            "actual_items": 0,
-                            "completed": True,
-                        },
-                    },
+                    metadata={"task": task.to_dict(), "budget": {"reservations": self.budget_metadata(reservations), "actual_items": 0, "actual_comments": 0, "completed": True}},
                 )
-            await self.settle(reservations, actual_items=0, completed=True)
+            await self.settle(reservations, actual_items=0, actual_comments=0, completed=True)
             async with self.session_factory() as session:
                 await SourceService(session).mark_error(context.source.id, exc.event.code)
                 risk_run = await ConnectorRunService(session).get(run.id)
-            self.log_result(
-                context=context,
-                run=risk_run,
-                failed_count=1,
-                latency=monotonic() - started,
-                risk_action=exc.event.action.value,
-            )
-            return RuntimeResult(
-                run_id=risk_run.id,
-                status=risk_run.status,
-                signal_ids=(),
-                collected_count=0,
-                inserted_count=0,
-                duplicate_count=0,
-                failed_count=1,
-            )
+            self.log_result(context=context, run=risk_run, failed_count=1, latency=monotonic() - started, risk_action=exc.event.action.value)
+            return RuntimeResult(run_id=risk_run.id, status=risk_run.status, signal_ids=(), collected_count=0, inserted_count=0, duplicate_count=0, failed_count=1)
         except BudgetExceededError:
             async with self.session_factory() as session:
                 await ConnectorRunService(session).finalize(
@@ -264,11 +256,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
             raise
         except Exception as exc:
             if claimed:
-                code = (
-                    exc.code
-                    if isinstance(exc, ConnectorFetchError)
-                    else "collector_execution_failed"
-                )
+                code = exc.code if isinstance(exc, ConnectorFetchError) else "collector_execution_failed"
                 async with self.session_factory() as session:
                     failed = await ConnectorRunService(session).finalize(
                         run_id=run.id,
@@ -280,41 +268,25 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         retry_count=task.retry_count,
                         error_code=code,
                         error_message=self.safe_error_message(exc),
-                        metadata={
-                            "task": task.to_dict(),
-                            "budget": {
-                                "reservations": self.budget_metadata(reservations),
-                                "actual_items": collected_count,
-                                "completed": True,
-                            },
-                        },
+                        metadata={"task": task.to_dict(), "budget": {"reservations": self.budget_metadata(reservations), "actual_items": collected_count, "actual_comments": actual_comments, "completed": True}},
                     )
-                await self.settle(
-                    reservations,
-                    actual_items=collected_count,
-                    completed=True,
-                )
+                await self.settle(reservations, actual_items=collected_count, actual_comments=actual_comments, completed=True)
                 async with self.session_factory() as session:
                     await SourceService(session).mark_error(context.source.id, code)
-                self.log_result(
-                    context=context,
-                    run=failed,
-                    failed_count=1,
-                    latency=monotonic() - started,
-                    risk_action=None,
-                )
-                return RuntimeResult(
-                    run_id=failed.id,
-                    status=failed.status,
-                    signal_ids=tuple(signal_ids),
-                    collected_count=collected_count,
-                    inserted_count=inserted_count,
-                    duplicate_count=duplicate_count,
-                    failed_count=1,
-                )
+                self.log_result(context=context, run=failed, failed_count=1, latency=monotonic() - started, risk_action=None)
+                return RuntimeResult(run_id=failed.id, status=failed.status, signal_ids=tuple(signal_ids), collected_count=collected_count, inserted_count=inserted_count, duplicate_count=duplicate_count, failed_count=1)
             if reservations:
-                await self.settle(reservations, actual_items=0, completed=False)
+                await self.settle(reservations, actual_items=0, actual_comments=0, completed=False)
             raise
+
+    @staticmethod
+    def requested_comment_limit(config: dict[str, object], mode: str) -> int:
+        if mode != "comments" and config.get("include_comments") is not True:
+            return 0
+        value = config.get("comment_limit", 20)
+        if isinstance(value, bool) or not isinstance(value, int):
+            return 20
+        return max(0, min(50, value))
 
     @staticmethod
     def budget_metadata(reservations: tuple[BudgetReservation, ...]) -> list[dict[str, object]]:
@@ -323,6 +295,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 "budget_id": str(item.budget_id),
                 "usage_date": item.usage_date,
                 "reserved_items": item.reserved_items,
+                "reserved_comments": item.reserved_comments,
             }
             for item in reservations
         ]
