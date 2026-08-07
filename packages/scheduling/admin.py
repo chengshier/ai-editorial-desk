@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -482,22 +482,25 @@ class CheckpointDebugService:
 
     @staticmethod
     def _snapshot(checkpoint: ConnectorCheckpoint) -> dict[str, Any]:
-        return sanitize_context(
-            {
-                "source_id": str(checkpoint.source_id) if checkpoint.source_id else None,
-                "mode": checkpoint.mode,
-                "scope_key": checkpoint.scope_key,
-                "cursor": checkpoint.cursor,
-                "watermark": checkpoint.watermark,
-                "last_external_id": checkpoint.last_external_id,
-                "last_published_at": (
-                    checkpoint.last_published_at.isoformat()
-                    if checkpoint.last_published_at
-                    else None
-                ),
-                "checkpoint_data": checkpoint.checkpoint_data,
-                "version": checkpoint.version,
-            }
+        return cast(
+            dict[str, Any],
+            sanitize_context(
+                {
+                    "source_id": str(checkpoint.source_id) if checkpoint.source_id else None,
+                    "mode": checkpoint.mode,
+                    "scope_key": checkpoint.scope_key,
+                    "cursor": checkpoint.cursor,
+                    "watermark": checkpoint.watermark,
+                    "last_external_id": checkpoint.last_external_id,
+                    "last_published_at": (
+                        checkpoint.last_published_at.isoformat()
+                        if checkpoint.last_published_at
+                        else None
+                    ),
+                    "checkpoint_data": checkpoint.checkpoint_data,
+                    "version": checkpoint.version,
+                }
+            ),
         )
 
 
