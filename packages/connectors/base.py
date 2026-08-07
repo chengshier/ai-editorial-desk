@@ -48,7 +48,7 @@ class RawSignal:
 
     def __post_init__(self) -> None:
         if self.published_at is not None and (
-            self.published_at.tzinfo is None or self.published_at.utcoffse‌t() is None
+            self.published_at.tzinfo is None or self.published_at.utcoffset() is None
         ):
             raise ValueError("published_at 必须包含时区")
         for key, value in self.metrics.items():
