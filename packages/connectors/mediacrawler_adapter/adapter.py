@@ -1,136 +1,133 @@
-import asyncio
-import json
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
-from packages.common.config import get_settings
-from packages.connectors.base import (
-    BaseConnector,
-    CollectionResult,
-    CollectRequest,
-    RawSignal,
+from packages.common.config import Settings, get_settings
+from packages.connectors.mediacrawler_adapter.errors import (
+    MediaCrawlerAdapterError,
+    MediaCrawlerErrorCode,
+    classify_subprocess_failure,
+    to_platform_risk_error,
 )
+from packages.connectors.mediacrawler_adapter.protocol import (
+    MEDIACRAWLER_PROTOCOL_VERSION,
+    MediaCrawlerInvocation,
+    MediaCrawlerResultEnvelope,
+    MediaCrawlerResultStatus,
+)
+from packages.connectors.mediacrawler_adapter.runner import MediaCrawlerSubprocessRunner
 
 
-class MediaCrawlerAdapterError(RuntimeError):
-    """Raised when the MediaCrawler subprocess cannot be executed safely."""
+class MediaCrawlerRunner(Protocol):
+    async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope: ...
 
 
-class MediaCrawlerAdapter(BaseConnector):
-    """Run MediaCrawler as an isolated subprocess and map JSONL to RawSignal.
+class MediaCrawlerAdapter:
+    """Own the stable main-system protocol and isolate the vendored subprocess."""
 
-    The command/output contract is intentionally isolated here. MediaCrawler
-    must not leak its internal models or database schema into the main system.
-    """
-
-    connector_type = "mediacrawler"
-
-    def __init__(self, platform: str) -> None:
-        self.platform = platform
-        self.settings = get_settings()
-
-    def _home(self) -> Path:
-        return Path(self.settings.mediacrawler_home).expanduser().resolve()
+    def __init__(
+        self,
+        *,
+        runner: MediaCrawlerRunner | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        self.settings = settings or get_settings()
+        self.runner = runner or MediaCrawlerSubprocessRunner(
+            home=Path(self.settings.mediacrawler_home),
+            python_executable=self.settings.mediacrawler_python,
+        )
 
     async def health_check(self) -> dict[str, Any]:
-        home = self._home()
+        home = Path(self.settings.mediacrawler_home).expanduser().resolve()
         entrypoint = home / "main.py"
         return {
             "status": "ok" if entrypoint.is_file() else "not_installed",
-            "platform": self.platform,
-            "home": str(home),
-            "entrypoint": str(entrypoint),
+            "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION,
+            "entrypoint_available": entrypoint.is_file(),
         }
 
-    async def collect(self, request: CollectRequest) -> CollectionResult:
-        home = self._home()
-        entrypoint = home / "main.py"
-        if not entrypoint.is_file():
-            raise MediaCrawlerAdapterError(
-                "MediaCrawler is not installed at the configured path. "
-                "See third_party/README.md."
-            )
-
-        command = self._build_command(entrypoint, request)
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            cwd=str(home),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
+    async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(),
-                timeout=self.settings.mediacrawler_timeout_seconds,
-            )
-        except TimeoutError as exc:
-            process.kill()
-            await process.wait()
-            raise MediaCrawlerAdapterError("MediaCrawler task timed out") from exc
+            envelope = await self.runner.run(invocation)
+        except MediaCrawlerAdapterError as exc:
+            if exc.is_risk:
+                raise to_platform_risk_error(
+                    exc,
+                    platform=invocation.platform.value,
+                    account_ref=invocation.account_ref,
+                ) from exc
+            raise
 
-        if process.returncode != 0:
-            error_text = stderr.decode("utf-8", errors="replace")[-4000:]
+        if envelope.protocol_version != MEDIACRAWLER_PROTOCOL_VERSION:
             raise MediaCrawlerAdapterError(
-                f"MediaCrawler exited with code {process.returncode}: {error_text}"
+                MediaCrawlerErrorCode.PROTOCOL_VERSION_MISMATCH,
+                "MediaCrawler result protocol version is incompatible",
+            )
+        if envelope.run_id != invocation.run_id or envelope.platform != invocation.platform:
+            raise MediaCrawlerAdapterError(
+                MediaCrawlerErrorCode.RESULT_MALFORMED,
+                "MediaCrawler result identity does not match the invocation",
             )
 
-        signals: list[RawSignal] = []
-        for line in stdout.decode("utf-8", errors="replace").splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            signals.append(self._map_payload(payload))
-        return CollectionResult(signals=tuple(signals))
+        if envelope.risk_events:
+            event = envelope.risk_events[0]
+            code = self._standardize_result_error(event.code, event.message)
+            error = MediaCrawlerAdapterError(
+                code,
+                self._safe_result_message(code),
+            )
+            raise to_platform_risk_error(
+                error,
+                platform=invocation.platform.value,
+                account_ref=invocation.account_ref,
+            )
 
-    def _build_command(self, entrypoint: Path, request: CollectRequest) -> list[str]:
-        command = [
-            self.settings.mediacrawler_python,
-            str(entrypoint),
-            "--platform",
-            self.platform,
-            "--type",
-            request.mode,
-            "--save_data_option",
-            "jsonl",
-        ]
-        if request.query:
-            command.extend(["--keywords", request.query])
-        if request.target_ids:
-            command.extend(["--specified_id", ",".join(request.target_ids)])
-        return command
+        if envelope.status is MediaCrawlerResultStatus.FAILED:
+            if envelope.errors:
+                first = envelope.errors[0]
+                code = self._standardize_result_error(first.code, first.message)
+            else:
+                code = MediaCrawlerErrorCode.UNKNOWN_PLATFORM_ERROR
+            error = MediaCrawlerAdapterError(
+                code,
+                self._safe_result_message(code),
+                retryable=code is MediaCrawlerErrorCode.NETWORK_TIMEOUT,
+            )
+            if error.is_risk:
+                raise to_platform_risk_error(
+                    error,
+                    platform=invocation.platform.value,
+                    account_ref=invocation.account_ref,
+                )
+            raise error
+        return envelope
 
-    def _map_payload(self, payload: dict[str, Any]) -> RawSignal:
-        external_id = str(
-            payload.get("external_id")
-            or payload.get("note_id")
-            or payload.get("aweme_id")
-            or payload.get("video_id")
-            or payload.get("id")
-            or ""
-        )
-        url = str(
-            payload.get("url")
-            or payload.get("note_url")
-            or payload.get("aweme_url")
-            or ""
-        )
-        if not external_id or not url:
-            raise MediaCrawlerAdapterError("MediaCrawler payload lacks external_id or url")
+    @staticmethod
+    def _standardize_result_error(code: str, message: str) -> MediaCrawlerErrorCode:
+        try:
+            return MediaCrawlerErrorCode(code)
+        except ValueError:
+            return classify_subprocess_failure(
+                exit_code=0,
+                stderr=f"{code} {message}",
+            )
 
-        return RawSignal(
-            platform=self.platform,
-            external_id=external_id,
-            url=url,
-            title=payload.get("title"),
-            text=payload.get("desc") or payload.get("content") or payload.get("text"),
-            author_id=payload.get("user_id") or payload.get("author_id"),
-            author_name=payload.get("nickname") or payload.get("author_name"),
-            metrics={},
-            media=[],
-            raw_payload=payload,
-        )
+    @staticmethod
+    def _safe_result_message(code: MediaCrawlerErrorCode) -> str:
+        messages = {
+            MediaCrawlerErrorCode.PERMISSION_DENIED: "MediaCrawler platform permission denied",
+            MediaCrawlerErrorCode.RATE_LIMITED: "MediaCrawler platform rate limit detected",
+            MediaCrawlerErrorCode.CAPTCHA_REQUIRED: "MediaCrawler platform requires CAPTCHA review",
+            MediaCrawlerErrorCode.ACCOUNT_RESTRICTED: "MediaCrawler platform account is restricted",
+            MediaCrawlerErrorCode.ACCOUNT_ABNORMAL: "MediaCrawler platform account is abnormal",
+            MediaCrawlerErrorCode.AUTOMATION_DETECTED: (
+                "MediaCrawler platform automation restriction detected"
+            ),
+            MediaCrawlerErrorCode.AUTH_REQUIRED: "MediaCrawler platform authentication is required",
+            MediaCrawlerErrorCode.LOGIN_EXPIRED: "MediaCrawler platform login state expired",
+            MediaCrawlerErrorCode.NETWORK_TIMEOUT: "MediaCrawler platform network timeout",
+            MediaCrawlerErrorCode.BROWSER_DISCONNECTED: "MediaCrawler browser process disconnected",
+            MediaCrawlerErrorCode.PARSE_ERROR: "MediaCrawler platform response parse failed",
+        }
+        return messages.get(code, "MediaCrawler platform execution failed")
