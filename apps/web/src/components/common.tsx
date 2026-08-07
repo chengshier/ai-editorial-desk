@@ -1,0 +1,17 @@
+import type { ReactNode } from 'react'
+
+export function Panel({ title, actions, children }: { title: string; actions?: ReactNode; children: ReactNode }) {
+  return <section className="panel"><div className="panel-head"><h2>{title}</h2>{actions}</div>{children}</section>
+}
+
+export function ErrorBanner({ error }: { error: string | null }) {
+  return error ? <div className="error-banner" role="alert">{error}</div> : null
+}
+
+export function JsonView({ value }: { value: unknown }) {
+  return <pre className="json-view">{JSON.stringify(value, null, 2)}</pre>
+}
+
+export function Empty({ text = '暂无数据' }: { text?: string }) {
+  return <div className="empty">{text}</div>
+}
