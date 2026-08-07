@@ -8,9 +8,7 @@ from typing import Any, Protocol
 
 from packages.connectors.http import ConnectorFetchError
 from packages.connectors.mediacrawler_adapter.errors import (
-    MediaCrawlerAdapterError,
     MediaCrawlerErrorCode,
-    to_platform_risk_error,
 )
 from packages.connectors.mediacrawler_adapter.incremental import (
     build_search_checkpoint,
@@ -34,7 +32,6 @@ from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerResultStatus,
 )
 from packages.connectors.mediacrawler_adapter.risk_output import (
-    is_platform_risk_code,
     is_technical_retry_error,
     risk_signal_from_error,
 )
@@ -45,19 +42,20 @@ from packages.connectors.mediacrawler_adapter.signature import (
     SignatureRequestContext,
     signature_provider_registry,
 )
-from packages.risk_guard.classifier import classify_platform_error
-from packages.risk_guard.models import PlatformRiskError, RiskEvent
 
 SleepCallable = Callable[[float], Awaitable[None]]
 JitterCallable = Callable[[], float]
 
 
 class EnvelopeRunner(Protocol):
-    async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope: ...
+    async def run(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope: ...
 
 
 class ResumePageRunner(MediaCrawlerSubprocessRunner):
-    """Use the pinned CLI's existing --start argument without changing vendored source."""
+    """Use the pinned CLI's existing --start hook without modifying vendored source."""
 
     def _build_command(
         self,
@@ -66,7 +64,10 @@ class ResumePageRunner(MediaCrawlerSubprocessRunner):
         invocation: MediaCrawlerInvocation,
     ) -> list[str]:
         command = super()._build_command(entrypoint, data_root, invocation)
-        if invocation.mode is MediaCrawlerMode.SEARCH and invocation.checkpoint is not None:
+        if (
+            invocation.mode is MediaCrawlerMode.SEARCH
+            and invocation.checkpoint is not None
+        ):
             page = invocation.checkpoint.page
             if page is not None:
                 command.extend(["--start", str(page)])
@@ -93,10 +94,18 @@ class MediaCrawlerResilienceRunner:
         self.jitter = jitter
         self.signature_registry = signature_registry or signature_provider_registry
 
-    async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def run(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         try:
-            signature_plan = self.signature_registry.get(invocation.platform).prepare_runtime(
-                SignatureRequestContext(platform=invocation.platform, run_id=invocation.run_id)
+            signature_plan = self.signature_registry.get(
+                invocation.platform
+            ).prepare_runtime(
+                SignatureRequestContext(
+                    platform=invocation.platform,
+                    run_id=invocation.run_id,
+                )
             )
         except SignatureProviderError as exc:
             raise ConnectorFetchError(
@@ -135,7 +144,10 @@ class MediaCrawlerResilienceRunner:
             page_limit = min(spec.page_size, remaining)
             page_checkpoint = self._page_checkpoint(invocation, page)
             page_invocation = invocation.model_copy(
-                update={"requested_limit": page_limit, "checkpoint": page_checkpoint}
+                update={
+                    "requested_limit": page_limit,
+                    "checkpoint": page_checkpoint,
+                }
             )
             try:
                 envelope = await self._run_with_retry(page_invocation)
@@ -157,6 +169,16 @@ class MediaCrawlerResilienceRunner:
                     platform=invocation.platform,
                     checkpoint_safe_to_commit=True,
                 )
+                errors = (
+                    []
+                    if signal.requires_manual_review
+                    else [
+                        MediaCrawlerResultError(
+                            code=exc.code,
+                            message=exc.safe_message,
+                        )
+                    ]
+                )
                 return MediaCrawlerResultEnvelope(
                     protocol_version=MEDIACRAWLER_PROTOCOL_VERSION,
                     run_id=invocation.run_id,
@@ -166,14 +188,12 @@ class MediaCrawlerResilienceRunner:
                     comments=comments,
                     checkpoint=checkpoint,
                     counters=MediaCrawlerCounters(
-                        items=len(items), comments=len(comments), errors=1
+                        items=len(items),
+                        comments=len(comments),
+                        errors=1,
                     ),
                     risk_events=[signal],
-                    errors=(
-                        []
-                        if signal.requires_manual_review
-                        else [MediaCrawlerResultError(code=exc.code, message=exc.safe_message)]
-                    ),
+                    errors=errors,
                     feature_metadata=MediaCrawlerFeatureMetadata(
                         checkpoint_strategy="main_system_page_checkpoint",
                         incremental_strategy=spec.search_strategy,
@@ -226,7 +246,10 @@ class MediaCrawlerResilienceRunner:
             items=items,
             comments=comments,
             checkpoint=checkpoint,
-            counters=MediaCrawlerCounters(items=len(items), comments=len(comments)),
+            counters=MediaCrawlerCounters(
+                items=len(items),
+                comments=len(comments),
+            ),
             feature_metadata=MediaCrawlerFeatureMetadata(
                 checkpoint_strategy="main_system_page_checkpoint",
                 incremental_strategy=spec.search_strategy,
@@ -246,10 +269,14 @@ class MediaCrawlerResilienceRunner:
                 return await self.page_runner.run(invocation)
             except ConnectorFetchError as exc:
                 last_error = exc
-                if not is_technical_retry_error(exc) or attempt >= self.max_technical_attempts:
+                if (
+                    not is_technical_retry_error(exc)
+                    or attempt >= self.max_technical_attempts
+                ):
                     raise
                 delay = 0.25 * (2 ** (attempt - 1)) + min(
-                    0.1, max(0.0, self.jitter()) * 0.1
+                    0.1,
+                    max(0.0, self.jitter()) * 0.1,
                 )
                 await self.sleep(delay)
         assert last_error is not None
@@ -265,11 +292,17 @@ class MediaCrawlerResilienceRunner:
             platform=invocation.platform,
             mode=MediaCrawlerMode.SEARCH,
             page=page,
-            last_external_id=(previous.last_external_id if previous is not None else None),
+            last_external_id=(
+                previous.last_external_id if previous is not None else None
+            ),
             latest_published_at=(
                 previous.latest_published_at if previous is not None else None
             ),
-            metadata=(dict(previous.metadata) if previous is not None else {}),
+            metadata=(
+                dict(previous.metadata)
+                if previous is not None
+                else {}
+            ),
         )
 
     @staticmethod
@@ -296,7 +329,11 @@ class MediaCrawlerResilienceRunner:
             latest_published_at=(
                 published_at
                 if published_at is not None
-                else (previous.latest_published_at if previous is not None else None)
+                else (
+                    previous.latest_published_at
+                    if previous is not None
+                    else None
+                )
             ),
             last_completed_page=last_completed_page,
             cycle_complete=cycle_complete,
@@ -311,11 +348,17 @@ class MediaCrawlerResilienceRunner:
         raw_items: list[dict[str, Any]],
         comments: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        if platform is not MediaCrawlerPlatform.BAIDU_TIEBA or len(page_items) == len(raw_items):
+        if (
+            platform is not MediaCrawlerPlatform.BAIDU_TIEBA
+            or len(page_items) == len(raw_items)
+        ):
             return comments
         allowed = {
             value
-            for value in (cls._raw_external_id(platform, item) for item in page_items)
+            for value in (
+                cls._raw_external_id(platform, item)
+                for item in page_items
+            )
             if value is not None
         }
         return [
@@ -339,7 +382,9 @@ class MediaCrawlerResilienceRunner:
             MediaCrawlerPlatform.BAIDU_TIEBA: "note_id",
         }[platform]
         value = item.get(field)
-        return str(value).strip() if value is not None and str(value).strip() else None
+        if value is None or not str(value).strip():
+            return None
+        return str(value).strip()
 
     @staticmethod
     def _raw_comment_parent_id(
@@ -356,63 +401,6 @@ class MediaCrawlerResilienceRunner:
             MediaCrawlerPlatform.BAIDU_TIEBA: "note_id",
         }[platform]
         value = comment.get(field)
-        return str(value).strip() if value is not None and str(value).strip() else None
-
-
-class MediaCrawlerResilienceAdapter:
-    """Adapter for protocol 1.1 structured risks while Risk Guard remains authoritative."""
-
-    def __init__(self, runner: EnvelopeRunner, *, timeout_seconds: int = 900) -> None:
-        self.runner = runner
-        self.timeout_seconds = timeout_seconds
-
-    async def health_check(self) -> dict[str, Any]:
-        return {"status": "ok", "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION}
-
-    async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
-        envelope = await self.runner.run(invocation)
-        if envelope.run_id != invocation.run_id or envelope.platform != invocation.platform:
-            raise ConnectorFetchError(
-                "RESULT_MALFORMED",
-                "MediaCrawler result identity does not match the invocation",
-                retryable=False,
-            )
-        if envelope.risk_events:
-            event = envelope.risk_events[0]
-            safe_partial = (
-                envelope.status is MediaCrawlerResultStatus.PARTIAL
-                and bool(envelope.items)
-                and envelope.checkpoint is not None
-                and event.checkpoint_safe_to_commit
-            )
-            if event.requires_manual_review and not safe_partial:
-                try:
-                    code = MediaCrawlerErrorCode(event.standard_error_code)
-                except ValueError:
-                    decision = classify_platform_error(
-                        code=event.standard_error_code,
-                        message=event.message,
-                    )
-                    raise PlatformRiskError(
-                        RiskEvent.now(
-                            platform=invocation.platform.value,
-                            account_id=invocation.account_ref,
-                            code=event.standard_error_code,
-                            message=event.message,
-                            disposition=decision.disposition,
-                            action=decision.action,
-                        )
-                    )
-                raise to_platform_risk_error(
-                    MediaCrawlerAdapterError(code, event.message),
-                    platform=invocation.platform.value,
-                    account_ref=invocation.account_ref,
-                )
-        if envelope.status is MediaCrawlerResultStatus.FAILED:
-            first = envelope.errors[0] if envelope.errors else None
-            raise ConnectorFetchError(
-                first.code if first is not None else "UNKNOWN_PLATFORM_ERROR",
-                first.message if first is not None else "MediaCrawler platform execution failed",
-                retryable=False,
-            )
-        return envelope
+        if value is None or not str(value).strip():
+            return None
+        return str(value).strip()
