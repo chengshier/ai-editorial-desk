@@ -1,5 +1,26 @@
 # 文档与架构变更记录
 
+## 2026-08-07 — M1-D 与 M1 最终收口
+
+- 新增 PostgreSQL 持久化 `collection_schedules`、`collection_schedule_triggers`、`scheduler_instances` 与 `connector_validation_records`，并以独立 `20260807_0004_m1d_scheduler_workbench.py` migration 管理；
+- 建立 asyncio + PostgreSQL Scheduler，使用数据库 Lease 与时间槽唯一约束防止多 Scheduler 重复触发，Scheduler 只生成 CollectionTask 并调用既有 Collector Runtime；
+- 增加 Scheduler heartbeat、Lease 过期恢复和 stale 执行人工检查策略，不引入 Redis/Celery；
+- 扩展 Run trigger、parent retry、retry_count、进度时间和调试信息，增加 stale Run 查询、人工失败/取消和 retry 新 Run；
+- Retry 继续执行 Budget、Risk Guard、Checkpoint 与 RawSignal 幂等，不允许无限自动重试；
+- 增加 Checkpoint 查询与 expected_version 高风险 reset，要求 Actor/reason、写审计，且 reset 不删除历史 Raw Signal；
+- 实现 Hotlist 统一能力与百度实时热榜低风险公开入口，复用 SafeHTTPFetcher 的 SSRF、Redirect、超时、响应大小和 Content-Type 限制；
+- 增加 Connector Validation NOT_TESTED/PASSED/FAILED/EXPIRED；PASSED 拒绝 CI/Mock 环境，并要求人工真实 Smoke 标记及同 Definition 的 SUCCEEDED Test/Manual Run ID；
+- 建立 React + Vite + TypeScript 基础连接器工作台，包含 Definitions、Instances、Sources、Schedules、Runs、Checkpoints、Accounts/Risk 页面；
+- JSON Schema / UI Schema 已用于动态配置表单；Instance/Source 支持新建、编辑、启停/归档和 Test Run，Instance 支持 Run Now；
+- 修复 M1-D 初始 CI 中 Ruff、mypy、Vitest globals、SchemaForm required 优先级、React Hook dependency、迁移测试事件循环与 stale Run rollback 后 ORM 过期问题；
+- 新增 PostgreSQL 集成测试验证 Scheduler lease 并发单赢家、Lease 过期恢复、时间槽唯一、heartbeat、Scheduler → Runtime 闭环、stale/retry、Budget/Risk Guard、Checkpoint 并发 reset、Validation 与 Hotlist Runtime 幂等；
+- 最终 GitHub Actions 在 PostgreSQL 16 + pgvector 中通过 `ruff check .`、`mypy apps packages` 和 **120 项 pytest**；
+- Alembic `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 完整通过；
+- Connector Definition 连续同步两次，第二次 `created=0 / updated=0 / unchanged=11 / failed=0`；
+- Web `lint`、`typecheck`、**6 个 test files / 8 tests** 与 production build 全部通过；
+- 新增 `docs/M1_ACCEPTANCE_REPORT.md`，逐项记录 M1 实现、测试、CI 状态与限制；
+- M1 工程开发与 CI 验收完成；PR #6 仍保持 Open，等待人工代码审查与合并，未进入 M2、Event、Embedding、AI 或 MediaCrawler 七平台实跑。
+
 ## 2026-08-07 — M1-C PostgreSQL 验收收口
 
 - 修复 `collection_budget_usage` migration 缺少 UUID 主键列、但已声明主键约束的问题，并增加主键回归测试；
