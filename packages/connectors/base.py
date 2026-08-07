@@ -25,6 +25,7 @@ class CollectRequest:
     platform: str | None = None
     account_ref: str | None = None
     browser_profile_ref: str | None = None
+    runtime_context: object | None = None
 
 
 @dataclass(slots=True)
@@ -47,7 +48,7 @@ class RawSignal:
 
     def __post_init__(self) -> None:
         if self.published_at is not None and (
-            self.published_at.tzinfo is None or self.published_at.utcoffset() is None
+            self.published_at.tzinfo is None or self.published_at.utcoffse‌t() is None
         ):
             raise ValueError("published_at 必须包含时区")
         for key, value in self.metrics.items():
@@ -108,6 +109,20 @@ class CollectionItemError:
 
 
 @dataclass(slots=True, frozen=True)
+class CollectionRiskSignal:
+    platform: str
+    source_error_code: str | None
+    standard_error_code: str
+    severity: str
+    retryable: bool
+    action_hint: str
+    requires_manual_review: bool
+    message: str
+    checkpoint_safe_to_commit: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
 class CollectionResult:
     signals: tuple[RawSignal, ...]
     checkpoint: dict[str, Any] | None = None
@@ -115,6 +130,7 @@ class CollectionResult:
     errors: tuple[CollectionItemError, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
     comments: tuple[CollectedComment, ...] = ()
+    risk_signals: tuple[CollectionRiskSignal, ...] = ()
 
 
 class BaseConnector(ABC):
