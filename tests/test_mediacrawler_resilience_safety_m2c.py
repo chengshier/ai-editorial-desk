@@ -14,9 +14,9 @@ from packages.connectors.mediacrawler_adapter.account_profile import (
     MediaCrawlerAccountContext,
 )
 from packages.connectors.mediacrawler_adapter.discovery import (
+    SAFE_DISCOVERY_POLICY,
     DiscoveryHookUnavailable,
     DiscoveryKind,
-    SAFE_DISCOVERY_POLICY,
     discovery_hook_registry,
 )
 from packages.connectors.mediacrawler_adapter.errors import (
@@ -29,7 +29,9 @@ from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerMode,
     MediaCrawlerPlatform,
 )
-from packages.connectors.mediacrawler_adapter.resilience import MediaCrawlerResilienceRunner
+from packages.connectors.mediacrawler_adapter.resilience import (
+    MediaCrawlerResilienceRunner,
+)
 from packages.connectors.mediacrawler_adapter.risk_output import (
     is_technical_retry_error,
     risk_signal_from_error,
@@ -86,7 +88,9 @@ def test_account_execution_rules_are_conservative() -> None:
             account.ensure_runnable()
 
 
-def test_browser_profile_resolver_accepts_only_existing_controlled_profile(tmp_path: Path) -> None:
+def test_browser_profile_resolver_accepts_only_existing_controlled_profile(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "profiles"
     root.mkdir()
     profile = root / "account-a"
@@ -105,7 +109,10 @@ def test_browser_profile_resolver_accepts_only_existing_controlled_profile(tmp_p
     "profile_ref",
     ["../escape", "a/b", "a\\b", "..", ".", "/absolute", "a..b"],
 )
-def test_browser_profile_resolver_rejects_invalid_refs(tmp_path: Path, profile_ref: str) -> None:
+def test_browser_profile_resolver_rejects_invalid_refs(
+    tmp_path: Path,
+    profile_ref: str,
+) -> None:
     root = tmp_path / "profiles"
     root.mkdir()
     resolver = BrowserProfileResolver(root)
@@ -113,7 +120,9 @@ def test_browser_profile_resolver_rejects_invalid_refs(tmp_path: Path, profile_r
         resolver.resolve(_account(profile_ref=profile_ref))
 
 
-def test_browser_profile_resolver_rejects_missing_and_symlink(tmp_path: Path) -> None:
+def test_browser_profile_resolver_rejects_missing_and_symlink(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "profiles"
     root.mkdir()
     resolver = BrowserProfileResolver(root)
@@ -150,7 +159,10 @@ def test_signature_provider_registry_is_code_owned_for_all_seven_platforms() -> 
 class BrokenSignatureProvider:
     provider_id = "broken-fixture"
 
-    def prepare_runtime(self, context: SignatureRequestContext):  # type: ignore[no-untyped-def]
+    def prepare_runtime(
+        self,
+        context: SignatureRequestContext,
+    ):  # type: ignore[no-untyped-def]
         del context
         raise SignatureProviderError("fixture provider failed")
 
@@ -159,15 +171,21 @@ class NoopRunner:
     calls = 0
 
     async def run(self, invocation):  # type: ignore[no-untyped-def]
+        del invocation
         self.calls += 1
-        raise AssertionError("page runner must not be called after signature failure")
+        raise AssertionError(
+            "page runner must not be called after signature failure"
+        )
 
 
 async def test_signature_provider_failure_is_standardized_without_network_call() -> None:
     registry = SignatureProviderRegistry()
     registry.register(MediaCrawlerPlatform.WEIBO, BrokenSignatureProvider())
     page_runner = NoopRunner()
-    runner = MediaCrawlerResilienceRunner(page_runner, signature_registry=registry)
+    runner = MediaCrawlerResilienceRunner(
+        page_runner,
+        signature_registry=registry,
+    )
     invocation = MediaCrawlerInvocation(
         run_id=uuid4(),
         platform=MediaCrawlerPlatform.WEIBO,
@@ -230,7 +248,9 @@ def test_standard_risk_output_separates_platform_risk_from_technical_retry() -> 
         MediaCrawlerErrorCode.ACCOUNT_ABNORMAL,
     ],
 )
-def test_platform_risks_never_become_ordinary_retry(code: MediaCrawlerErrorCode) -> None:
+def test_platform_risks_never_become_ordinary_retry(
+    code: MediaCrawlerErrorCode,
+) -> None:
     error = MediaCrawlerAdapterError(code, "fixture risk")
     assert is_technical_retry_error(error) is False
     signal = risk_signal_from_error(
