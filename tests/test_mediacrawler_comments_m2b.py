@@ -11,7 +11,10 @@ from sqlalchemy.exc import IntegrityError
 
 from packages.collector_runtime import CollectionTask, CollectorRuntime, TriggerType
 from packages.collector_runtime.budgets import CollectionBudgetService
-from packages.collector_runtime.exceptions import PreflightRejectedError
+from packages.collector_runtime.exceptions import (
+    BudgetExceededError,
+    PreflightRejectedError,
+)
 from packages.connector_management.services import (
     ConnectorDefinitionSyncService,
     ConnectorInstanceService,
@@ -47,7 +50,10 @@ class CommentFixtureAdapter:
     async def health_check(self):  # type: ignore[no-untyped-def]
         return {"status": "ok"}
 
-    async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def invoke(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         self.calls += 1
         now = datetime.now(UTC)
         return MediaCrawlerResultEnvelope(
@@ -156,7 +162,13 @@ def _runtime(connector: MediaCrawlerConnector) -> CollectorRuntime:
     )
 
 
-def _task(instance_id, source_id, account_id, *, mode: str = "search"):  # type: ignore[no-untyped-def]
+def _task(
+    instance_id,
+    source_id,
+    account_id,
+    *,
+    mode: str = "search",
+):  # type: ignore[no-untyped-def]
     return CollectionTask(
         task_id=uuid4(),
         connector_instance_id=instance_id,
@@ -200,7 +212,9 @@ async def test_comments_persist_idempotently_without_rolling_back_signal(
         actor="admin",
     )
     adapter = CommentFixtureAdapter()
-    runtime = _runtime(MediaCrawlerConnector(adapter=adapter))  # type: ignore[arg-type]
+    runtime = _runtime(
+        MediaCrawlerConnector(adapter=adapter)  # type: ignore[arg-type]
+    )
     first = await runtime.execute(_task(instance_id, source_id, account_id))
     second = await runtime.execute(_task(instance_id, source_id, account_id))
 
@@ -210,7 +224,9 @@ async def test_comments_persist_idempotently_without_rolling_back_signal(
         await db_session.scalar(select(func.count()).select_from(RawSignalRecord)) or 0
     ) == 1
     assert int(
-        await db_session.scalar(select(func.count()).select_from(RawSignalCommentRecord))
+        await db_session.scalar(
+            select(func.count()).select_from(RawSignalCommentRecord)
+        )
         or 0
     ) == 1
     stored = await db_session.scalar(select(RawSignalCommentRecord))
@@ -218,7 +234,9 @@ async def test_comments_persist_idempotently_without_rolling_back_signal(
     assert stored.parent_comment_id == "parent-fixture"
     assert stored.raw_payload["cookie"] == "[REDACTED]"
     checkpoint = await db_session.scalar(
-        select(ConnectorCheckpoint).where(ConnectorCheckpoint.source_id == source_id)
+        select(ConnectorCheckpoint).where(
+            ConnectorCheckpoint.source_id == source_id
+        )
     )
     assert checkpoint is not None
     assert checkpoint.checkpoint_data == {"cursor": "after-comments"}
@@ -231,7 +249,9 @@ async def test_comment_database_concurrency_fk_and_cascade(
 ) -> None:  # type: ignore[no-untyped-def]
     instance_id, source_id, account_id = await _setup(db_session)
     runtime = _runtime(
-        MediaCrawlerConnector(adapter=CommentFixtureAdapter())  # type: ignore[arg-type]
+        MediaCrawlerConnector(  # type: ignore[arg-type]
+            adapter=CommentFixtureAdapter()
+        )
     )
     result = await runtime.execute(_task(instance_id, source_id, account_id))
     assert result.status is ConnectorRunStatus.PARTIAL
@@ -265,7 +285,10 @@ async def test_comment_database_concurrency_fk_and_cascade(
         await db_session.scalar(
             select(func.count())
             .select_from(RawSignalCommentRecord)
-            .where(RawSignalCommentRecord.external_comment_id == "concurrent-comment")
+            .where(
+                RawSignalCommentRecord.external_comment_id
+                == "concurrent-comment"
+            )
         )
         or 0
     ) == 1
@@ -294,24 +317,68 @@ async def test_comment_database_concurrency_fk_and_cascade(
                 delete(RawSignalRecord).where(RawSignalRecord.id == signal.id)
             )
     assert int(
-        await db_session.scalar(select(func.count()).select_from(RawSignalCommentRecord))
+        await db_session.scalar(
+            select(func.count()).select_from(RawSignalCommentRecord)
+        )
         or 0
     ) == 0
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_unsupported_platform_mode_rejected_before_adapter(
+async def test_xhs_comments_mode_rejected_by_allowed_modes_before_adapter(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
     instance_id, source_id, account_id = await _setup(
         db_session,
         platform="xiaohongshu",
-        source_mode="detail",
-        source_config={"content_ids": ["xhs-unsafe-detail"]},
+        source_mode="comments",
+        source_config={
+            "content_ids": ["xhs-unsafe-comments"],
+            "include_comments": True,
+            "comment_limit": 1,
+        },
     )
     adapter = CommentFixtureAdapter()
     with pytest.raises(PreflightRejectedError):
-        await _runtime(MediaCrawlerConnector(adapter=adapter)).execute(
-            _task(instance_id, source_id, account_id, mode="detail")
-        )  # type: ignore[arg-type]
+        await _runtime(
+            MediaCrawlerConnector(adapter=adapter)  # type: ignore[arg-type]
+        ).execute(
+            _task(instance_id, source_id, account_id, mode="comments")
+        )
+    assert adapter.calls == 0
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_comment_budget_multiplies_per_item_limit_before_adapter(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
+    instance_id, source_id, account_id = await _setup(
+        db_session,
+        source_config={
+            "keyword": "AI 编辑部",
+            "include_comments": True,
+            "comment_limit": 3,
+            "include_subcomments": False,
+        },
+    )
+    await CollectionBudgetService(db_session).create(
+        scope_type="connector",
+        scope_key=str(instance_id),
+        values={
+            "max_runs_per_day": 10,
+            "max_items_per_run": 10,
+            "max_items_per_day": 100,
+            "max_comments_per_run": 10,
+            "max_comments_per_day": 100,
+            "max_concurrency": 1,
+            "timezone": "UTC",
+            "enabled": True,
+        },
+        actor="admin",
+    )
+    adapter = CommentFixtureAdapter()
+    with pytest.raises(BudgetExceededError):
+        await _runtime(
+            MediaCrawlerConnector(adapter=adapter)  # type: ignore[arg-type]
+        ).execute(_task(instance_id, source_id, account_id))
     assert adapter.calls == 0
