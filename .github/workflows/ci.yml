@@ -50,9 +50,16 @@ jobs:
         run: mypy apps packages
 
       - name: Pytest
-        run: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          pytest -x -vv 2>&1 | tee pytest.log
 
-      - name: Alembic M1-B round trip
+      - name: Print pytest failure log
+        if: failure()
+        run: cat pytest.log
+
+      - name: Alembic M1-C round trip
         run: |
           alembic upgrade head
           alembic downgrade -1
