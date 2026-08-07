@@ -57,9 +57,10 @@ class ConnectorRunService:
         metadata: dict[str, Any] | None = None,
         trigger_type: ConnectorRunTriggerType = ConnectorRunTriggerType.MANUAL,
         parent_run_id: UUID | None = None,
+        retry_count: int = 0,
     ) -> ConnectorRun:
-        if requested_limit < 0:
-            raise BusinessValidationError("requested_limit 不能为负数")
+        if requested_limit < 0 or retry_count < 0:
+            raise BusinessValidationError("requested_limit 和 retry_count 不能为负数")
         validate_no_sensitive_fields(checkpoint_before or {}, field_name="checkpoint_before")
         async with self.session.begin():
             run = ConnectorRun(
@@ -71,6 +72,7 @@ class ConnectorRunService:
                 mode=mode,
                 status=ConnectorRunStatus.PENDING,
                 requested_limit=requested_limit,
+                retry_count=retry_count,
                 checkpoint_before=checkpoint_before,
                 run_metadata=sanitize_context(metadata or {}),
             )

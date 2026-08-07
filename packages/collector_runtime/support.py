@@ -128,6 +128,8 @@ class CollectorRuntimeSupport:
                 ),
                 metadata={"task": task.to_dict()},
                 trigger_type=ConnectorRunTriggerType(task.trigger_type.value),
+                parent_run_id=task.parent_run_id,
+                retry_count=task.retry_count,
             )
 
     async def advance_checkpoint(

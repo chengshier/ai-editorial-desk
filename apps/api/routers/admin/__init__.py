@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from apps.api.routers.admin.checkpoints import router as checkpoints_router
 from apps.api.routers.admin.collection_budgets import router as budgets_router
 from apps.api.routers.admin.collector_runtime import router as runtime_router
 from apps.api.routers.admin.connector_definitions import router as definitions_router
@@ -8,7 +9,10 @@ from apps.api.routers.admin.connector_runs import router as runs_router
 from apps.api.routers.admin.platform_accounts import router as accounts_router
 from apps.api.routers.admin.platform_risk_events import router as risk_events_router
 from apps.api.routers.admin.raw_signals import router as raw_signals_router
+from apps.api.routers.admin.scheduler_status import router as scheduler_status_router
+from apps.api.routers.admin.schedules import router as schedules_router
 from apps.api.routers.admin.sources import router as sources_router
+from apps.api.routers.admin.validations import router as validations_router
 
 router = APIRouter(prefix="/api/v1/admin")
 router.include_router(definitions_router)
@@ -19,6 +23,10 @@ router.include_router(raw_signals_router)
 router.include_router(budgets_router)
 router.include_router(runtime_router)
 router.include_router(runs_router)
+router.include_router(checkpoints_router)
+router.include_router(schedules_router)
+router.include_router(scheduler_status_router)
+router.include_router(validations_router)
 router.include_router(risk_events_router)
 
 __all__ = ["router"]

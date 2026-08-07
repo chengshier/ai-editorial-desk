@@ -11,7 +11,9 @@ from apps.api.schemas.m1c import (
 )
 from packages.connector_management.services import ConnectorDefinitionQueryService
 from packages.connectors.implementations import implementation_registry
+from packages.database.models import ConnectorDefinition, ConnectorValidationStatus
 from packages.database.session import get_database_session
+from packages.scheduling.admin import ConnectorValidationService
 
 router = APIRouter(
     prefix="/connector-definitions",
@@ -19,6 +21,16 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 Session = Annotated[AsyncSession, Depends(get_database_session)]
+
+
+async def _response(
+    session: AsyncSession, item: ConnectorDefinition
+) -> ConnectorDefinitionRuntimeResponse:
+    response = ConnectorDefinitionRuntimeResponse.from_orm_model(
+        item, implementation_registry
+    )
+    status = await ConnectorValidationService(session).effective_status(item)
+    return response.model_copy(update={"validated": status is ConnectorValidationStatus.PASSED})
 
 
 @router.get("", response_model=ConnectorDefinitionRuntimePage)
@@ -37,14 +49,9 @@ async def list_definitions(
         platform=platform,
         is_enabled=is_enabled,
     )
+    items = [await _response(session, item) for item in result.items]
     return ConnectorDefinitionRuntimePage(
-        items=[
-            ConnectorDefinitionRuntimeResponse.from_orm_model(
-                item,
-                implementation_registry,
-            )
-            for item in result.items
-        ],
+        items=items,
         page=result.page,
         page_size=result.page_size,
         total=result.total,
@@ -54,11 +61,7 @@ async def list_definitions(
 
 @router.get("/{definition_id}", response_model=ConnectorDefinitionRuntimeResponse)
 async def get_definition(
-    definition_id: UUID,
-    session: Session,
+    definition_id: UUID, session: Session
 ) -> ConnectorDefinitionRuntimeResponse:
     item = await ConnectorDefinitionQueryService(session).get(definition_id)
-    return ConnectorDefinitionRuntimeResponse.from_orm_model(
-        item,
-        implementation_registry,
-    )
+    return await _response(session, item)
