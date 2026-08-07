@@ -37,40 +37,74 @@ class MediaCrawlerPlatformSpec:
 
 PLATFORM_SPECS: dict[str, MediaCrawlerPlatformSpec] = {
     "weibo": MediaCrawlerPlatformSpec(
-        "weibo", "微博", True, True, True, True,
-        ("search", "account", "detail", "comments"),
+        platform="weibo",
+        display_name="微博",
+        search=True,
+        detail=True,
+        creator=True,
+        comments=True,
+        allowed_modes=("search", "account", "detail", "comments"),
     ),
     "bilibili": MediaCrawlerPlatformSpec(
-        "bilibili", "B站", True, True, True, True,
-        ("search", "account", "detail", "comments"),
+        platform="bilibili",
+        display_name="B站",
+        search=True,
+        detail=True,
+        creator=True,
+        comments=True,
+        allowed_modes=("search", "account", "detail", "comments"),
     ),
-    # Vendored core has creator collection, but pinned CLI does not wire --creator_id
-    # to ZHIHU_CREATOR_URL_LIST. M2-B keeps effective runtime capability disabled.
+    # Vendored core has creator collection, but pinned CLI does not wire
+    # --creator_id to ZHIHU_CREATOR_URL_LIST. Effective capability stays off.
     "zhihu": MediaCrawlerPlatformSpec(
-        "zhihu", "知乎", True, True, False, True,
-        ("search", "detail", "comments"),
+        platform="zhihu",
+        display_name="知乎",
+        search=True,
+        detail=True,
+        creator=False,
+        comments=True,
+        allowed_modes=("search", "detail", "comments"),
         upstream_creator=True,
     ),
     "douyin": MediaCrawlerPlatformSpec(
-        "douyin", "抖音", True, True, True, True,
-        ("search", "account", "detail", "comments"),
+        platform="douyin",
+        display_name="抖音",
+        search=True,
+        detail=True,
+        creator=True,
+        comments=True,
+        allowed_modes=("search", "account", "detail", "comments"),
     ),
-    # Pinned XHS detail/creator require xsec_token-bearing target URLs. Ordinary config
-    # must not persist those credentials, so M2-B exposes search (+ attached comments)
-    # only. The mapper still handles the vendored JSONL shape for fixture coverage.
+    # Pinned XHS detail/creator require xsec_token-bearing target URLs. Ordinary
+    # config must not persist them, so M2-B exposes safe search execution only.
     "xiaohongshu": MediaCrawlerPlatformSpec(
-        "xiaohongshu", "小红书", True, False, False, True,
-        ("search",),
+        platform="xiaohongshu",
+        display_name="小红书",
+        search=True,
+        detail=False,
+        creator=False,
+        comments=True,
+        allowed_modes=("search",),
         upstream_detail=True,
         upstream_creator=True,
     ),
     "kuaishou": MediaCrawlerPlatformSpec(
-        "kuaishou", "快手", True, True, True, True,
-        ("search", "account", "detail", "comments"),
+        platform="kuaishou",
+        display_name="快手",
+        search=True,
+        detail=True,
+        creator=True,
+        comments=True,
+        allowed_modes=("search", "account", "detail", "comments"),
     ),
     "baidu_tieba": MediaCrawlerPlatformSpec(
-        "baidu_tieba", "百度贴吧", True, True, True, True,
-        ("search", "account", "detail", "comments"),
+        platform="baidu_tieba",
+        display_name="百度贴吧",
+        search=True,
+        detail=True,
+        creator=True,
+        comments=True,
+        allowed_modes=("search", "account", "detail", "comments"),
     ),
 }
 
@@ -79,7 +113,9 @@ def get_platform_spec(platform: str) -> MediaCrawlerPlatformSpec:
     try:
         return PLATFORM_SPECS[platform]
     except KeyError as exc:
-        raise ValueError(f"unsupported MediaCrawler platform: {platform}") from exc
+        raise ValueError(
+            f"unsupported MediaCrawler platform: {platform}"
+        ) from exc
 
 
 def _contains_mode(mode: str) -> dict[str, Any]:
@@ -100,7 +136,10 @@ def build_config_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
             "title": "采集模式",
             "minItems": 1,
             "uniqueItems": True,
-            "items": {"type": "string", "enum": list(spec.allowed_modes)},
+            "items": {
+                "type": "string",
+                "enum": list(spec.allowed_modes),
+            },
             "default": ["search"] if spec.search else [spec.allowed_modes[0]],
         },
         "include_comments": {
@@ -136,7 +175,12 @@ def build_config_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
             "minLength": 1,
             "maxLength": 200,
         }
-        all_of.append({"if": _contains_mode("search"), "then": {"required": ["keyword"]}})
+        all_of.append(
+            {
+                "if": _contains_mode("search"),
+                "then": {"required": ["keyword"]},
+            }
+        )
     if spec.detail or "comments" in spec.allowed_modes:
         properties["content_ids"] = {
             "type": "array",
@@ -144,11 +188,24 @@ def build_config_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
             "minItems": 1,
             "maxItems": 100,
             "uniqueItems": True,
-            "items": {"type": "string", "minLength": 1, "maxLength": 500},
+            "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+            },
         }
-        detail_modes = [mode for mode in ("detail", "comments") if mode in spec.allowed_modes]
+        detail_modes = [
+            mode
+            for mode in ("detail", "comments")
+            if mode in spec.allowed_modes
+        ]
         for mode in detail_modes:
-            all_of.append({"if": _contains_mode(mode), "then": {"required": ["content_ids"]}})
+            all_of.append(
+                {
+                    "if": _contains_mode(mode),
+                    "then": {"required": ["content_ids"]},
+                }
+            )
     if spec.creator:
         properties["creator_id"] = {
             "type": "string",
@@ -156,7 +213,12 @@ def build_config_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
             "minLength": 1,
             "maxLength": 500,
         }
-        all_of.append({"if": _contains_mode("account"), "then": {"required": ["creator_id"]}})
+        all_of.append(
+            {
+                "if": _contains_mode("account"),
+                "then": {"required": ["creator_id"]},
+            }
+        )
     if not spec.comments:
         properties["include_comments"]["const"] = False
         properties["include_subcomments"]["const"] = False
@@ -165,11 +227,15 @@ def build_config_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
     all_of.append(
         {
             "if": {
-                "properties": {"include_subcomments": {"const": True}},
+                "properties": {
+                    "include_subcomments": {"const": True},
+                },
                 "required": ["include_subcomments"],
             },
             "then": {
-                "properties": {"include_comments": {"const": True}},
+                "properties": {
+                    "include_comments": {"const": True},
+                },
                 "required": ["include_comments"],
             },
         }
@@ -201,22 +267,34 @@ def build_ui_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
         "comment_limit": {
             "label": "单内容评论上限",
             "order": 60,
-            "visible_when": {"field": "include_comments", "equals": True},
+            "visible_when": {
+                "field": "include_comments",
+                "equals": True,
+            },
         },
         "include_subcomments": {
             "label": "采集二级评论",
             "order": 70,
-            "visible_when": {"field": "include_comments", "equals": True},
+            "visible_when": {
+                "field": "include_comments",
+                "equals": True,
+            },
             "help": "默认关闭。M2-B 不进行任何真实平台评论采集。",
         },
-        "timeout_seconds": {"label": "运行超时（秒）", "order": 80},
+        "timeout_seconds": {
+            "label": "运行超时（秒）",
+            "order": 80,
+        },
     }
     if spec.search:
         ui["keyword"] = {
             "widget": "text",
             "label": "关键词",
             "order": 20,
-            "visible_when": {"field": "modes", "contains": "search"},
+            "visible_when": {
+                "field": "modes",
+                "contains": "search",
+            },
         }
     if "content_ids" in build_config_schema(spec)["properties"]:
         ui["content_ids"] = {
@@ -233,6 +311,9 @@ def build_ui_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
             "widget": "text",
             "label": "创作者 ID / URL",
             "order": 40,
-            "visible_when": {"field": "modes", "contains": "account"},
+            "visible_when": {
+                "field": "modes",
+                "contains": "account",
+            },
         }
     return ui

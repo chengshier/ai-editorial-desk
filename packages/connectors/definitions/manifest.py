@@ -22,7 +22,10 @@ class ConnectorDefinitionManifest:
 
 
 def _object_schema(
-    *, title: str, properties: dict[str, Any], required: tuple[str, ...] = ()
+    *,
+    title: str,
+    properties: dict[str, Any],
+    required: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -74,9 +77,17 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "format": "uri", "maxLength": 2000},
+                    "items": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 2000,
+                    },
                 },
-                "language": {"type": "string", "minLength": 2, "maxLength": 16},
+                "language": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 16,
+                },
                 "category": {"type": "string", "maxLength": 100},
             },
         ),
@@ -104,13 +115,26 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$", "maxLength": 64},
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_]+$",
+                        "maxLength": 64,
+                    },
                 },
-                "sort": {"type": "string", "enum": ["new", "rising", "hot", "top"]},
-                "time_filter": {"type": "string", "enum": ["hour", "day", "week", "month", "year", "all"]},
+                "sort": {
+                    "type": "string",
+                    "enum": ["new", "rising", "hot", "top"],
+                },
+                "time_filter": {
+                    "type": "string",
+                    "enum": ["hour", "day", "week", "month", "year", "all"],
+                },
             },
         ),
-        ui_schema={"subreddits": {"widget": "tags"}, "sort": {"widget": "select"}},
+        ui_schema={
+            "subreddits": {"widget": "tags"},
+            "sort": {"widget": "select"},
+        },
         implementation_version="0.1.0",
     ),
     ConnectorDefinitionManifest(
@@ -132,21 +156,37 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 1,
                     "uniqueItems": True,
-                    "items": {"type": "string", "enum": ["baidu_realtime"]},
+                    "items": {
+                        "type": "string",
+                        "enum": ["baidu_realtime"],
+                    },
                     "default": ["baidu_realtime"],
                     "description": "M1 仅开放百度官方实时热搜公开 JSON 入口",
                 },
                 "categories": {
                     "type": "array",
                     "maxItems": 30,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
                     "description": "保留后续公开热榜分类能力，M1 百度实时榜暂不使用",
                 },
             },
         ),
         ui_schema={
-            "sources": {"widget": "checkbox_group", "label": "公开热榜来源", "help": "当前仅允许无需登录的百度官方实时热搜入口", "order": 10},
-            "categories": {"widget": "tags", "label": "分类", "order": 20},
+            "sources": {
+                "widget": "checkbox_group",
+                "label": "公开热榜来源",
+                "help": "当前仅允许无需登录的百度官方实时热搜入口",
+                "order": 10,
+            },
+            "categories": {
+                "widget": "tags",
+                "label": "分类",
+                "order": 20,
+            },
         },
         implementation_version="0.2.0",
     ),
@@ -167,9 +207,17 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "type": "array",
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 255},
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                    },
                 },
-                "default_language": {"type": "string", "minLength": 2, "maxLength": 16},
+                "default_language": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 16,
+                },
             },
         ),
         ui_schema={"allowed_domains": {"widget": "tags"}},

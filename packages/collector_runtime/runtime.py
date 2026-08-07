@@ -39,7 +39,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
         actual_comments = 0
 
         try:
-            requested_comments = self.requested_comment_limit(context.source.config, task.mode)
+            requested_comments = self.requested_comment_limit(
+                context.source.config,
+                task.mode,
+            )
             async with self.session_factory() as session:
                 reservations = await CollectionBudgetService(session).reserve(
                     platform=context.definition.platform,
@@ -63,13 +66,29 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     mode=task.mode,
                     query=context.source.external_ref,
                     limit=task.requested_limit,
-                    account_id=str(task.platform_account_id) if task.platform_account_id is not None else None,
-                    checkpoint=dict(checkpoint.checkpoint_data) if checkpoint is not None else None,
+                    account_id=(
+                        str(task.platform_account_id)
+                        if task.platform_account_id is not None
+                        else None
+                    ),
+                    checkpoint=(
+                        dict(checkpoint.checkpoint_data)
+                        if checkpoint is not None
+                        else None
+                    ),
                     parameters=dict(context.source.config),
                     run_id=str(run.id),
                     platform=context.definition.platform,
-                    account_ref=str(context.account.id) if context.account is not None else None,
-                    browser_profile_ref=context.account.browser_profile_ref if context.account is not None else None,
+                    account_ref=(
+                        str(context.account.id)
+                        if context.account is not None
+                        else None
+                    ),
+                    browser_profile_ref=(
+                        context.account.browser_profile_ref
+                        if context.account is not None
+                        else None
+                    ),
                 )
             )
 
@@ -80,7 +99,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     connector_run_id=run.id,
                     connector_type=context.definition.connector_type,
                     signal=signal,
-                    canonical_url=normalize_http_url(signal.canonical_url or signal.url),
+                    canonical_url=normalize_http_url(
+                        signal.canonical_url or signal.url
+                    ),
                 )
                 for signal in collection.signals
             ]
@@ -103,7 +124,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                             signal_by_external_id[signal.external_id] = result.signal_id
 
                 for comment in collection.comments:
-                    raw_signal_id = signal_by_external_id.get(comment.content_external_id)
+                    raw_signal_id = signal_by_external_id.get(
+                        comment.content_external_id
+                    )
                     if raw_signal_id is None:
                         runtime_errors.append(
                             CollectionItemError(
@@ -155,6 +178,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 target_status = ConnectorRunStatus.FAILED
             else:
                 target_status = ConnectorRunStatus.SUCCEEDED
+
             error_code = (
                 "checkpoint_conflict"
                 if checkpoint_error is not None
@@ -180,7 +204,11 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     "duplicates": comment_duplicate_count,
                 },
                 "error_samples": [
-                    {"code": item.code, "message": item.message, "external_ref": item.external_ref}
+                    {
+                        "code": item.code,
+                        "message": item.message,
+                        "external_ref": item.external_ref,
+                    }
                     for item in runtime_errors[:5]
                 ],
                 "dry_run": task.dry_run,
@@ -196,22 +224,38 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     retry_count=task.retry_count,
                     error_code=error_code,
                     error_message=error_message,
-                    checkpoint_after=(collection.checkpoint if not task.dry_run and checkpoint_error is None else None),
+                    checkpoint_after=(
+                        collection.checkpoint
+                        if not task.dry_run and checkpoint_error is None
+                        else None
+                    ),
                     metadata=metadata,
                 )
             async with self.session_factory() as session:
                 source_service = SourceService(session)
-                if target_status in {ConnectorRunStatus.SUCCEEDED, ConnectorRunStatus.PARTIAL}:
+                if target_status in {
+                    ConnectorRunStatus.SUCCEEDED,
+                    ConnectorRunStatus.PARTIAL,
+                }:
                     await source_service.mark_success(context.source.id)
                 else:
-                    await source_service.mark_error(context.source.id, error_code or "collection_failed")
+                    await source_service.mark_error(
+                        context.source.id,
+                        error_code or "collection_failed",
+                    )
             await self.settle(
                 reservations,
                 actual_items=collected_count,
                 actual_comments=actual_comments,
                 completed=True,
             )
-            self.log_result(context=context, run=finalized, failed_count=failed_count, latency=monotonic() - started, risk_action=None)
+            self.log_result(
+                context=context,
+                run=finalized,
+                failed_count=failed_count,
+                latency=monotonic() - started,
+                risk_action=None,
+            )
             return RuntimeResult(
                 run_id=finalized.id,
                 status=finalized.status,
@@ -234,14 +278,44 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     platform=context.definition.platform,
                     error=exc,
                     actor=task.triggered_by,
-                    metadata={"task": task.to_dict(), "budget": {"reservations": self.budget_metadata(reservations), "actual_items": 0, "actual_comments": 0, "completed": True}},
+                    metadata={
+                        "task": task.to_dict(),
+                        "budget": {
+                            "reservations": self.budget_metadata(reservations),
+                            "actual_items": 0,
+                            "actual_comments": 0,
+                            "completed": True,
+                        },
+                    },
                 )
-            await self.settle(reservations, actual_items=0, actual_comments=0, completed=True)
+            await self.settle(
+                reservations,
+                actual_items=0,
+                actual_comments=0,
+                completed=True,
+            )
             async with self.session_factory() as session:
-                await SourceService(session).mark_error(context.source.id, exc.event.code)
+                await SourceService(session).mark_error(
+                    context.source.id,
+                    exc.event.code,
+                )
                 risk_run = await ConnectorRunService(session).get(run.id)
-            self.log_result(context=context, run=risk_run, failed_count=1, latency=monotonic() - started, risk_action=exc.event.action.value)
-            return RuntimeResult(run_id=risk_run.id, status=risk_run.status, signal_ids=(), collected_count=0, inserted_count=0, duplicate_count=0, failed_count=1)
+            self.log_result(
+                context=context,
+                run=risk_run,
+                failed_count=1,
+                latency=monotonic() - started,
+                risk_action=exc.event.action.value,
+            )
+            return RuntimeResult(
+                run_id=risk_run.id,
+                status=risk_run.status,
+                signal_ids=(),
+                collected_count=0,
+                inserted_count=0,
+                duplicate_count=0,
+                failed_count=1,
+            )
         except BudgetExceededError:
             async with self.session_factory() as session:
                 await ConnectorRunService(session).finalize(
@@ -256,7 +330,11 @@ class CollectorRuntime(CollectorRuntimeSupport):
             raise
         except Exception as exc:
             if claimed:
-                code = exc.code if isinstance(exc, ConnectorFetchError) else "collector_execution_failed"
+                code = (
+                    exc.code
+                    if isinstance(exc, ConnectorFetchError)
+                    else "collector_execution_failed"
+                )
                 async with self.session_factory() as session:
                     failed = await ConnectorRunService(session).finalize(
                         run_id=run.id,
@@ -268,15 +346,47 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         retry_count=task.retry_count,
                         error_code=code,
                         error_message=self.safe_error_message(exc),
-                        metadata={"task": task.to_dict(), "budget": {"reservations": self.budget_metadata(reservations), "actual_items": collected_count, "actual_comments": actual_comments, "completed": True}},
+                        metadata={
+                            "task": task.to_dict(),
+                            "budget": {
+                                "reservations": self.budget_metadata(reservations),
+                                "actual_items": collected_count,
+                                "actual_comments": actual_comments,
+                                "completed": True,
+                            },
+                        },
                     )
-                await self.settle(reservations, actual_items=collected_count, actual_comments=actual_comments, completed=True)
+                await self.settle(
+                    reservations,
+                    actual_items=collected_count,
+                    actual_comments=actual_comments,
+                    completed=True,
+                )
                 async with self.session_factory() as session:
                     await SourceService(session).mark_error(context.source.id, code)
-                self.log_result(context=context, run=failed, failed_count=1, latency=monotonic() - started, risk_action=None)
-                return RuntimeResult(run_id=failed.id, status=failed.status, signal_ids=tuple(signal_ids), collected_count=collected_count, inserted_count=inserted_count, duplicate_count=duplicate_count, failed_count=1)
+                self.log_result(
+                    context=context,
+                    run=failed,
+                    failed_count=1,
+                    latency=monotonic() - started,
+                    risk_action=None,
+                )
+                return RuntimeResult(
+                    run_id=failed.id,
+                    status=failed.status,
+                    signal_ids=tuple(signal_ids),
+                    collected_count=collected_count,
+                    inserted_count=inserted_count,
+                    duplicate_count=duplicate_count,
+                    failed_count=1,
+                )
             if reservations:
-                await self.settle(reservations, actual_items=0, actual_comments=0, completed=False)
+                await self.settle(
+                    reservations,
+                    actual_items=0,
+                    actual_comments=0,
+                    completed=False,
+                )
             raise
 
     @staticmethod
@@ -289,7 +399,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
         return max(0, min(50, value))
 
     @staticmethod
-    def budget_metadata(reservations: tuple[BudgetReservation, ...]) -> list[dict[str, object]]:
+    def budget_metadata(
+        reservations: tuple[BudgetReservation, ...],
+    ) -> list[dict[str, object]]:
         return [
             {
                 "budget_id": str(item.budget_id),

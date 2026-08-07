@@ -11,10 +11,16 @@ from sqlalchemy.orm import selectinload
 from packages.collector_runtime.budget_types import BudgetReservation
 from packages.collector_runtime.budgets import CollectionBudgetService
 from packages.collector_runtime.context import MAX_TEST_RUN_LIMIT, PreflightContext
-from packages.collector_runtime.exceptions import ConnectorImplementationUnavailableError, PreflightRejectedError
+from packages.collector_runtime.exceptions import (
+    ConnectorImplementationUnavailableError,
+    PreflightRejectedError,
+)
 from packages.collector_runtime.protocols import CollectionTask
 from packages.collector_runtime.risk import RuntimeRiskGuard
-from packages.connector_management.services import ConnectorCheckpointService, ConnectorRunService
+from packages.connector_management.services import (
+    ConnectorCheckpointService,
+    ConnectorRunService,
+)
 from packages.connectors import ConnectorRegistry, RawSignal
 from packages.connectors.http import ConnectorFetchError
 from packages.database.models import (
@@ -75,15 +81,26 @@ class CollectorRuntimeSupport:
             if source.source_type != definition.connector_type:
                 raise PreflightRejectedError("来源类型与连接器定义不一致")
             if not self.registry.has(definition.connector_type):
-                raise ConnectorImplementationUnavailableError("该连接器只有 Definition，尚无可运行实现")
+                raise ConnectorImplementationUnavailableError(
+                    "该连接器只有 Definition，尚无可运行实现"
+                )
             if not bool(definition.capabilities.get(task.mode)):
                 raise PreflightRejectedError("连接器不支持请求的运行模式")
             if bool(definition.capabilities.get("requires_account")) and account is None:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
-            return PreflightContext(instance=instance, definition=definition, source=source, account=account)
+            return PreflightContext(
+                instance=instance,
+                definition=definition,
+                source=source,
+                account=account,
+            )
 
-    async def load_checkpoint(self, task: CollectionTask, context: PreflightContext) -> ConnectorCheckpoint | None:
+    async def load_checkpoint(
+        self,
+        task: CollectionTask,
+        context: PreflightContext,
+    ) -> ConnectorCheckpoint | None:
         if not bool(context.definition.capabilities.get("supports_checkpoint")):
             return None
         async with self.session_factory() as session:
@@ -94,11 +111,19 @@ class CollectorRuntimeSupport:
                 mode=task.mode,
                 scope_key=context.source.scope_key,
             )
-        if task.checkpoint_version is not None and checkpoint.version != task.checkpoint_version:
+        if (
+            task.checkpoint_version is not None
+            and checkpoint.version != task.checkpoint_version
+        ):
             raise PreflightRejectedError("expected_checkpoint_version 不匹配")
         return checkpoint
 
-    async def create_run(self, task: CollectionTask, context: PreflightContext, checkpoint: ConnectorCheckpoint | None) -> ConnectorRun:
+    async def create_run(
+        self,
+        task: CollectionTask,
+        context: PreflightContext,
+        checkpoint: ConnectorCheckpoint | None,
+    ) -> ConnectorRun:
         async with self.session_factory() as session:
             return await ConnectorRunService(session).create_pending(
                 connector_instance_id=context.instance.id,
@@ -106,7 +131,11 @@ class CollectorRuntimeSupport:
                 platform_account_id=task.platform_account_id,
                 mode=task.mode,
                 requested_limit=task.requested_limit,
-                checkpoint_before=dict(checkpoint.checkpoint_data) if checkpoint is not None else None,
+                checkpoint_before=(
+                    dict(checkpoint.checkpoint_data)
+                    if checkpoint is not None
+                    else None
+                ),
                 metadata={"task": task.to_dict()},
                 trigger_type=ConnectorRunTriggerType(task.trigger_type.value),
                 parent_run_id=task.parent_run_id,
@@ -121,15 +150,28 @@ class CollectorRuntimeSupport:
         checkpoint_data: dict[str, Any],
         signals: tuple[RawSignal, ...],
     ) -> None:
-        published = [item.published_at for item in signals if item.published_at is not None]
+        published = [
+            item.published_at for item in signals if item.published_at is not None
+        ]
         last_published_at = max(published, default=None)
-        last_external_id = next((item.external_id for item in reversed(signals) if item.external_id is not None), None)
+        last_external_id = next(
+            (
+                item.external_id
+                for item in reversed(signals)
+                if item.external_id is not None
+            ),
+            None,
+        )
         async with self.session_factory() as session:
             await ConnectorCheckpointService(session).update(
                 checkpoint_id=checkpoint_id,
                 expected_version=expected_version,
                 cursor=None,
-                watermark=last_published_at.isoformat() if last_published_at is not None else None,
+                watermark=(
+                    last_published_at.isoformat()
+                    if last_published_at is not None
+                    else None
+                ),
                 last_external_id=last_external_id,
                 last_published_at=last_published_at,
                 checkpoint_data=checkpoint_data,

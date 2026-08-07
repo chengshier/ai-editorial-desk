@@ -8,7 +8,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.collector_runtime.budget_repository import CollectionBudgetRepository
-from packages.collector_runtime.budget_types import BUDGET_SCOPE_TYPES, BudgetReservation, budget_snapshot
+from packages.collector_runtime.budget_types import (
+    BUDGET_SCOPE_TYPES,
+    BudgetReservation,
+    budget_snapshot,
+)
 from packages.collector_runtime.exceptions import BudgetExceededError
 from packages.connector_management.exceptions import ConflictError, ResourceNotFoundError
 from packages.connector_management.repositories import AuditLogRepository, Page
@@ -21,15 +25,34 @@ class CollectionBudgetService:
         self.repository = CollectionBudgetRepository(session)
         self.audit = AuditLogRepository(session)
 
-    async def create(self, *, scope_type: str, scope_key: str, values: dict[str, Any], actor: str) -> CollectionBudget:
+    async def create(
+        self,
+        *,
+        scope_type: str,
+        scope_key: str,
+        values: dict[str, Any],
+        actor: str,
+    ) -> CollectionBudget:
         self._validate(scope_type=scope_type, values=values)
         async with self.session.begin():
             if await self.repository.get_by_scope(scope_type, scope_key.strip()):
                 raise ConflictError("该预算作用域已存在")
-            budget = CollectionBudget(scope_type=scope_type, scope_key=scope_key.strip(), updated_by=actor, **values)
+            budget = CollectionBudget(
+                scope_type=scope_type,
+                scope_key=scope_key.strip(),
+                updated_by=actor,
+                **values,
+            )
             self.session.add(budget)
             await self.session.flush()
-            self.audit.add(entity_type="collection_budget", entity_id=budget.id, action="create", actor=actor, before_data={}, after_data=budget_snapshot(budget))
+            self.audit.add(
+                entity_type="collection_budget",
+                entity_id=budget.id,
+                action="create",
+                actor=actor,
+                before_data={},
+                after_data=budget_snapshot(budget),
+            )
         return budget
 
     async def get(self, budget_id: UUID) -> CollectionBudget:
@@ -38,10 +61,28 @@ class CollectionBudgetService:
             raise ResourceNotFoundError("采集预算不存在")
         return budget
 
-    async def list(self, *, page: int, page_size: int, scope_type: str | None, enabled: bool | None) -> Page[CollectionBudget]:
-        return await self.repository.list(page=page, page_size=page_size, scope_type=scope_type, enabled=enabled)
+    async def list(
+        self,
+        *,
+        page: int,
+        page_size: int,
+        scope_type: str | None,
+        enabled: bool | None,
+    ) -> Page[CollectionBudget]:
+        return await self.repository.list(
+            page=page,
+            page_size=page_size,
+            scope_type=scope_type,
+            enabled=enabled,
+        )
 
-    async def update(self, *, budget_id: UUID, changes: dict[str, Any], actor: str) -> CollectionBudget:
+    async def update(
+        self,
+        *,
+        budget_id: UUID,
+        changes: dict[str, Any],
+        actor: str,
+    ) -> CollectionBudget:
         self._validate(scope_type=None, values=changes)
         async with self.session.begin():
             budget = await self.repository.get(budget_id)
@@ -54,12 +95,29 @@ class CollectionBudgetService:
             if before == budget_snapshot(budget):
                 return budget
             budget.updated_by = actor
-            self.audit.add(entity_type="collection_budget", entity_id=budget.id, action="update", actor=actor, before_data=before, after_data=budget_snapshot(budget))
+            self.audit.add(
+                entity_type="collection_budget",
+                entity_id=budget.id,
+                action="update",
+                actor=actor,
+                before_data=before,
+                after_data=budget_snapshot(budget),
+            )
         return budget
 
-    async def ensure_default(self, *, connector_instance_id: UUID, connector_type: str, actor: str) -> CollectionBudget:
+    async def ensure_default(
+        self,
+        *,
+        connector_instance_id: UUID,
+        connector_type: str,
+        actor: str,
+    ) -> CollectionBudget:
         async with self.session.begin():
-            budget, created = await self.repository.ensure_default(connector_instance_id=connector_instance_id, connector_type=connector_type, actor=actor)
+            budget, created = await self.repository.ensure_default(
+                connector_instance_id=connector_instance_id,
+                connector_type=connector_type,
+                actor=actor,
+            )
             if created:
                 self._audit_default(budget, actor)
         return budget
@@ -80,6 +138,7 @@ class CollectionBudgetService:
             raise BudgetExceededError("requested_limit 必须大于等于 1")
         if requested_comments < 0:
             raise BudgetExceededError("requested_comments 不能为负数")
+
         async with self.session.begin():
             budgets = await self.repository.applicable(
                 platform=platform,
@@ -101,19 +160,31 @@ class CollectionBudgetService:
             now = datetime.now(UTC)
             for budget in sorted(budgets, key=lambda item: str(item.id)):
                 usage_date = now.astimezone(ZoneInfo(budget.timezone)).date()
-                usage = await self.repository.get_or_create_usage(budget_id=budget.id, usage_date=usage_date)
+                usage = await self.repository.get_or_create_usage(
+                    budget_id=budget.id,
+                    usage_date=usage_date,
+                )
                 if requested_items > budget.max_items_per_run:
                     raise BudgetExceededError("requested_limit 超过单次预算")
                 if requested_comments > budget.max_comments_per_run:
                     raise BudgetExceededError("comment_limit 超过单次评论预算")
                 if usage.runs_reserved + 1 > budget.max_runs_per_day:
                     raise BudgetExceededError("已达到当日运行次数预算")
-                if usage.items_used + usage.items_reserved + requested_items > budget.max_items_per_day:
+                projected_items = (
+                    usage.items_used + usage.items_reserved + requested_items
+                )
+                if projected_items > budget.max_items_per_day:
                     raise BudgetExceededError("已达到当日条目预算")
-                if usage.comments_used + usage.comments_reserved + requested_comments > budget.max_comments_per_day:
+                projected_comments = (
+                    usage.comments_used
+                    + usage.comments_reserved
+                    + requested_comments
+                )
+                if projected_comments > budget.max_comments_per_day:
                     raise BudgetExceededError("已达到当日评论预算")
                 if usage.active_runs + 1 > budget.max_concurrency:
                     raise BudgetExceededError("已达到并发运行预算")
+
                 usage.runs_reserved += 1
                 usage.items_reserved += requested_items
                 usage.comments_reserved += requested_comments
@@ -138,14 +209,23 @@ class CollectionBudgetService:
         completed: bool,
     ) -> None:
         async with self.session.begin():
-            for reservation in sorted(reservations, key=lambda item: str(item.budget_id)):
+            for reservation in sorted(
+                reservations,
+                key=lambda item: str(item.budget_id),
+            ):
                 usage = await self.repository.get_or_create_usage(
                     budget_id=reservation.budget_id,
                     usage_date=datetime.fromisoformat(reservation.usage_date).date(),
                 )
                 usage.active_runs = max(0, usage.active_runs - 1)
-                usage.items_reserved = max(0, usage.items_reserved - reservation.reserved_items)
-                usage.comments_reserved = max(0, usage.comments_reserved - reservation.reserved_comments)
+                usage.items_reserved = max(
+                    0,
+                    usage.items_reserved - reservation.reserved_items,
+                )
+                usage.comments_reserved = max(
+                    0,
+                    usage.comments_reserved - reservation.reserved_comments,
+                )
                 if completed:
                     usage.runs_completed += 1
                     usage.items_used += max(0, actual_items)
@@ -155,13 +235,26 @@ class CollectionBudgetService:
                 usage.version += 1
 
     def _audit_default(self, budget: CollectionBudget, actor: str) -> None:
-        self.audit.add(entity_type="collection_budget", entity_id=budget.id, action="create_default", actor=actor, before_data={}, after_data=budget_snapshot(budget))
+        self.audit.add(
+            entity_type="collection_budget",
+            entity_id=budget.id,
+            action="create_default",
+            actor=actor,
+            before_data={},
+            after_data=budget_snapshot(budget),
+        )
 
     @staticmethod
     def _validate(*, scope_type: str | None, values: dict[str, Any]) -> None:
         if scope_type is not None and scope_type not in BUDGET_SCOPE_TYPES:
             raise ValueError("不支持的预算作用域")
-        for name in ("max_runs_per_day", "max_items_per_run", "max_items_per_day", "max_concurrency"):
+        positive_fields = (
+            "max_runs_per_day",
+            "max_items_per_run",
+            "max_items_per_day",
+            "max_concurrency",
+        )
+        for name in positive_fields:
             if name in values and int(values[name]) < 1:
                 raise ValueError(f"{name} 必须大于等于 1")
         for name in ("max_comments_per_run", "max_comments_per_day"):
