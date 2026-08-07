@@ -1,5 +1,26 @@
 # 文档与架构变更记录
 
+## 2026-08-07 — M2-A MediaCrawler 主系统集成层
+
+- 基于 PR #6 合并后的完整 M1 `main` 新建独立分支 `feature/m2a-mediacrawler-integration`，未从 M1 feature 分支继续派生；
+- 新增版本化 `MediaCrawlerInvocation` / `MediaCrawlerResultEnvelope` 协议，当前 `protocol_version=1.0`，仅传 JSON 可序列化 Domain Model，不传 ORM、Session、DATABASE_URL、Admin Token 或明文 Cookie/Token；
+- 新增标准 Adapter Error Mapping，覆盖 subprocess timeout/cancel/nonzero、结果缺失/过大/损坏、protocol mismatch、browser disconnect、认证/登录/权限/限流/CAPTCHA/账号异常/自动化检测/网络超时/解析失败等；
+- 增强现有 Risk Guard 风险识别，403、406、429、CAPTCHA、登录失效、账号 blocked/restricted/abnormal、自动化检测、`-104` 等风险候选不进入普通 retry；
+- 新增 `MediaCrawlerSubprocessRunner`：每 Run 独立安全临时目录、主系统控制 `--save_data_path`、JSONL 结果边界、结果与诊断大小限制、timeout/cancellation 终止、结果路径逃逸与 symlink 防护；
+- stdout/stderr 只作为受限诊断，不再从随机 stdout JSON 文本获取业务数据；
+- subprocess 环境使用白名单，不继承 DATABASE_URL、Admin Token 或凭据环境，并显式设置 `--enable_ip_proxy false`；
+- 新增 `MediaCrawlerConnector` 并注册到现有 Implementation Registry，继续通过 `CollectorRuntime` 执行，不创建第二套 Runtime/Registry；
+- CollectorRuntime 仅向 Connector 补充当前 `run_id`、Definition platform 与不透明 account/profile 引用；现有 Budget、Run 原子领取、RawSignal 幂等、Checkpoint 与 Risk Guard 事务边界保持不变；
+- `connector_checkpoints` 继续是权威，Invocation 可携带 checkpoint，Result 可返回 candidate，最终只在 RawSignal 成功提交后由 Runtime 推进；
+- M2-A 只支持最小公共标准 item → RawSignal 边界，不实现七平台完整字段 Mapper；七平台专属 Mapper/Schema 仍属于 M2-B；
+- 新增离线 Fixture/Fake subprocess 测试，覆盖 Invocation/Result、timeout/cancel/nonzero/no-result/malformed/partial、403/406/429/CAPTCHA/login-expired/permission/automation/account-restricted/network-timeout/browser-disconnect；
+- 新增 PostgreSQL Runtime 集成测试，覆盖 `CollectionTask → CollectorRuntime → MediaCrawlerConnector → Fake Adapter → RawSignal`、幂等、Checkpoint 成功后推进、入库失败不推进、风险进入 `PAUSED_RISK`、Budget 在 Adapter 前生效；
+- M2-A 全部测试离线完成，不连接真实平台、不登录、不扫码、不使用真实 Cookie，也不生成真实 PASSED validation；
+- 新增 `docs/MEDIACRAWLER_LOCAL_CHANGES.md`，记录 pinned upstream、许可证、协议、Runner、错误、Risk、Runtime/Checkpoint 边界和本地修改范围；
+- MediaCrawler 继续固定上游 commit `071c8c0acaece3e82f2532cffb19faeddc9ec1c3`，许可证保持 `NON-COMMERCIAL LEARNING LICENSE 1.1`；
+- **本批未修改 `third_party/MediaCrawler/` 内任何 vendored source，也未更新上游版本**；
+- 未进入 M2-B / M2-C / M2-D，也未进入 Event、Embedding、去重、聚类或 AI。
+
 ## 2026-08-07 — M1-D 与 M1 最终收口
 
 - 新增 PostgreSQL 持久化 `collection_schedules`、`collection_schedule_triggers`、`scheduler_instances` 与 `connector_validation_records`，并以独立 `20260807_0004_m1d_scheduler_workbench.py` migration 管理；
@@ -19,7 +40,7 @@
 - Connector Definition 连续同步两次，第二次 `created=0 / updated=0 / unchanged=11 / failed=0`；
 - Web `lint`、`typecheck`、**6 个 test files / 8 tests** 与 production build 全部通过；
 - 新增 `docs/M1_ACCEPTANCE_REPORT.md`，逐项记录 M1 实现、测试、CI 状态与限制；
-- M1 工程开发与 CI 验收完成；PR #6 仍保持 Open，等待人工代码审查与合并，未进入 M2、Event、Embedding、AI 或 MediaCrawler 七平台实跑。
+- M1 工程开发与 CI 验收完成，PR #6 后续已人工合并进入 `main`。
 
 ## 2026-08-07 — M1-C PostgreSQL 验收收口
 

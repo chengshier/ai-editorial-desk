@@ -12,16 +12,36 @@ class RiskDecision:
 
 NON_RETRYABLE_MARKERS = (
     "account blocked",
+    "account restricted",
+    "account abnormal",
+    "automation detected",
+    "captcha",
+    "repeated login invalidation",
+    "login expired",
     "检测到ai操作",
     "检测到自动化",
     "验证码",
     "滑块",
     "没有权限访问",
     "账号异常",
+    "账号受限",
     "访问受限",
 )
 
-NON_RETRYABLE_CODES = {"-104", "403", "406", "429"}
+NON_RETRYABLE_CODES = {
+    "-104",
+    "403",
+    "406",
+    "429",
+    "AUTH_REQUIRED",
+    "LOGIN_EXPIRED",
+    "PERMISSION_DENIED",
+    "RATE_LIMITED",
+    "CAPTCHA_REQUIRED",
+    "ACCOUNT_RESTRICTED",
+    "ACCOUNT_ABNORMAL",
+    "AUTOMATION_DETECTED",
+}
 
 
 def classify_platform_error(*, code: str | int | None, message: str) -> RiskDecision:

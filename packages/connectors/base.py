@@ -21,6 +21,10 @@ class CollectRequest:
     risk_policy_id: str | None = None
     checkpoint: dict[str, Any] | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
+    run_id: str | None = None
+    platform: str | None = None
+    account_ref: str | None = None
+    browser_profile_ref: str | None = None
 
 
 @dataclass(slots=True)
