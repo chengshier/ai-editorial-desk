@@ -133,6 +133,7 @@ def upgrade() -> None:
         sa.Column("comments_used", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("active_runs", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("version", sa.Integer(), server_default=sa.text("1"), nullable=False),
+        sa.Column("id", UUID, nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=False),
         sa.CheckConstraint("runs_reserved >= 0", name="ck_collection_budget_usage_runs_reserved_nonnegative"),
         sa.CheckConstraint("runs_completed >= 0", name="ck_collection_budget_usage_runs_completed_nonnegative"),
