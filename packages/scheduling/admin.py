@@ -377,11 +377,12 @@ class RunRecoveryService:
         run = await ConnectorRunService(self.session).get(run_id)
         if run.status is not ConnectorRunStatus.RUNNING:
             raise ConflictError("只有 RUNNING Run 可以人工标记 stale failure")
+        failed_count = max(run.failed_count, 1)
         await self.session.rollback()
         return await ConnectorRunService(self.session).finalize(
             run_id=run_id,
             target_status=ConnectorRunStatus.FAILED,
-            failed_count=max(run.failed_count, 1),
+            failed_count=failed_count,
             error_code="stale_run_marked_failed",
             error_message=reason,
         )
