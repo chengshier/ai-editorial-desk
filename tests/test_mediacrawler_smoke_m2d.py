@@ -16,6 +16,7 @@ from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerPlatform,
 )
 from packages.connectors.mediacrawler_adapter.smoke import (
+    BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH,
     M2D_DEFERRED_PLATFORMS,
     M2D_TARGET_PLATFORMS,
     MAX_SMOKE_COMMENTS,
@@ -47,13 +48,26 @@ def _invocation() -> MediaCrawlerInvocation:
     )
 
 
-def test_first_batch_audit_exposes_real_search_floor_blockers() -> None:
+def test_first_batch_audit_only_releases_bilibili_search_floor_blocker() -> None:
     assert M2D_TARGET_PLATFORMS == ("bilibili", "zhihu", "weibo")
     assert PINNED_SEARCH_RESULT_FLOORS == {
         "bilibili": 20,
         "zhihu": 20,
         "weibo": 10,
     }
+    assert BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH is True
+
+    bilibili = audit_platform("bilibili")
+    assert bilibili.search_low_volume_ready is True
+    assert bilibili.search_result_floor == 1
+    assert len(bilibili.blockers) == 2
+
+    for platform in ("zhihu", "weibo"):
+        audit = audit_platform(platform)
+        assert audit.search_low_volume_ready is False
+        assert audit.search_result_floor == PINNED_SEARCH_RESULT_FLOORS[platform]
+        assert len(audit.blockers) == 3
+
     for platform in M2D_TARGET_PLATFORMS:
         audit = audit_platform(platform)
         assert audit.requires_human_login is True
@@ -64,8 +78,6 @@ def test_first_batch_audit_exposes_real_search_floor_blockers() -> None:
         assert audit.max_items == MAX_SMOKE_ITEMS == 5
         assert audit.max_comments_per_content == MAX_SMOKE_COMMENTS == 5
         assert audit.subcomments is False
-        assert audit.search_low_volume_ready is False
-        assert audit.blockers
 
     with pytest.raises(SmokeSafetyError):
         audit_platform("douyin")
@@ -77,6 +89,13 @@ def test_smoke_request_limits_fail_closed_before_network() -> None:
         mode="detail",
         requested_limit=1,
         comment_limit=5,
+        include_subcomments=False,
+    )
+    validate_smoke_request(
+        platform="bilibili",
+        mode="search",
+        requested_limit=5,
+        comment_limit=0,
         include_subcomments=False,
     )
     validate_smoke_request(
