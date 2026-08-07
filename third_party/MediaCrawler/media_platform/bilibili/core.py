@@ -54,6 +54,27 @@ from .help import parse_video_info_from_url, parse_creator_info_from_url
 from .login import BilibiliLogin
 
 
+BILI_SEARCH_MAX_PAGE_SIZE = 20
+
+
+def _build_bili_search_pagination(requested_limit: int) -> Tuple[int, int]:
+    """Return a stable API page size and finite page count for normal search."""
+    if requested_limit <= 0:
+        return 0, 0
+    page_size = min(BILI_SEARCH_MAX_PAGE_SIZE, requested_limit)
+    page_count = (requested_limit + page_size - 1) // page_size
+    return page_size, page_count
+
+
+def _bili_search_page_item_limit(
+    requested_limit: int,
+    page_size: int,
+    page_offset: int,
+) -> int:
+    remaining = requested_limit - page_offset * page_size
+    return max(0, min(page_size, remaining))
+
+
 class BilibiliCrawler(AbstractCrawler):
     context_page: Page
     bili_client: BilibiliClient
@@ -186,36 +207,39 @@ class BilibiliCrawler(AbstractCrawler):
         :return:
         """
         utils.logger.info("[BilibiliCrawler.search_by_keywords] Begin search bilibli keywords")
-        bili_limit_count = 20  # bilibili limit page fixed value
-        if config.CRAWLER_MAX_NOTES_COUNT < bili_limit_count:
-            config.CRAWLER_MAX_NOTES_COUNT = bili_limit_count
+        requested_limit = config.CRAWLER_MAX_NOTES_COUNT
+        bili_page_size, page_count = _build_bili_search_pagination(requested_limit)
+        if page_count == 0:
+            utils.logger.info("[BilibiliCrawler.search_by_keywords] CRAWLER_MAX_NOTES_COUNT is zero, skip search")
+            return
         start_page = config.START_PAGE  # start page number
         for keyword in config.KEYWORDS.split(","):
             source_keyword_var.set(keyword)
             utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Current search keyword: {keyword}")
-            page = 1
-            while (page - start_page + 1) * bili_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
-                if page < start_page:
-                    utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Skip page: {page}")
-                    page += 1
-                    continue
-
+            for page_offset in range(page_count):
+                page = start_page + page_offset
                 utils.logger.info(f"[BilibiliCrawler.search_by_keywords] search bilibili keyword: {keyword}, page: {page}")
                 video_id_list: List[str] = []
                 videos_res = await self.bili_client.search_video_by_keyword(
                     keyword=keyword,
                     page=page,
-                    page_size=bili_limit_count,
+                    page_size=bili_page_size,
                     order=SearchOrderType.DEFAULT,
                     pubtime_begin_s=0,  # Publish date start timestamp
                     pubtime_end_s=0,  # Publish date end timestamp
                 )
-                video_list: List[Dict] = videos_res.get("result")
+                raw_video_list: List[Dict] = videos_res.get("result") or []
 
-                if not video_list:
+                if not raw_video_list:
                     utils.logger.info(f"[BilibiliCrawler.search_by_keywords] No more videos for '{keyword}', moving to next keyword.")
                     break
 
+                page_item_limit = _bili_search_page_item_limit(
+                    requested_limit,
+                    bili_page_size,
+                    page_offset,
+                )
+                video_list = raw_video_list[:page_item_limit]
                 semaphore = asyncio.Semaphore(config.MAX_CONCURRENCY_NUM)
                 task_list = []
                 try:
@@ -229,13 +253,14 @@ class BilibiliCrawler(AbstractCrawler):
                         await bilibili_store.update_bilibili_video(video_item)
                         await bilibili_store.update_up_info(video_item)
                         await self.get_bilibili_video(video_item, semaphore)
-                page += 1
 
                 # Sleep after page navigation
                 await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
-                utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
+                utils.logger.info(f"[BilibiliCrawler.search_by_keywords] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page}")
 
                 await self.batch_get_video_comments(video_id_list)
+                if len(raw_video_list) < bili_page_size:
+                    break
 
     async def search_by_keywords_in_time_range(self, daily_limit: bool):
         """
