@@ -86,15 +86,23 @@ class CollectorRuntimeSupport:
                 )
             if not bool(definition.capabilities.get(task.mode)):
                 raise PreflightRejectedError("连接器不支持请求的运行模式")
+            allowed_modes = definition.capabilities.get("allowed_modes")
+            if isinstance(allowed_modes, list) and task.mode not in allowed_modes:
+                raise PreflightRejectedError("平台当前不允许请求的运行模式")
             if bool(definition.capabilities.get("requires_account")) and account is None:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
             return PreflightContext(
-                instance=instance, definition=definition, source=source, account=account
+                instance=instance,
+                definition=definition,
+                source=source,
+                account=account,
             )
 
     async def load_checkpoint(
-        self, task: CollectionTask, context: PreflightContext
+        self,
+        task: CollectionTask,
+        context: PreflightContext,
     ) -> ConnectorCheckpoint | None:
         if not bool(context.definition.capabilities.get("supports_checkpoint")):
             return None
@@ -106,7 +114,10 @@ class CollectorRuntimeSupport:
                 mode=task.mode,
                 scope_key=context.source.scope_key,
             )
-        if task.checkpoint_version is not None and checkpoint.version != task.checkpoint_version:
+        if (
+            task.checkpoint_version is not None
+            and checkpoint.version != task.checkpoint_version
+        ):
             raise PreflightRejectedError("expected_checkpoint_version 不匹配")
         return checkpoint
 
@@ -124,7 +135,9 @@ class CollectorRuntimeSupport:
                 mode=task.mode,
                 requested_limit=task.requested_limit,
                 checkpoint_before=(
-                    dict(checkpoint.checkpoint_data) if checkpoint is not None else None
+                    dict(checkpoint.checkpoint_data)
+                    if checkpoint is not None
+                    else None
                 ),
                 metadata={"task": task.to_dict()},
                 trigger_type=ConnectorRunTriggerType(task.trigger_type.value),
@@ -140,10 +153,16 @@ class CollectorRuntimeSupport:
         checkpoint_data: dict[str, Any],
         signals: tuple[RawSignal, ...],
     ) -> None:
-        published = [item.published_at for item in signals if item.published_at is not None]
+        published = [
+            item.published_at for item in signals if item.published_at is not None
+        ]
         last_published_at = max(published, default=None)
         last_external_id = next(
-            (item.external_id for item in reversed(signals) if item.external_id is not None),
+            (
+                item.external_id
+                for item in reversed(signals)
+                if item.external_id is not None
+            ),
             None,
         )
         async with self.session_factory() as session:
@@ -152,7 +171,9 @@ class CollectorRuntimeSupport:
                 expected_version=expected_version,
                 cursor=None,
                 watermark=(
-                    last_published_at.isoformat() if last_published_at is not None else None
+                    last_published_at.isoformat()
+                    if last_published_at is not None
+                    else None
                 ),
                 last_external_id=last_external_id,
                 last_published_at=last_published_at,
@@ -164,6 +185,7 @@ class CollectorRuntimeSupport:
         reservations: tuple[BudgetReservation, ...],
         *,
         actual_items: int,
+        actual_comments: int = 0,
         completed: bool,
     ) -> None:
         if not reservations:
@@ -172,6 +194,7 @@ class CollectorRuntimeSupport:
             await CollectionBudgetService(session).settle(
                 reservations=reservations,
                 actual_items=actual_items,
+                actual_comments=actual_comments,
                 completed=completed,
             )
 

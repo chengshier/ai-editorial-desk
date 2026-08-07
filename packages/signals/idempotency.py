@@ -5,7 +5,10 @@ import json
 from datetime import UTC, datetime
 from uuid import UUID
 
+from packages.connectors.base import CollectedComment
+
 IDEMPOTENCY_VERSION = "v1"
+COMMENT_IDEMPOTENCY_VERSION = "comment-v1"
 
 
 def _stable_text(value: str | None) -> str:
@@ -17,7 +20,12 @@ def build_content_hash(*, title: str | None, text: str | None) -> str:
         "text": _stable_text(text),
         "title": _stable_text(title),
     }
-    serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
@@ -45,3 +53,28 @@ def build_idempotency_key(
     raw = f"{IDEMPOTENCY_VERSION}|{connector_type}|{platform}|{identity}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     return f"{IDEMPOTENCY_VERSION}:{digest}"
+
+
+def build_comment_idempotency_key(comment: CollectedComment) -> str:
+    """Centralized stable comment identity with deterministic no-ID fallback."""
+
+    if comment.external_comment_id:
+        identity = f"external:{comment.external_comment_id.strip()}"
+    else:
+        published = (
+            comment.published_at.astimezone(UTC).isoformat()
+            if comment.published_at is not None
+            else "unknown-published-at"
+        )
+        text_hash = hashlib.sha256(
+            _stable_text(comment.text).encode("utf-8")
+        ).hexdigest()
+        identity = (
+            f"fallback:{comment.author_id or 'unknown-author'}:"
+            f"{text_hash}:{published}"
+        )
+    raw = (
+        f"{COMMENT_IDEMPOTENCY_VERSION}|{comment.platform}|"
+        f"{comment.content_external_id}|{identity}"
+    )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()

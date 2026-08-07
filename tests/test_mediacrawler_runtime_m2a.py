@@ -61,12 +61,19 @@ class FakeAdapter:
             status=MediaCrawlerResultStatus.SUCCESS,
             items=[
                 {
-                    "external_id": "fixture-post",
-                    "url": "not-a-url"
-                    if self.invalid_url
-                    else "https://example.com/fixture-post",
-                    "title": "M2-A fixture",
-                    "published_at": "2026-08-07T07:00:00+00:00",
+                    "note_id": "fixture-post",
+                    "content": "M2-A fixture",
+                    "create_time": 1786086000,
+                    "liked_count": "1",
+                    "comments_count": "2",
+                    "shared_count": "3",
+                    "note_url": (
+                        "not-a-url"
+                        if self.invalid_url
+                        else "https://m.weibo.cn/detail/fixture-post"
+                    ),
+                    "creator_hash": "creator-fixture",
+                    "nickname": "测***户",
                 }
             ],
             comments=[],
@@ -106,7 +113,7 @@ async def _enabled_mediacrawler_source(db_session):  # type: ignore[no-untyped-d
         name=f"m2a-weibo-{uuid4()}",
         config={
             "modes": ["search"],
-            "keywords": ["AI 编辑部"],
+            "keyword": "AI 编辑部",
             "include_comments": False,
         },
         schedule_config={},
@@ -124,7 +131,7 @@ async def _enabled_mediacrawler_source(db_session):  # type: ignore[no-untyped-d
         scope_key=f"weibo:fixture:{uuid4()}",
         external_ref="AI 编辑部",
         config={
-            "keywords": ["AI 编辑部"],
+            "keyword": "AI 编辑部",
             "include_comments": False,
         },
         enabled=True,
@@ -213,7 +220,9 @@ async def test_mediacrawler_checkpoint_does_not_advance_when_ingestion_fails(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
     instance_id, source_id, account_id = await _enabled_mediacrawler_source(db_session)
-    connector = MediaCrawlerConnector(adapter=FakeAdapter(invalid_url=True))  # type: ignore[arg-type]
+    connector = MediaCrawlerConnector(
+        adapter=FakeAdapter(invalid_url=True)  # type: ignore[arg-type]
+    )
     runtime = _runtime(connector)
 
     result = await runtime.execute(_task(instance_id, source_id, account_id))

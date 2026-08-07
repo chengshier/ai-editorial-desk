@@ -6,6 +6,7 @@ export type JsonSchema = {
   properties?: Record<string, JsonSchema>
   items?: JsonSchema
   enum?: Array<string | number>
+  const?: unknown
   default?: unknown
   minimum?: number
   maximum?: number
@@ -13,6 +14,16 @@ export type JsonSchema = {
   maxLength?: number
   minItems?: number
   maxItems?: number
+  uniqueItems?: boolean
+}
+
+type Primitive = string | number | boolean
+
+export type VisibilityRule = {
+  field: string
+  equals?: Primitive
+  contains?: Primitive
+  contains_any?: Primitive[]
 }
 
 export type UiSchema = Record<string, {
@@ -21,6 +32,7 @@ export type UiSchema = Record<string, {
   order?: number
   widget?: string
   secret_reference?: boolean
+  visible_when?: VisibilityRule
 }>
 
 export type Page<T> = {

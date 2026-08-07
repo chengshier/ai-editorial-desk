@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -9,13 +8,17 @@ from packages.connectors.base import (
     CollectionItemError,
     CollectionResult,
     CollectRequest,
-    RawSignal,
 )
 from packages.connectors.mediacrawler_adapter.adapter import MediaCrawlerAdapter
 from packages.connectors.mediacrawler_adapter.errors import (
     MediaCrawlerAdapterError,
     MediaCrawlerErrorCode,
 )
+from packages.connectors.mediacrawler_adapter.platforms.base import MapperDataError
+from packages.connectors.mediacrawler_adapter.platforms.registry import (
+    mediacrawler_mapper_registry,
+)
+from packages.connectors.mediacrawler_adapter.platforms.specs import get_platform_spec
 from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerInvocation,
     MediaCrawlerMode,
@@ -24,9 +27,11 @@ from packages.connectors.mediacrawler_adapter.protocol import (
 )
 
 
-class MediaCrawlerConnector(BaseConnector):
-    """Main-system Connector wrapper around the versioned MediaCrawler Adapter."""
+class ConnectorCapabilityError(ValueError):
+    """Requested mode is outside the platform's effective M2-B capability."""
 
+
+class MediaCrawlerConnector(BaseConnector):
     connector_type = "mediacrawler"
 
     def __init__(self, adapter: MediaCrawlerAdapter | None = None) -> None:
@@ -49,178 +54,209 @@ class MediaCrawlerConnector(BaseConnector):
         except ValueError as exc:
             raise MediaCrawlerAdapterError(
                 MediaCrawlerErrorCode.RESULT_MALFORMED,
-                "MediaCrawler collection request is outside the M2-A protocol",
+                "MediaCrawler collection request is outside the versioned protocol",
             ) from exc
 
+        spec = get_platform_spec(platform.value)
+        if mode.value not in spec.allowed_modes:
+            raise ConnectorCapabilityError(
+                f"{platform.value} does not support MediaCrawler mode "
+                f"{mode.value} in M2-B"
+            )
+
         parameters = dict(request.parameters)
-        target_ids = request.target_ids or self._string_tuple(parameters.get("target_ids"))
         keyword: str | None = None
         creator_id: str | None = None
         content_ids: tuple[str, ...] = ()
         if mode is MediaCrawlerMode.SEARCH:
-            keyword = request.query or self._first_string(parameters.get("keywords"))
+            keyword = (
+                request.query
+                or self._string_value(parameters.get("keyword"))
+                or self._first_string(parameters.get("keywords"))
+            )
+            if keyword is None:
+                raise ConnectorCapabilityError("search mode requires keyword")
         elif mode is MediaCrawlerMode.ACCOUNT:
-            creator_id = request.query or (target_ids[0] if target_ids else None)
+            creator_id = request.query or self._string_value(
+                parameters.get("creator_id")
+            )
+            if creator_id is None:
+                raise ConnectorCapabilityError("account mode requires creator_id")
         elif mode in {MediaCrawlerMode.DETAIL, MediaCrawlerMode.COMMENTS}:
-            content_ids = target_ids or ((request.query,) if request.query else ())
+            content_ids = (
+                request.target_ids
+                or self._string_tuple(parameters.get("content_ids"))
+                or self._string_tuple(parameters.get("target_ids"))
+            )
+            if not content_ids and request.query:
+                content_ids = (request.query,)
+            if not content_ids:
+                raise ConnectorCapabilityError(
+                    f"{mode.value} mode requires content_ids"
+                )
 
-        include_comments = bool(parameters.get("include_comments", False))
-        if mode is MediaCrawlerMode.COMMENTS:
-            include_comments = True
+        include_comments = (
+            bool(parameters.get("include_comments", False))
+            or mode is MediaCrawlerMode.COMMENTS
+        )
+        if include_comments and not spec.comments:
+            raise ConnectorCapabilityError(
+                f"{platform.value} does not support comments"
+            )
         include_subcomments = bool(parameters.get("include_subcomments", False))
-        comment_limit = min(
-            100,
-            max(
-                0,
-                self._integer_value(
-                    parameters.get("comment_limit"),
-                    default=20 if include_comments else 0,
-                ),
-            ),
+        if include_subcomments and not include_comments:
+            raise ConnectorCapabilityError(
+                "include_subcomments requires include_comments"
+            )
+        comment_limit = self._bounded_integer(
+            parameters.get("comment_limit"),
+            default=20 if include_comments else 0,
+            minimum=0,
+            maximum=50,
         )
         if not include_comments:
-            include_subcomments = False
             comment_limit = 0
-
-        invocation = MediaCrawlerInvocation(
-            run_id=run_id,
-            platform=platform,
-            mode=mode,
-            source_id=source_id,
-            keyword=keyword,
-            creator_id=creator_id,
-            content_ids=content_ids,
-            requested_limit=request.limit,
-            comment_limit=comment_limit,
-            include_comments=include_comments,
-            include_subcomments=include_subcomments,
-            checkpoint=request.checkpoint,
-            account_ref=request.account_ref or request.account_id,
-            browser_profile_ref=request.browser_profile_ref,
-            timeout_seconds=self.adapter.settings.mediacrawler_timeout_seconds,
+            include_subcomments = False
+        timeout_seconds = self._bounded_integer(
+            parameters.get("timeout_seconds"),
+            default=self.adapter.settings.mediacrawler_timeout_seconds,
+            minimum=30,
+            maximum=1800,
         )
-        envelope = await self.adapter.invoke(invocation)
-        return self._to_collection_result(envelope)
+
+        envelope = await self.adapter.invoke(
+            MediaCrawlerInvocation(
+                run_id=run_id,
+                platform=platform,
+                mode=mode,
+                source_id=source_id,
+                keyword=keyword,
+                creator_id=creator_id,
+                content_ids=content_ids,
+                requested_limit=request.limit,
+                comment_limit=comment_limit,
+                include_comments=include_comments,
+                include_subcomments=include_subcomments,
+                checkpoint=request.checkpoint,
+                account_ref=request.account_ref or request.account_id,
+                browser_profile_ref=request.browser_profile_ref,
+                timeout_seconds=timeout_seconds,
+            )
+        )
+        return self._to_collection_result(
+            envelope,
+            allow_comments=include_comments,
+        )
 
     def _to_collection_result(
         self,
         envelope: MediaCrawlerResultEnvelope,
+        *,
+        allow_comments: bool,
     ) -> CollectionResult:
-        signals: list[RawSignal] = []
-        item_errors: list[CollectionItemError] = [
+        mapper = mediacrawler_mapper_registry.get(envelope.platform.value)
+        signals = []
+        comments = []
+        errors = [
             CollectionItemError(
-                code=error.code,
-                message=error.message,
-                external_ref=error.external_ref,
+                error.code,
+                error.message,
+                error.external_ref,
             )
             for error in envelope.errors
         ]
+        failed_items = 0
+        failed_comments = 0
+
         for item in envelope.items:
             try:
-                signals.append(self._map_standard_item(item, envelope.platform.value))
-            except (TypeError, ValueError):
-                item_errors.append(
+                signals.append(mapper.map_item(item))
+            except (MapperDataError, TypeError, ValueError) as exc:
+                failed_items += 1
+                errors.append(
                     CollectionItemError(
-                        code="mediacrawler_item_unmapped",
-                        message="MediaCrawler item is not yet in the M2-A standard item shape",
-                        external_ref=self._safe_external_ref(item),
+                        "mediacrawler_item_unmapped",
+                        "MediaCrawler item failed platform mapping",
+                        getattr(exc, "external_ref", None),
                     )
                 )
-                if len(item_errors) >= 100:
-                    break
+        if envelope.items and not signals:
+            raise MediaCrawlerAdapterError(
+                MediaCrawlerErrorCode.PARSE_ERROR,
+                f"{envelope.platform.value} mapper could not recognize "
+                "the result format",
+            )
+
+        if envelope.comments and not allow_comments:
+            failed_comments = len(envelope.comments)
+            errors.append(
+                CollectionItemError(
+                    "mediacrawler_unexpected_comments",
+                    "MediaCrawler returned comments although comment collection "
+                    "was disabled",
+                    None,
+                )
+            )
+        else:
+            for comment in envelope.comments:
+                try:
+                    comments.append(mapper.map_comment(comment))
+                except (MapperDataError, TypeError, ValueError) as exc:
+                    failed_comments += 1
+                    errors.append(
+                        CollectionItemError(
+                            "mediacrawler_comment_unmapped",
+                            "MediaCrawler comment failed platform mapping",
+                            getattr(exc, "external_ref", None),
+                        )
+                    )
 
         return CollectionResult(
             signals=tuple(signals),
             checkpoint=envelope.checkpoint,
-            errors=tuple(item_errors),
+            errors=tuple(errors[:100]),
             metadata={
                 "mediacrawler_protocol_version": envelope.protocol_version,
                 "mediacrawler_status": envelope.status.value,
                 "mediacrawler_counters": envelope.counters.model_dump(mode="json"),
+                "mapped_count": len(signals),
+                "failed_map_count": failed_items,
+                "mapped_comment_count": len(comments),
+                "failed_comment_map_count": failed_comments,
                 "mediacrawler_warning_count": len(envelope.warnings),
-                "mediacrawler_comment_count": len(envelope.comments),
             },
+            comments=tuple(comments),
         )
 
     @staticmethod
-    def _map_standard_item(item: dict[str, Any], platform: str) -> RawSignal:
-        external_id = item.get("external_id")
-        url = item.get("url")
-        if not isinstance(external_id, (str, int)) or not str(external_id).strip():
-            raise ValueError("external_id missing")
-        if not isinstance(url, str) or not url.strip():
-            raise ValueError("url missing")
-
-        published_at: datetime | None = None
-        raw_published_at = item.get("published_at")
-        if isinstance(raw_published_at, str) and raw_published_at:
-            try:
-                published_at = datetime.fromisoformat(raw_published_at.replace("Z", "+00:00"))
-            except ValueError:
-                published_at = None
-            if published_at is not None and (
-                published_at.tzinfo is None or published_at.utcoffset() is None
-            ):
-                published_at = None
-
-        metrics: dict[str, int | float] = {}
-        raw_metrics = item.get("metrics")
-        if isinstance(raw_metrics, dict):
-            for key, value in raw_metrics.items():
-                if isinstance(key, str) and not isinstance(value, bool) and isinstance(
-                    value, (int, float)
-                ):
-                    metrics[key] = value
-
-        media: list[dict[str, Any]] = []
-        raw_media = item.get("media")
-        if isinstance(raw_media, list):
-            media = [entry for entry in raw_media if isinstance(entry, dict)]
-
-        return RawSignal(
-            platform=platform,
-            external_id=str(external_id),
-            url=url,
-            canonical_url=item.get("canonical_url")
-            if isinstance(item.get("canonical_url"), str)
-            else None,
-            title=item.get("title") if isinstance(item.get("title"), str) else None,
-            text=item.get("text") if isinstance(item.get("text"), str) else None,
-            author_id=item.get("author_id")
-            if isinstance(item.get("author_id"), str)
-            else None,
-            author_name=item.get("author_name")
-            if isinstance(item.get("author_name"), str)
-            else None,
-            published_at=published_at,
-            metrics=metrics,
-            media=media,
-            raw_payload=item,
-            language=item.get("language") if isinstance(item.get("language"), str) else None,
-        )
+    def _string_value(value: Any) -> str | None:
+        return value.strip() if isinstance(value, str) and value.strip() else None
 
     @staticmethod
     def _string_tuple(value: Any) -> tuple[str, ...]:
-        if not isinstance(value, list):
+        if not isinstance(value, (list, tuple)):
             return ()
-        return tuple(item for item in value if isinstance(item, str) and item.strip())
+        return tuple(
+            item.strip()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        )
 
-    @staticmethod
-    def _first_string(value: Any) -> str | None:
-        values = MediaCrawlerConnector._string_tuple(value)
+    @classmethod
+    def _first_string(cls, value: Any) -> str | None:
+        values = cls._string_tuple(value)
         return values[0] if values else None
 
     @staticmethod
-    def _integer_value(value: Any, *, default: int) -> int:
-        if isinstance(value, bool):
-            return default
-        if isinstance(value, int):
-            return value
-        return default
-
-    @staticmethod
-    def _safe_external_ref(item: dict[str, Any]) -> str | None:
-        value = item.get("external_id")
-        if isinstance(value, (str, int)):
-            return str(value)[:500]
-        return None
+    def _bounded_integer(
+        value: Any,
+        *,
+        default: int,
+        minimum: int,
+        maximum: int,
+    ) -> int:
+        if isinstance(value, bool) or not isinstance(value, int):
+            resolved = default
+        else:
+            resolved = int(value)
+        return max(minimum, min(maximum, resolved))

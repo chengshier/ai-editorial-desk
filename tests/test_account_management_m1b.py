@@ -28,7 +28,7 @@ async def _account(db_session):  # type: ignore[no-untyped-def]
     instance = await ConnectorInstanceService(db_session).create(
         definition_id=definition.id,
         name="微博实例",
-        config={"modes": ["search"]},
+        config={"modes": ["search"], "keyword": "AI 编辑部"},
         schedule_config={},
         actor="admin",
     )

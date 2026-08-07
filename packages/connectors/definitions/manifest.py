@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 from typing import Any
 
+from packages.connectors.mediacrawler_adapter.platforms.specs import (
+    M2B_IMPLEMENTATION_VERSION,
+    PLATFORM_SPECS,
+    build_config_schema,
+    build_ui_schema,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ConnectorDefinitionManifest:
@@ -30,63 +37,27 @@ def _object_schema(
     }
 
 
-MEDIA_MODES = ["search", "account", "detail", "comments"]
-
-
-def _mediacrawler_definition(platform: str, display_name: str) -> ConnectorDefinitionManifest:
+def _mediacrawler_definition(platform: str) -> ConnectorDefinitionManifest:
+    spec = PLATFORM_SPECS[platform]
     return ConnectorDefinitionManifest(
         connector_type="mediacrawler",
-        platform=platform,
-        display_name=display_name,
-        capabilities={
-            "registration_state": "registered",
-            "search": True,
-            "account": True,
-            "detail": True,
-            "comments": True,
-            "requires_account": True,
-            "supports_checkpoint": True,
-        },
-        config_schema=_object_schema(
-            title=f"{display_name}采集配置",
-            required=("modes",),
-            properties={
-                "modes": {
-                    "type": "array",
-                    "minItems": 1,
-                    "uniqueItems": True,
-                    "items": {"type": "string", "enum": MEDIA_MODES},
-                },
-                "keywords": {
-                    "type": "array",
-                    "maxItems": 50,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
-                },
-                "target_ids": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 255},
-                },
-                "include_comments": {"type": "boolean", "default": False},
-            },
-        ),
-        ui_schema={
-            "modes": {"widget": "checkbox_group"},
-            "keywords": {"widget": "tags"},
-            "target_ids": {"widget": "tags"},
-        },
-        implementation_version="0.1.0",
+        platform=spec.platform,
+        display_name=spec.display_name,
+        capabilities=spec.capabilities,
+        config_schema=build_config_schema(spec),
+        ui_schema=build_ui_schema(spec),
+        implementation_version=M2B_IMPLEMENTATION_VERSION,
     )
 
 
 CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
-    _mediacrawler_definition("weibo", "微博"),
-    _mediacrawler_definition("bilibili", "B站"),
-    _mediacrawler_definition("zhihu", "知乎"),
-    _mediacrawler_definition("douyin", "抖音"),
-    _mediacrawler_definition("xiaohongshu", "小红书"),
-    _mediacrawler_definition("kuaishou", "快手"),
-    _mediacrawler_definition("baidu_tieba", "百度贴吧"),
+    _mediacrawler_definition("weibo"),
+    _mediacrawler_definition("bilibili"),
+    _mediacrawler_definition("zhihu"),
+    _mediacrawler_definition("douyin"),
+    _mediacrawler_definition("xiaohongshu"),
+    _mediacrawler_definition("kuaishou"),
+    _mediacrawler_definition("baidu_tieba"),
     ConnectorDefinitionManifest(
         connector_type="rss",
         platform="rss",
@@ -106,9 +77,17 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "format": "uri", "maxLength": 2000},
+                    "items": {
+                        "type": "string",
+                        "format": "uri",
+                        "maxLength": 2000,
+                    },
                 },
-                "language": {"type": "string", "minLength": 2, "maxLength": 16},
+                "language": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 16,
+                },
                 "category": {"type": "string", "maxLength": 100},
             },
         ),
@@ -136,16 +115,26 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "pattern": "^[A-Za-z0-9_]+$", "maxLength": 64},
+                    "items": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9_]+$",
+                        "maxLength": 64,
+                    },
                 },
-                "sort": {"type": "string", "enum": ["new", "rising", "hot", "top"]},
+                "sort": {
+                    "type": "string",
+                    "enum": ["new", "rising", "hot", "top"],
+                },
                 "time_filter": {
                     "type": "string",
                     "enum": ["hour", "day", "week", "month", "year", "all"],
                 },
             },
         ),
-        ui_schema={"subreddits": {"widget": "tags"}, "sort": {"widget": "select"}},
+        ui_schema={
+            "subreddits": {"widget": "tags"},
+            "sort": {"widget": "select"},
+        },
         implementation_version="0.1.0",
     ),
     ConnectorDefinitionManifest(
@@ -167,14 +156,21 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "minItems": 1,
                     "maxItems": 1,
                     "uniqueItems": True,
-                    "items": {"type": "string", "enum": ["baidu_realtime"]},
+                    "items": {
+                        "type": "string",
+                        "enum": ["baidu_realtime"],
+                    },
                     "default": ["baidu_realtime"],
                     "description": "M1 仅开放百度官方实时热搜公开 JSON 入口",
                 },
                 "categories": {
                     "type": "array",
                     "maxItems": 30,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 100},
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
                     "description": "保留后续公开热榜分类能力，M1 百度实时榜暂不使用",
                 },
             },
@@ -211,9 +207,17 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "type": "array",
                     "maxItems": 100,
                     "uniqueItems": True,
-                    "items": {"type": "string", "minLength": 1, "maxLength": 255},
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                    },
                 },
-                "default_language": {"type": "string", "minLength": 2, "maxLength": 16},
+                "default_language": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 16,
+                },
             },
         ),
         ui_schema={"allowed_domains": {"widget": "tags"}},

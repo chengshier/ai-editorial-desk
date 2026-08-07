@@ -1,0 +1,6 @@
+{
+  "item": {"note_id":"wb-1","content":"微博 fixture 正文","create_time":1786086000,"liked_count":"1.2万","comments_count":"12","shared_count":"3","note_url":"https://m.weibo.cn/detail/wb-1","creator_hash":"wb-author-hash","nickname":"测***户","cookie":"cookie-secret","token":"token-secret","authorization":"Bearer secret","api_key":"api-secret","session":"session-secret","password":"password-secret"},
+  "optional_item": {"note_id":"wb-2","content":"","note_url":"https://m.weibo.cn/detail/wb-2"},
+  "malformed_item": {"content":"missing id and url"},
+  "comment": {"comment_id":"wbc-1","create_time":1786086010,"note_id":"wb-1","content":"微博评论","creator_hash":"wb-commenter-hash","nickname":"评***者","sub_comment_count":"0","comment_like_count":"6","parent_comment_id":"","cookie":"comment-cookie-secret"}
+}

@@ -1,7 +1,12 @@
 from sqlalchemy.dialects.postgresql import JSONB
 
 from packages.database.base import Base
-from packages.database.models import ConfigurationChangeLog, ConnectorRun, RawSignalRecord
+from packages.database.models import (
+    ConfigurationChangeLog,
+    ConnectorRun,
+    RawSignalCommentRecord,
+    RawSignalRecord,
+)
 from packages.database.types import SanitizedJSONB
 
 EXPECTED_TABLES = {
@@ -14,6 +19,7 @@ EXPECTED_TABLES = {
     "configuration_change_logs",
     "sources",
     "raw_signals",
+    "raw_signal_comments",
     "collection_budgets",
     "collection_budget_usage",
     "collection_schedules",
@@ -42,3 +48,10 @@ def test_configuration_change_log_uses_sanitized_jsonb() -> None:
 
 def test_raw_signal_payload_uses_sanitized_jsonb() -> None:
     assert isinstance(RawSignalRecord.__table__.c.raw_payload.type, SanitizedJSONB)
+
+
+def test_raw_signal_comment_payload_uses_sanitized_jsonb() -> None:
+    assert isinstance(
+        RawSignalCommentRecord.__table__.c.raw_payload.type,
+        SanitizedJSONB,
+    )

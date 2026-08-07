@@ -131,10 +131,14 @@ class CollectionBudgetService:
         platform_account_id: UUID | None,
         source_id: UUID,
         requested_items: int,
+        requested_comments: int = 0,
         actor: str,
     ) -> tuple[BudgetReservation, ...]:
         if requested_items < 1:
             raise BudgetExceededError("requested_limit 必须大于等于 1")
+        if requested_comments < 0:
+            raise BudgetExceededError("requested_comments 不能为负数")
+
         async with self.session.begin():
             budgets = await self.repository.applicable(
                 platform=platform,
@@ -162,19 +166,28 @@ class CollectionBudgetService:
                 )
                 if requested_items > budget.max_items_per_run:
                     raise BudgetExceededError("requested_limit 超过单次预算")
+                if requested_comments > budget.max_comments_per_run:
+                    raise BudgetExceededError("comment_limit 超过单次评论预算")
                 if usage.runs_reserved + 1 > budget.max_runs_per_day:
                     raise BudgetExceededError("已达到当日运行次数预算")
-                if (
-                    usage.items_used
-                    + usage.items_reserved
-                    + requested_items
-                    > budget.max_items_per_day
-                ):
+                projected_items = (
+                    usage.items_used + usage.items_reserved + requested_items
+                )
+                if projected_items > budget.max_items_per_day:
                     raise BudgetExceededError("已达到当日条目预算")
+                projected_comments = (
+                    usage.comments_used
+                    + usage.comments_reserved
+                    + requested_comments
+                )
+                if projected_comments > budget.max_comments_per_day:
+                    raise BudgetExceededError("已达到当日评论预算")
                 if usage.active_runs + 1 > budget.max_concurrency:
                     raise BudgetExceededError("已达到并发运行预算")
+
                 usage.runs_reserved += 1
                 usage.items_reserved += requested_items
+                usage.comments_reserved += requested_comments
                 usage.active_runs += 1
                 usage.version += 1
                 reservations.append(
@@ -182,6 +195,7 @@ class CollectionBudgetService:
                         budget_id=budget.id,
                         usage_date=usage_date.isoformat(),
                         reserved_items=requested_items,
+                        reserved_comments=requested_comments,
                     )
                 )
             return tuple(reservations)
@@ -191,6 +205,7 @@ class CollectionBudgetService:
         *,
         reservations: tuple[BudgetReservation, ...],
         actual_items: int,
+        actual_comments: int = 0,
         completed: bool,
     ) -> None:
         async with self.session.begin():
@@ -207,9 +222,14 @@ class CollectionBudgetService:
                     0,
                     usage.items_reserved - reservation.reserved_items,
                 )
+                usage.comments_reserved = max(
+                    0,
+                    usage.comments_reserved - reservation.reserved_comments,
+                )
                 if completed:
                     usage.runs_completed += 1
                     usage.items_used += max(0, actual_items)
+                    usage.comments_used += max(0, actual_comments)
                 else:
                     usage.runs_reserved = max(0, usage.runs_reserved - 1)
                 usage.version += 1
@@ -225,19 +245,16 @@ class CollectionBudgetService:
         )
 
     @staticmethod
-    def _validate(
-        *,
-        scope_type: str | None,
-        values: dict[str, Any],
-    ) -> None:
+    def _validate(*, scope_type: str | None, values: dict[str, Any]) -> None:
         if scope_type is not None and scope_type not in BUDGET_SCOPE_TYPES:
             raise ValueError("不支持的预算作用域")
-        for name in (
+        positive_fields = (
             "max_runs_per_day",
             "max_items_per_run",
             "max_items_per_day",
             "max_concurrency",
-        ):
+        )
+        for name in positive_fields:
             if name in values and int(values[name]) < 1:
                 raise ValueError(f"{name} 必须大于等于 1")
         for name in ("max_comments_per_run", "max_comments_per_day"):

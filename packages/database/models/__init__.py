@@ -25,6 +25,7 @@ from packages.database.models.scheduling import (
 from packages.database.models.signals import (
     CollectionBudget,
     CollectionBudgetUsage,
+    RawSignalCommentRecord,
     RawSignalRecord,
     Source,
 )
@@ -45,6 +46,7 @@ __all__ = [
     "ConnectorValidationStatus",
     "PlatformAccount",
     "PlatformRiskEvent",
+    "RawSignalCommentRecord",
     "RawSignalRecord",
     "ScheduleTriggerStatus",
     "SchedulerInstance",

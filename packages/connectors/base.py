@@ -65,6 +65,42 @@ class RawSignal:
 
 
 @dataclass(slots=True, frozen=True)
+class CollectedComment:
+    """Connector-owned normalized comment with no persistence behavior."""
+
+    platform: str
+    content_external_id: str
+    external_comment_id: str | None
+    author_id: str | None
+    author_name: str | None
+    text: str
+    published_at: datetime | None
+    like_count: int | None
+    parent_comment_id: str | None
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.platform.strip():
+            raise ValueError("comment platform 不能为空")
+        if not self.content_external_id.strip():
+            raise ValueError("content_external_id 不能为空")
+        if self.external_comment_id is not None and not self.external_comment_id.strip():
+            raise ValueError("external_comment_id 不能是空字符串")
+        if not self.text.strip():
+            raise ValueError("comment text 不能为空")
+        if self.published_at is not None and (
+            self.published_at.tzinfo is None or self.published_at.utcoffset() is None
+        ):
+            raise ValueError("comment published_at 必须包含时区")
+        if self.like_count is not None and self.like_count < 0:
+            raise ValueError("comment like_count 不能为负数")
+        try:
+            json.dumps(self.raw_payload, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("comment raw_payload 必须可 JSON 序列化") from exc
+
+
+@dataclass(slots=True, frozen=True)
 class CollectionItemError:
     code: str
     message: str
@@ -78,6 +114,7 @@ class CollectionResult:
     not_modified: bool = False
     errors: tuple[CollectionItemError, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
+    comments: tuple[CollectedComment, ...] = ()
 
 
 class BaseConnector(ABC):

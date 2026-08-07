@@ -228,3 +228,61 @@ M2-A 未实现：
 - AI。
 
 这些仍属于 M2-B / M2-C / M2-D 或之后阶段。
+
+## M2-B local integration
+
+M2-B 继续保持现有 third-party 边界：
+
+- **本批未修改 `third_party/MediaCrawler/` 内任何 vendored source**；
+- pinned upstream 仍为 `071c8c0acaece3e82f2532cffb19faeddc9ec1c3`；
+- license 仍为 `NON-COMMERCIAL LEARNING LICENSE 1.1`；
+- 不更新上游版本，不移除 LICENSE，不改变来源记录。
+
+M2-B 在主系统侧新增：
+
+- 七平台独立 Mapper：微博、B站、知乎、抖音、小红书、快手、百度贴吧；
+- Platform Spec：记录平台真实输出结构、有效模式、能力与 Schema 元数据；
+- 显式 Platform Mapper Registry：只注册七个平台，未知 platform 明确失败；
+- 七平台 `capabilities`；
+- 七平台 `config_schema`；
+- 七平台 `ui_schema`；
+- `implementation_version=mediacrawler-m2b-v1`；
+- 统一 `CollectedComment` Domain Model；
+- PostgreSQL `raw_signal_comments`；
+- 集中式 comment idempotency；
+- `MediaCrawlerResultEnvelope → Platform Mapper → RawSignal / CollectedComment → CollectionResult → CollectorRuntime ingestion` 正式转换链。
+
+### 当前保守能力决定
+
+1. **知乎 creator**
+
+   vendored core 存在 creator 逻辑，但当前 pinned CLI 没有正确把 `--creator_id` 接入 `ZHIHU_CREATOR_URL_LIST`。因此 M2-B 当前只声明知乎 search/detail/comments，不声明 creator capability，也不会因为 core 中存在方法就对外声称 creator 可运行。
+
+2. **小红书 detail / creator**
+
+   当前 vendored 小红书 detail/creator 运行依赖带 `xsec_token` 的 URL。主系统普通 config 按既有安全规则不允许保存这类敏感值，因此 M2-B 当前仅开放 `search` 运行模式，并允许 search 显式附带 comments；detail/creator 不开放。
+
+3. **HomeFeed / Hotlist**
+
+   七个平台在 M2-B 均保持关闭，不将统一接口、潜在上游能力或非正式代码路径包装为已实现 capability，也不提前进入 M2-C。
+
+### 评论与数据安全
+
+- `CollectedComment` 不依赖 ORM，不包含凭据，时间统一 UTC-aware；
+- `raw_signal_comments` 通过 FK 绑定 RawSignal，并使用 PostgreSQL UNIQUE + `ON CONFLICT DO NOTHING` 提供并发幂等保护；
+- 评论幂等优先使用 `platform + content_external_id + external_comment_id`；平台没有稳定 comment ID 时，回退到 `platform + content_external_id + author_id + normalized_text_hash + published_at`；
+- 主内容成功后再以独立短事务写评论，部分评论失败不会删除或回滚已成功的 RawSignal；
+- 评论默认关闭，subcomments 默认关闭，并继续受 CollectorRuntime Budget 控制；
+- Mapper / comment raw payload 继续使用主系统脱敏，平台 token 类查询参数不会进入持久化业务 URL。
+
+### Validation 边界
+
+M2-B 的全部 Fixture / Fake Result Envelope / Mock / PostgreSQL CI 测试只证明主系统工程实现和数据边界正确，**不证明任何真实平台已经 validated PASSED**。
+
+状态仍必须区分：
+
+```text
+registered != implemented != validated
+```
+
+M2-B 没有连接真实平台、没有登录、没有扫码、没有使用真实 Cookie，也没有生成真实 PASSED validation。真实低量验证仍属于后续 M2-D；vendored Checkpoint / Incremental / Account Profile / SignatureProvider / HomeFeed / Hotlist 增强仍属于 M2-C 或后续阶段。

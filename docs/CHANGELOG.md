@@ -1,5 +1,29 @@
 # 文档与架构变更记录
 
+## 2026-08-07 — M2-B 七平台映射与配置 Schema 收口
+
+- 基于 PR #7 已合并后的最新 `main` 创建独立分支 `feature/m2b-platform-mappers`，未从 M2-A feature 分支继续派生；
+- 新增 MediaCrawler 七个平台独立 Mapper 与显式 Platform Mapper Registry，按 pinned vendored store/model 的真实 JSONL 字段映射，不使用万能 Mapper，也不使用随机 UUID 代替平台稳定 ID；
+- 建立统一 Platform Spec，以同一份真实能力声明生成七平台 `capabilities`、`config_schema`、`ui_schema` 与 `allowed_modes`，并在 Runtime preflight 中阻止不支持模式在 subprocess 前启动；
+- 七平台 Definition 的 `implementation_version` 统一更新为 `mediacrawler-m2b-v1`，未来 Mapper / Schema 行为变化可触发 Validation 失效语义；
+- 当前有效能力保持保守：微博/B站/抖音/快手/贴吧开放 search/detail/creator/comments；知乎开放 search/detail/comments，creator 当前有效能力为 false；小红书当前仅开放 search，并允许 search 附带 comments；七平台 homefeed/hotlist 均未开放；
+- 新增统一 `CollectedComment` Domain Model，包含平台、主内容 external ID、评论 ID、作者、正文、发布时间、点赞数、父评论 ID 与脱敏 raw payload；
+- 新增 PostgreSQL `raw_signal_comments`，通过独立 `20260807_0005_m2b_comments.py` migration 管理，FK 绑定 `raw_signals`、`ON DELETE CASCADE`，未修改 M1/M2-A 已合并 migration；
+- 评论幂等规则集中管理：优先使用 `platform + content_external_id + external_comment_id`；无稳定 comment ID 时回退到 `platform + content_external_id + author_id + normalized_text_hash + published_at`，最终生成版本化 SHA-256 幂等键；
+- 评论数据库写入使用 PostgreSQL UNIQUE + `INSERT ... ON CONFLICT DO NOTHING` 提供并发最终保护，不使用“先查再插”作为唯一约束；
+- 评论按独立短事务持久化，单条评论失败不会回滚已经成功的 RawSignal；主内容成功、部分评论失败可形成 PARTIAL；整批主内容完全无法识别时整体 `PARSE_ERROR`，防止错误格式污染数据库；
+- 评论默认关闭，subcomments 默认关闭，单内容 `comment_limit` 保持低上限；评论 Budget 在 Adapter/subprocess 前按 `requested_items × per-item comment_limit` 预留，预算不足时不启动 Adapter；
+- 正式接通 `MediaCrawlerResultEnvelope → Platform Mapper → RawSignal / CollectedComment → CollectionResult → CollectorRuntime ingestion`；
+- 增强 Web 现有动态 `SchemaForm` 的 mode 条件显示与 array enum checkbox-group，继续复用单一动态表单，不为七个平台建立独立 React 页面；
+- 七个平台均增加脱敏 Fixture，严格基于当前 vendored 数据结构构造，覆盖正常主内容、可选字段缺失、malformed、metrics、media、comments、UTC 转换与 Cookie/Token/Authorization/API Key/Session/Password 等敏感字段脱敏；
+- **本批未修改 `third_party/MediaCrawler/` 内任何 vendored source**，MediaCrawler 继续固定上游 commit `071c8c0acaece3e82f2532cffb19faeddc9ec1c3`，许可证保持 `NON-COMMERCIAL LEARNING LICENSE 1.1`；
+- 本批全部使用 Fixture / Fake Result Envelope / Mock / PostgreSQL CI，不连接真实平台、不登录、不扫码、不使用真实 Cookie，也不把任何平台自动标记为真实 validated PASSED；
+- GitHub Actions **CI #109 success**：`ruff check .` 通过、`mypy apps packages` 通过、PostgreSQL **166 passed**；
+- Alembic `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 完整往返通过；
+- Connector Definition 连续同步两次保持幂等，第二次 `created=0 / updated=0 / failed=0`；
+- Web `lint`、`typecheck`、**6 个 test files / 9 tests** 与 production build 全部通过；
+- M2-B 已完成开发与 CI 验收，当前等待 PR #8 合并；M2-C / M2-D 均未开始，M2 整体尚未完成。
+
 ## 2026-08-07 — M2-A MediaCrawler 主系统集成层
 
 - 基于 PR #6 合并后的完整 M1 `main` 新建独立分支 `feature/m2a-mediacrawler-integration`，未从 M1 feature 分支继续派生；

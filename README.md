@@ -2,7 +2,7 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**M1 已完成并合并；当前仅推进 M2-A：MediaCrawler 主系统集成层。M2-B / M2-C / M2-D 尚未开始。** 开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M1 验收证据见 [`docs/M1_ACCEPTANCE_REPORT.md`](docs/M1_ACCEPTANCE_REPORT.md)，MediaCrawler 本地边界见 [`docs/MEDIACRAWLER_LOCAL_CHANGES.md`](docs/MEDIACRAWLER_LOCAL_CHANGES.md)。
+**M1 已完成；M2-A 已完成并已合并；M2-B 已完成开发与 CI 验收，当前等待 PR #8 合并；M2-C / M2-D 未开始，M2 整体尚未完成。** 开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M1 验收证据见 [`docs/M1_ACCEPTANCE_REPORT.md`](docs/M1_ACCEPTANCE_REPORT.md)，MediaCrawler 本地边界见 [`docs/MEDIACRAWLER_LOCAL_CHANGES.md`](docs/MEDIACRAWLER_LOCAL_CHANGES.md)。
 
 ## 当前采集闭环
 
@@ -14,13 +14,14 @@ AI 编辑部系统：面向短视频创作者的多来源信息发现、资料�
 → CollectorRuntime
 → Budget + Risk Guard + Run 原子领取
 → RSS / Manual URL / 百度实时热榜 / MediaCrawler Adapter
-→ RawSignal 标准化与 PostgreSQL 幂等写入
+→ Platform Mapper
+→ RawSignal / CollectedComment 标准化与 PostgreSQL 幂等写入
 → Checkpoint
 → Run 日志 / stale 检查 / 人工 retry
 → Validation 人工真实验收记录
 ```
 
-M2-A 为 MediaCrawler 七个平台建立了共同的 **implementation adapter available** 基础状态，但没有执行任何真实平台采集，也不会因为 Fixture/Mock 测试而把任何平台标记为 validated。
+M2-A 为 MediaCrawler 七个平台建立了共同的 **implementation adapter available** 基础状态；M2-B 在此基础上补齐七平台独立 Mapper、真实 capabilities/config_schema/ui_schema、统一评论模型与 `raw_signal_comments` 幂等持久化。评论继续受现有 Budget 控制。Fixture / Mock CI 只证明工程实现，不会把任何平台自动标记为真实 validated PASSED。
 
 ## M2-A MediaCrawler 集成
 
@@ -47,7 +48,21 @@ CollectionTask
 - 403 / 406 / 429 / CAPTCHA / 登录失效 / 账号受限或异常 / 自动化检测等风险候选进入现有 Risk Guard，不走普通 retry；
 - subprocess 不继承 `DATABASE_URL`、Admin Token 或凭据环境；
 - M2-A 显式关闭 MediaCrawler 代理开关，不实现代理轮换、验证码破解、指纹伪造、自动换号或绕过平台限制；
-- 本阶段全部测试使用 Fixture / Fake subprocess / Mock，不连接真实平台、不登录、不扫码、不使用真实 Cookie。
+- M2-A 全部测试使用 Fixture / Fake subprocess / Mock，不连接真实平台、不登录、不扫码、不使用真实 Cookie。
+
+## M2-B 七平台映射与评论标准化
+
+M2-B 当前已完成开发与 CI 验收，等待 PR #8 合并。主要新增：
+
+- MediaCrawler 七平台独立 Mapper 与显式 Platform Mapper Registry；
+- 七平台真实能力对应的 `capabilities`、`config_schema`、`ui_schema`；
+- 统一 `CollectedComment` Domain Model；
+- PostgreSQL `raw_signal_comments` 与数据库唯一幂等约束；
+- 评论幂等规则与评论 Budget 预留/结算；
+- Result Envelope → Platform Mapper → RawSignal / CollectedComment 正式转换链；
+- Web 继续使用现有动态 SchemaForm，不为七个平台手写独立页面。
+
+当前能力声明保持保守：微博、B站、抖音、快手、贴吧开放 search/detail/creator/comments；知乎开放 search/detail/comments，creator 当前有效能力为 false；小红书当前仅开放 search，并允许 search 附带 comments；七平台 homefeed/hotlist 均未开放。
 
 ## MediaCrawler 第三方边界
 
@@ -65,7 +80,7 @@ third_party/MediaCrawler/
 
 许可证：`NON-COMMERCIAL LEARNING LICENSE 1.1`。
 
-**M2-A 不更新上游版本，也不修改 vendored MediaCrawler 业务源码。** 主系统集成逻辑全部放在 `packages/connectors/mediacrawler_adapter/` 等主系统目录。详细记录见 `docs/MEDIACRAWLER_LOCAL_CHANGES.md`。
+**M2-A / M2-B 均未更新上游版本，也未修改 vendored MediaCrawler 业务源码。** 主系统集成逻辑全部放在 `packages/connectors/mediacrawler_adapter/` 等主系统目录。详细记录见 `docs/MEDIACRAWLER_LOCAL_CHANGES.md`。
 
 ## 主要结构
 
@@ -75,11 +90,11 @@ apps/scheduler/                        asyncio + PostgreSQL 持久化 Scheduler
 apps/web/                              React + Vite + TypeScript 内部连接器工作台
 packages/connectors/                   Connector SDK 与现有真实实现
 packages/connectors/mediacrawler_adapter/
-                                      MediaCrawler M2-A 协议、Adapter、Runner、Connector
+                                      MediaCrawler 协议、Adapter、Runner、Connector、七平台 Mapper
 packages/connector_management/         Definition、Instance、Account、Run、Checkpoint、审计
 packages/collector_runtime/            预检、Budget、Run、Risk 与受控 Runtime
 packages/scheduling/                   Schedule、Lease、stale/retry、Checkpoint 调试、Validation
-packages/signals/                      URL、幂等、Source 与 RawSignal 入库
+packages/signals/                      URL、幂等、Source、RawSignal 与评论入库
 packages/database/                     Async SQLAlchemy、PostgreSQL 类型与 ORM
 packages/risk_guard/                   账号状态、风险分类与人工处置
 migrations/                            Alembic migrations
@@ -149,16 +164,16 @@ npm run build
 
 ## 当前阶段边界
 
-M2-A **没有**实现：
+M2-B 已完成开发与 CI 验收，但 PR #8 尚未合并；**M2 整体尚未完成**。下一步必须在 PR #8 合并后才进入 M2-C。
 
-- 七平台完整 Mapper / 专属 Schema；
-- 真实登录、真实 Cookie、扫码与真实平台联网；
+当前仍未实现或未开始：
+
 - vendored Checkpoint / Incremental / Account Profile / SignatureProvider 增强；
-- HomeFeed / 热榜发现；
-- 微博、B站、知乎、抖音、小红书、快手、贴吧实跑；
+- HomeFeed / 热榜真实发现；
+- 微博、B站、知乎、抖音、小红书、快手、贴吧真实低量验证；
 - Event / EventSignal；
 - Embedding；
 - 去重 / 聚类；
 - AI Gateway / AI Provider / AI 评分 / 稿件生成。
 
-这些仍属于 M2-B / M2-C / M2-D 或后续阶段。本阶段 PR 合并前不进入下一子阶段。
+这些属于 M2-C / M2-D 或后续阶段；PR #8 合并前不进入下一子阶段。
