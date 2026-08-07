@@ -1,5 +1,16 @@
 # 文档与架构变更记录
 
+## 2026-08-07 — M1-C PostgreSQL 验收收口
+
+- 修复 `collection_budget_usage` migration 缺少 UUID 主键列、但已声明主键约束的问题，并增加主键回归测试；
+- 将 Source 敏感配置拒绝统一映射为 400 业务错误，同时保留 M1-B Connector Schema 的 422 校验语义；
+- 修正 M1-B migration 测试的起始版本，使其明确验证 `base → 0002 → 0001`，不依赖当前数据库已处于哪个 head；
+- 手工 URL 连接器不再将 `UnsafeURLError` 包装为普通抓取失败，SSRF、私网和元数据地址风险直接中止；
+- 修正 Risk Guard 运行测试在 `rollback()` 后访问过期 ORM 实例的问题，改为预先缓存不可变 UUID；
+- GitHub Actions 最终执行完整 `pytest`，并按 `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 顺序验证 Alembic；
+- PostgreSQL 16 + pgvector 环境中 101 项测试通过，覆盖 Run 原子领取、预算并发预留、Raw Signal 幂等、SSRF 与 Risk Guard；
+- 本次收口未降低唯一约束、锁、事务保护或安全测试标准，未接入 Scheduler/Worker、MediaCrawler、Event、Embedding、LLM 或 M1-D。
+
 ## 2026-08-06 — M1-C
 
 - 新增 `sources`、`raw_signals`、`collection_budgets` 和 `collection_budget_usage` 四组正式模型；
