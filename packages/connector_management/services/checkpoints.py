@@ -26,6 +26,7 @@ class ConnectorCheckpointService:
         platform_account_id: UUID | None,
         mode: str,
         scope_key: str,
+        source_id: UUID | None = None,
     ) -> ConnectorCheckpoint:
         async with self.session.begin():
             return await self.repository.get_or_create(
@@ -33,6 +34,7 @@ class ConnectorCheckpointService:
                 platform_account_id=platform_account_id,
                 mode=mode,
                 scope_key=scope_key,
+                source_id=source_id,
             )
 
     async def update(

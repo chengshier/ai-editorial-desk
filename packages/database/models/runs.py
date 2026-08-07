@@ -34,6 +34,13 @@ class ConnectorRunStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class ConnectorRunTriggerType(StrEnum):
+    MANUAL = "manual"
+    TEST = "test"
+    SCHEDULED = "scheduled"
+    RETRY = "retry"
+
+
 class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     """One connector execution and its durable progress/error summary."""
 
@@ -52,6 +59,7 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         Index("ix_connector_runs_instance_created", "connector_instance_id", "created_at"),
         Index("ix_connector_runs_source_created", "source_id", "created_at"),
         Index("ix_connector_runs_status_started", "status", "started_at"),
+        Index("ix_connector_runs_parent", "parent_run_id"),
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
@@ -63,6 +71,15 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     platform_account_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("platform_accounts.id", ondelete="SET NULL"), index=True
     )
+    parent_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("connector_runs.id", ondelete="SET NULL")
+    )
+    trigger_type: Mapped[ConnectorRunTriggerType] = mapped_column(
+        string_enum(ConnectorRunTriggerType, name="connector_run_trigger_type"),
+        nullable=False,
+        default=ConnectorRunTriggerType.MANUAL,
+        server_default=text("'manual'"),
+    )
     mode: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[ConnectorRunStatus] = mapped_column(
         string_enum(ConnectorRunStatus, name="connector_run_status"),
@@ -71,6 +88,7 @@ class ConnectorRun(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         server_default=text("'pending'"),
     )
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    progress_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     requested_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
@@ -118,10 +136,14 @@ class ConnectorCheckpoint(UUIDPrimaryKeyMixin, Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_connector_checkpoints_instance_updated", "connector_instance_id", "updated_at"),
+        Index("ix_connector_checkpoints_source_updated", "source_id", "updated_at"),
     )
 
     connector_instance_id: Mapped[UUID] = mapped_column(
         ForeignKey("connector_instances.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    source_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("sources.id", ondelete="SET NULL"), index=True
     )
     platform_account_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("platform_accounts.id", ondelete="RESTRICT"), index=True
