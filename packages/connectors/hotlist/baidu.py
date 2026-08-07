@@ -169,7 +169,10 @@ class BaiduRealtimeHotlistConnector(BaseConnector):
         if request.mode != "hotlist":
             raise ValueError("百度热榜连接器仅支持 hotlist 模式")
         configured_sources = request.parameters.get("sources", [BAIDU_REALTIME_SOURCE])
-        if not isinstance(configured_sources, list) or configured_sources != [BAIDU_REALTIME_SOURCE]:
+        if (
+            not isinstance(configured_sources, list)
+            or configured_sources != [BAIDU_REALTIME_SOURCE]
+        ):
             raise ValueError("M1-D 热榜仅允许固定 baidu_realtime 来源")
         effective_limit = min(max(request.limit, 1), MAX_HOTLIST_ITEMS)
         response = await self.fetcher.fetch(
