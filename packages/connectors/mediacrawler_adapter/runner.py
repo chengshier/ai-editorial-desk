@@ -89,6 +89,13 @@ class _OutputLimitExceeded(RuntimeError):
     pass
 
 
+def _prepare_run_directory(temp_dir: str) -> tuple[Path, Path]:
+    run_root = Path(temp_dir).resolve()
+    data_root = run_root / "data"
+    data_root.mkdir(mode=0o700)
+    return run_root, data_root
+
+
 async def _read_bounded(
     stream: asyncio.StreamReader | None,
     *,
@@ -204,9 +211,7 @@ class MediaCrawlerSubprocessRunner:
         started = monotonic()
         prefix = f"ai-editorial-mc-{invocation.run_id.hex[:12]}-"
         with tempfile.TemporaryDirectory(prefix=prefix) as temp_dir:
-            run_root = Path(temp_dir).resolve()
-            data_root = run_root / "data"
-            data_root.mkdir(mode=0o700)
+            run_root, data_root = _prepare_run_directory(temp_dir)
             command = self._build_command(entrypoint, data_root, invocation)
             process = await self._spawn(command, data_root)
             logger.info(
@@ -475,7 +480,9 @@ class MediaCrawlerSubprocessRunner:
     @staticmethod
     def _safe_failure_message(code: MediaCrawlerErrorCode, exit_code: int | None) -> str:
         messages = {
-            MediaCrawlerErrorCode.PERMISSION_DENIED: "MediaCrawler platform permission denied (403)",
+            MediaCrawlerErrorCode.PERMISSION_DENIED: (
+                "MediaCrawler platform permission denied (403)"
+            ),
             MediaCrawlerErrorCode.AUTOMATION_DETECTED: (
                 "MediaCrawler platform automation restriction detected (406)"
             ),

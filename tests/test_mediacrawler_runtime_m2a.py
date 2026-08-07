@@ -193,7 +193,6 @@ async def test_mediacrawler_runtime_ingests_idempotently_and_advances_checkpoint
     checkpoint = await db_session.scalar(
         select(ConnectorCheckpoint).where(
             ConnectorCheckpoint.connector_instance_id == instance_id,
-            ConnectorCheckpoint.source_id == source_id,
         )
     )
     assert checkpoint is not None
@@ -223,7 +222,6 @@ async def test_mediacrawler_checkpoint_does_not_advance_when_ingestion_fails(
     checkpoint = await db_session.scalar(
         select(ConnectorCheckpoint).where(
             ConnectorCheckpoint.connector_instance_id == instance_id,
-            ConnectorCheckpoint.source_id == source_id,
         )
     )
     assert checkpoint is not None

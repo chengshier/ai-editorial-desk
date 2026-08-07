@@ -137,7 +137,7 @@ class MediaCrawlerInvocation(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_comment_contract(self) -> "MediaCrawlerInvocation":
+    def validate_comment_contract(self) -> MediaCrawlerInvocation:
         if self.include_subcomments and not self.include_comments:
             raise ValueError("include_subcomments requires include_comments")
         if not self.include_comments and self.comment_limit:
@@ -181,7 +181,7 @@ class MediaCrawlerResultEnvelope(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_timeline(self) -> "MediaCrawlerResultEnvelope":
+    def validate_timeline(self) -> MediaCrawlerResultEnvelope:
         if self.finished_at < self.started_at:
             raise ValueError("finished_at must not precede started_at")
         return self

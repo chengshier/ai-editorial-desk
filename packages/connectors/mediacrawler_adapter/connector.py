@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from packages.connectors.base import (
     BaseConnector,
@@ -43,6 +44,8 @@ class MediaCrawlerConnector(BaseConnector):
         try:
             mode = MediaCrawlerMode(request.mode)
             platform = MediaCrawlerPlatform(request.platform)
+            run_id = UUID(request.run_id)
+            source_id = UUID(request.source_id)
         except ValueError as exc:
             raise MediaCrawlerAdapterError(
                 MediaCrawlerErrorCode.RESULT_MALFORMED,
@@ -80,10 +83,10 @@ class MediaCrawlerConnector(BaseConnector):
             comment_limit = 0
 
         invocation = MediaCrawlerInvocation(
-            run_id=request.run_id,
+            run_id=run_id,
             platform=platform,
             mode=mode,
-            source_id=request.source_id,
+            source_id=source_id,
             keyword=keyword,
             creator_id=creator_id,
             content_ids=content_ids,

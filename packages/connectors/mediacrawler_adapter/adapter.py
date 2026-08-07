@@ -23,6 +23,11 @@ class MediaCrawlerRunner(Protocol):
     async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope: ...
 
 
+def _entrypoint_available(settings: Settings) -> bool:
+    home = Path(settings.mediacrawler_home).expanduser().resolve()
+    return (home / "main.py").is_file()
+
+
 class MediaCrawlerAdapter:
     """Own the stable main-system protocol and isolate the vendored subprocess."""
 
@@ -39,12 +44,11 @@ class MediaCrawlerAdapter:
         )
 
     async def health_check(self) -> dict[str, Any]:
-        home = Path(self.settings.mediacrawler_home).expanduser().resolve()
-        entrypoint = home / "main.py"
+        available = _entrypoint_available(self.settings)
         return {
-            "status": "ok" if entrypoint.is_file() else "not_installed",
+            "status": "ok" if available else "not_installed",
             "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION,
-            "entrypoint_available": entrypoint.is_file(),
+            "entrypoint_available": available,
         }
 
     async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
