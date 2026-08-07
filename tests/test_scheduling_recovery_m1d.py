@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select, update
 
-from packages.collector_runtime import CollectorRuntime
+from packages.collector_runtime import CollectionTask, CollectorRuntime, TriggerType
 from packages.collector_runtime.budgets import CollectionBudgetService
 from packages.collector_runtime.exceptions import BudgetExceededError, PreflightRejectedError
 from packages.connector_management.exceptions import (
@@ -117,9 +117,10 @@ async def _failed_run(db_session, *, instance_id, source_id, account_id=None, li
         mode="feed",
         requested_limit=limit,
     )
-    await service.claim(run_id=run.id)
+    run_id = run.id
+    await service.claim(run_id=run_id)
     return await service.finalize(
-        run_id=run.id,
+        run_id=run_id,
         target_status=ConnectorRunStatus.FAILED,
         failed_count=1,
         error_code="fixture_failure",
@@ -169,8 +170,7 @@ async def test_schedule_lease_has_one_winner_and_expired_lease_is_reclaimable(
     first, second = await asyncio.gather(claim("scheduler-a"), claim("scheduler-b"))
     winners = [item for item in (first, second) if item is not None]
     assert len(winners) == 1
-    winner_owner = winners[0].lease_owner
-    assert winner_owner in {"scheduler-a", "scheduler-b"}
+    assert winners[0].lease_owner in {"scheduler-a", "scheduler-b"}
 
     reclaim_at = claim_now + timedelta(seconds=121)
     async with session_factory() as session:
@@ -208,10 +208,10 @@ async def test_schedule_slot_is_unique_and_schedule_survives_new_session(
     session_factory = get_async_sessionmaker()
 
     async with session_factory() as session:
-        persisted = await session.get(CollectionSchedule, schedule_id)
-        assert persisted is not None
-        assert persisted.next_run_at == scheduled_for
         async with session.begin():
+            persisted = await session.get(CollectionSchedule, schedule_id)
+            assert persisted is not None
+            assert persisted.next_run_at == scheduled_for
             first = await ScheduleRepository(session).claim_slot(
                 schedule=persisted,
                 owner="scheduler-a",
@@ -222,10 +222,9 @@ async def test_schedule_slot_is_unique_and_schedule_survives_new_session(
         first_id = first.id
 
     async with session_factory() as session:
-        persisted = await session.get(CollectionSchedule, schedule_id)
-        assert persisted is not None
-        await session.rollback()
         async with session.begin():
+            persisted = await session.get(CollectionSchedule, schedule_id)
+            assert persisted is not None
             second = await ScheduleRepository(session).claim_slot(
                 schedule=persisted,
                 owner="scheduler-b",
@@ -276,19 +275,22 @@ async def test_stale_run_is_only_identified_then_retry_creates_new_run(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
     _, instance, source = await _enabled_rss_source(db_session)
+    instance_id = instance.id
+    source_id = source.id
     service = ConnectorRunService(db_session)
     run = await service.create_pending(
-        connector_instance_id=instance.id,
-        source_id=source.id,
+        connector_instance_id=instance_id,
+        source_id=source_id,
         platform_account_id=None,
         mode="feed",
         requested_limit=2,
     )
-    running = await service.claim(run_id=run.id)
+    run_id = run.id
+    await service.claim(run_id=run_id)
     old_progress = datetime.now(UTC) - timedelta(hours=2)
     await db_session.execute(
         update(ConnectorRun)
-        .where(ConnectorRun.id == running.id)
+        .where(ConnectorRun.id == run_id)
         .values(progress_updated_at=old_progress)
     )
     await db_session.commit()
@@ -298,14 +300,14 @@ async def test_stale_run_is_only_identified_then_retry_creates_new_run(
         page_size=20,
         stale_seconds=300,
     )
-    assert [item.id for item in stale.items] == [running.id]
-    unchanged = await db_session.get(ConnectorRun, running.id)
+    assert [item.id for item in stale.items] == [run_id]
+    unchanged = await db_session.get(ConnectorRun, run_id)
     assert unchanged is not None
     await db_session.refresh(unchanged)
     assert unchanged.status is ConnectorRunStatus.RUNNING
 
     failed = await RunRecoveryService(db_session).mark_failed(
-        run_id=running.id,
+        run_id=run_id,
         reason="人工确认进程已崩溃",
     )
     old_run_id = failed.id
@@ -335,15 +337,18 @@ async def test_stale_run_is_only_identified_then_retry_creates_new_run(
 @pytest.mark.usefixtures("clean_database")
 async def test_retry_reenters_budget_and_risk_guard(db_session) -> None:  # type: ignore[no-untyped-def]
     _, instance, source = await _enabled_rss_source(db_session)
+    instance_id = instance.id
+    source_id = source.id
     old = await _failed_run(
         db_session,
-        instance_id=instance.id,
-        source_id=source.id,
+        instance_id=instance_id,
+        source_id=source_id,
         limit=2,
     )
+    old_run_id = old.id
     await CollectionBudgetService(db_session).create(
         scope_type="connector",
-        scope_key=str(instance.id),
+        scope_key=str(instance_id),
         values={
             "max_runs_per_day": 10,
             "max_items_per_run": 1,
@@ -357,24 +362,21 @@ async def test_retry_reenters_budget_and_risk_guard(db_session) -> None:  # type
         actor="admin",
     )
     task = await RunRecoveryService(db_session).build_retry_task(
-        run_id=old.id,
+        run_id=old_run_id,
         actor="reviewer",
     )
     fake = FakeRSSConnector()
     with pytest.raises(BudgetExceededError):
         await _runtime(fake).execute(task)
     assert fake.calls == 0
-    original = await db_session.get(ConnectorRun, old.id)
+    original = await db_session.get(ConnectorRun, old_run_id)
     assert original is not None
     await db_session.refresh(original)
     assert original.status is ConnectorRunStatus.FAILED
 
-    await db_session.execute(
-        update(CollectionSchedule).where(False)
-    )
     await db_session.rollback()
     account = await PlatformAccountService(db_session).create(
-        connector_instance_id=instance.id,
+        connector_instance_id=instance_id,
         platform="rss",
         display_name="risk account",
         account_identifier=f"risk-{uuid4()}",
@@ -382,8 +384,9 @@ async def test_retry_reenters_budget_and_risk_guard(db_session) -> None:  # type
         browser_profile_ref=None,
         actor="admin",
     )
-    account = await PlatformAccountService(db_session).transition_status(
-        account_id=account.id,
+    account_id = account.id
+    await PlatformAccountService(db_session).transition_status(
+        account_id=account_id,
         target_status=AccountStatus.REVIEW_REQUIRED,
         reason="人工复核",
         cooldown_until=None,
@@ -392,13 +395,14 @@ async def test_retry_reenters_budget_and_risk_guard(db_session) -> None:  # type
     )
     risk_old = await _failed_run(
         db_session,
-        instance_id=instance.id,
-        source_id=source.id,
-        account_id=account.id,
+        instance_id=instance_id,
+        source_id=source_id,
+        account_id=account_id,
         limit=1,
     )
+    risk_old_id = risk_old.id
     risk_task = await RunRecoveryService(db_session).build_retry_task(
-        run_id=risk_old.id,
+        run_id=risk_old_id,
         actor="reviewer",
     )
     risk_fake = FakeRSSConnector()
@@ -412,6 +416,8 @@ async def test_checkpoint_reset_is_optimistic_audited_and_keeps_raw_signals(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
     _, instance, source = await _enabled_rss_source(db_session)
+    instance_id = instance.id
+    source_id = source.id
     fake = FakeRSSConnector(
         CollectionResult(
             signals=(
@@ -425,13 +431,11 @@ async def test_checkpoint_reset_is_optimistic_audited_and_keeps_raw_signals(
             checkpoint={"cursor": "after-one"},
         )
     )
-    from packages.collector_runtime import CollectionTask, TriggerType
-
     run = await _runtime(fake).execute(
         CollectionTask(
             task_id=uuid4(),
-            connector_instance_id=instance.id,
-            source_id=source.id,
+            connector_instance_id=instance_id,
+            source_id=source_id,
             platform_account_id=None,
             mode="feed",
             requested_limit=1,
@@ -443,7 +447,7 @@ async def test_checkpoint_reset_is_optimistic_audited_and_keeps_raw_signals(
     )
     assert run.status is ConnectorRunStatus.SUCCEEDED
     checkpoint = await db_session.scalar(
-        select(ConnectorCheckpoint).where(ConnectorCheckpoint.source_id == source.id)
+        select(ConnectorCheckpoint).where(ConnectorCheckpoint.source_id == source_id)
     )
     assert checkpoint is not None
     checkpoint_id = checkpoint.id
@@ -499,15 +503,19 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
     definition, _, _ = await _enabled_rss_source(db_session)
+    connector_type = definition.connector_type
+    platform = definition.platform
+    version = definition.implementation_version
+    definition_id = definition.id
     service = ConnectorValidationService(db_session)
     assert await service.effective_status(definition) is ConnectorValidationStatus.NOT_TESTED
     await db_session.rollback()
 
     with pytest.raises(BusinessValidationError, match="不能写入真实 PASSED"):
         await service.record(
-            connector_type=definition.connector_type,
-            platform=definition.platform,
-            implementation_version=definition.implementation_version,
+            connector_type=connector_type,
+            platform=platform,
+            implementation_version=version,
             environment="ci",
             status=ConnectorValidationStatus.PASSED,
             actor="ci",
@@ -517,9 +525,9 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
         )
 
     failed = await service.record(
-        connector_type=definition.connector_type,
-        platform=definition.platform,
-        implementation_version=definition.implementation_version,
+        connector_type=connector_type,
+        platform=platform,
+        implementation_version=version,
         environment="local",
         status=ConnectorValidationStatus.FAILED,
         actor="reviewer",
@@ -529,9 +537,9 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
     )
     assert failed.status is ConnectorValidationStatus.FAILED
     passed = await service.record(
-        connector_type=definition.connector_type,
-        platform=definition.platform,
-        implementation_version=definition.implementation_version,
+        connector_type=connector_type,
+        platform=platform,
+        implementation_version=version,
         environment="local",
         status=ConnectorValidationStatus.PASSED,
         actor="reviewer",
@@ -539,8 +547,20 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
         safe_evidence={"items": 1, "token": "must-redact"},
         real_smoke_test=True,
     )
+    await db_session.refresh(passed)
     assert passed.safe_evidence["token"] == "[REDACTED]"
-    assert await service.effective_status(definition) is ConnectorValidationStatus.PASSED
-    definition.implementation_version = f"{definition.implementation_version}-next"
+    current = await db_session.get(ConnectorDefinition, definition_id)
+    assert current is not None
+    assert await service.effective_status(current) is ConnectorValidationStatus.PASSED
+    await db_session.rollback()
+
+    next_version = f"{version}-next"
+    await db_session.execute(
+        update(ConnectorDefinition)
+        .where(ConnectorDefinition.id == definition_id)
+        .values(implementation_version=next_version)
+    )
     await db_session.commit()
-    assert await service.effective_status(definition) is ConnectorValidationStatus.EXPIRED
+    current = await db_session.get(ConnectorDefinition, definition_id)
+    assert current is not None
+    assert await service.effective_status(current) is ConnectorValidationStatus.EXPIRED
