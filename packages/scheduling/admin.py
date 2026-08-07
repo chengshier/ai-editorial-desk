@@ -30,8 +30,8 @@ from packages.database.models import (
     ConnectorValidationRecord,
     ConnectorValidationStatus,
     PlatformAccount,
-    ScheduleType,
     SchedulerInstance,
+    ScheduleType,
     Source,
 )
 from packages.database.types import sanitize_context
@@ -334,10 +334,8 @@ class RunRecoveryService:
         cutoff = datetime.now(UTC) - timedelta(seconds=stale_seconds)
         freshness = func.coalesce(ConnectorRun.progress_updated_at, ConnectorRun.started_at)
         filters = [ConnectorRun.status == ConnectorRunStatus.RUNNING, freshness <= cutoff]
-        total = int(
-            await self.session.scalar(select(func.count()).select_from(ConnectorRun).where(*filters))
-            or 0
-        )
+        count_query = select(func.count()).select_from(ConnectorRun).where(*filters)
+        total = int(await self.session.scalar(count_query) or 0)
         items = list(
             (
                 await self.session.scalars(
@@ -562,7 +560,10 @@ class ConnectorValidationService:
                 ConnectorValidationRecord.connector_type == definition.connector_type,
                 ConnectorValidationRecord.platform == definition.platform,
             )
-            .order_by(ConnectorValidationRecord.created_at.desc(), ConnectorValidationRecord.id.desc())
+            .order_by(
+                ConnectorValidationRecord.created_at.desc(),
+                ConnectorValidationRecord.id.desc(),
+            )
             .limit(1)
         )
         if record is None:
