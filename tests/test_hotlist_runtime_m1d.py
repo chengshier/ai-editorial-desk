@@ -4,7 +4,12 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from packages.collector_runtime import CollectionTask, CollectorRuntime, TriggerType
+from packages.collector_runtime import (
+    CollectionTask,
+    CollectorRuntime,
+    RuntimeResult,
+    TriggerType,
+)
 from packages.connector_management.services import (
     ConnectorDefinitionSyncService,
     ConnectorInstanceService,
@@ -86,7 +91,7 @@ async def test_hotlist_repeated_runtime_runs_are_raw_signal_idempotent(db_sessio
         registry=registry,
     )
 
-    async def execute_once() -> object:
+    async def execute_once() -> RuntimeResult:
         return await runtime.execute(
             CollectionTask(
                 task_id=uuid4(),
