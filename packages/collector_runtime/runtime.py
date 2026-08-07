@@ -12,10 +12,11 @@ from packages.collector_runtime.support import CollectorRuntimeSupport
 from packages.connector_management.exceptions import VersionConflictError
 from packages.connector_management.services import ConnectorRunService
 from packages.connectors import CollectRequest
-from packages.connectors.base import CollectionItemError
+from packages.connectors.base import CollectionItemError, CollectionRiskSignal
 from packages.connectors.http import ConnectorFetchError
 from packages.database.models import ConnectorRunStatus
-from packages.risk_guard.models import PlatformRiskError
+from packages.risk_guard.classifier import classify_platform_error
+from packages.risk_guard.models import PlatformRiskError, RiskEvent
 from packages.signals.comment_service import RawSignalCommentService
 from packages.signals.domain import NormalizedSignal
 from packages.signals.services import RawSignalService, SourceService
@@ -90,6 +91,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         if context.account is not None
                         else None
                     ),
+                    runtime_context=context.runtime_context,
                 )
             )
 
@@ -100,9 +102,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     connector_run_id=run.id,
                     connector_type=context.definition.connector_type,
                     signal=signal,
-                    canonical_url=normalize_http_url(
-                        signal.canonical_url or signal.url
-                    ),
+                    canonical_url=normalize_http_url(signal.canonical_url or signal.url),
                 )
                 for signal in collection.signals
             ]
@@ -137,9 +137,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                             signal_by_external_id[signal.external_id] = result.signal_id
 
                 for comment in comment_candidates:
-                    raw_signal_id = signal_by_external_id.get(
-                        comment.content_external_id
-                    )
+                    raw_signal_id = signal_by_external_id.get(comment.content_external_id)
                     if raw_signal_id is None:
                         runtime_errors.append(
                             CollectionItemError(
@@ -151,9 +149,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         continue
                     try:
                         async with self.session_factory() as session:
-                            comment_result = await RawSignalCommentService(
-                                session
-                            ).ingest(
+                            comment_result = await RawSignalCommentService(session).ingest(
                                 raw_signal_id=raw_signal_id,
                                 comment=comment,
                             )
@@ -168,12 +164,17 @@ class CollectorRuntime(CollectorRuntimeSupport):
                             )
                         )
 
+            manual_risk = self._manual_risk(collection.risk_signals)
             checkpoint_error: VersionConflictError | None = None
+            checkpoint_committed = False
+            checkpoint_safe = manual_risk is None or manual_risk.checkpoint_safe_to_commit
             if (
                 not task.dry_run
                 and checkpoint is not None
                 and collection.checkpoint is not None
                 and collection.signals
+                and not runtime_errors
+                and checkpoint_safe
             ):
                 try:
                     await self.advance_checkpoint(
@@ -182,27 +183,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         checkpoint_data=collection.checkpoint,
                         signals=collection.signals,
                     )
+                    checkpoint_committed = True
                 except VersionConflictError as exc:
                     checkpoint_error = exc
 
-            failed_count = len(runtime_errors) + int(checkpoint_error is not None)
-            if failed_count and normalized:
-                target_status = ConnectorRunStatus.PARTIAL
-            elif failed_count:
-                target_status = ConnectorRunStatus.FAILED
-            else:
-                target_status = ConnectorRunStatus.SUCCEEDED
-
-            error_code = (
-                "checkpoint_conflict"
-                if checkpoint_error is not None
-                else ("partial_parse_failure" if runtime_errors else None)
-            )
-            error_message = (
-                "Checkpoint 版本冲突，已提交信号将在重试时按幂等规则去重"
-                if checkpoint_error is not None
-                else ("部分条目或评论处理失败" if runtime_errors else None)
-            )
             metadata = {
                 **collection.metadata,
                 "task": task.to_dict(),
@@ -225,8 +209,83 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     }
                     for item in runtime_errors[:5]
                 ],
+                "checkpoint_conflict": checkpoint_error is not None,
                 "dry_run": task.dry_run,
             }
+
+            if manual_risk is not None:
+                risk_error = self._risk_error(manual_risk)
+                async with self.session_factory() as session:
+                    await self.risk_guard.handle_platform_risk(
+                        session=session,
+                        run_id=run.id,
+                        connector_instance_id=context.instance.id,
+                        platform_account_id=task.platform_account_id,
+                        platform=context.definition.platform,
+                        error=risk_error,
+                        actor=task.triggered_by,
+                        metadata=metadata,
+                        raw_error_code=manual_risk.source_error_code,
+                        standard_error_code=manual_risk.standard_error_code,
+                        risk_level=manual_risk.severity,
+                        retryable=False,
+                        response_context=manual_risk.metadata,
+                        collected_count=collected_count,
+                        inserted_count=inserted_count,
+                        duplicate_count=duplicate_count,
+                        failed_count=1 + int(checkpoint_error is not None),
+                        checkpoint_after=(
+                            collection.checkpoint if checkpoint_committed else None
+                        ),
+                    )
+                await self.settle(
+                    reservations,
+                    actual_items=collected_count,
+                    actual_comments=actual_comments,
+                    completed=True,
+                )
+                async with self.session_factory() as session:
+                    await SourceService(session).mark_error(
+                        context.source.id,
+                        manual_risk.standard_error_code,
+                    )
+                    risk_run = await ConnectorRunService(session).get(run.id)
+                self.log_result(
+                    context=context,
+                    run=risk_run,
+                    failed_count=risk_run.failed_count,
+                    latency=monotonic() - started,
+                    risk_action=risk_error.event.action.value,
+                )
+                return RuntimeResult(
+                    run_id=risk_run.id,
+                    status=risk_run.status,
+                    signal_ids=tuple(signal_ids),
+                    collected_count=risk_run.collected_count,
+                    inserted_count=risk_run.inserted_count,
+                    duplicate_count=risk_run.duplicate_count,
+                    failed_count=risk_run.failed_count,
+                    fetch_status=collection.metadata.get("fetch_status"),
+                )
+
+            failed_count = len(runtime_errors) + int(checkpoint_error is not None)
+            if failed_count and normalized:
+                target_status = ConnectorRunStatus.PARTIAL
+            elif failed_count:
+                target_status = ConnectorRunStatus.FAILED
+            else:
+                target_status = ConnectorRunStatus.SUCCEEDED
+
+            error_code = (
+                "checkpoint_conflict"
+                if checkpoint_error is not None
+                else ("partial_parse_failure" if runtime_errors else None)
+            )
+            error_message = (
+                "Checkpoint 版本冲突，已提交信号将在重试时按幂等规则去重"
+                if checkpoint_error is not None
+                else ("部分条目或评论处理失败" if runtime_errors else None)
+            )
             async with self.session_factory() as session:
                 finalized = await ConnectorRunService(session).finalize(
                     run_id=run.id,
@@ -239,18 +298,13 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     error_code=error_code,
                     error_message=error_message,
                     checkpoint_after=(
-                        collection.checkpoint
-                        if not task.dry_run and checkpoint_error is None
-                        else None
+                        collection.checkpoint if checkpoint_committed else None
                     ),
                     metadata=metadata,
                 )
             async with self.session_factory() as session:
                 source_service = SourceService(session)
-                if target_status in {
-                    ConnectorRunStatus.SUCCEEDED,
-                    ConnectorRunStatus.PARTIAL,
-                }:
+                if target_status in {ConnectorRunStatus.SUCCEEDED, ConnectorRunStatus.PARTIAL}:
                     await source_service.mark_success(context.source.id)
                 else:
                     await source_service.mark_error(
@@ -309,10 +363,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 completed=True,
             )
             async with self.session_factory() as session:
-                await SourceService(session).mark_error(
-                    context.source.id,
-                    exc.event.code,
-                )
+                await SourceService(session).mark_error(context.source.id, exc.event.code)
                 risk_run = await ConnectorRunService(session).get(run.id)
             self.log_result(
                 context=context,
@@ -344,11 +395,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
             raise
         except Exception as exc:
             if claimed:
-                code = (
-                    exc.code
-                    if isinstance(exc, ConnectorFetchError)
-                    else "collector_execution_failed"
-                )
+                code = exc.code if isinstance(exc, ConnectorFetchError) else "collector_execution_failed"
                 async with self.session_factory() as session:
                     failed = await ConnectorRunService(session).finalize(
                         run_id=run.id,
@@ -402,6 +449,29 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     completed=False,
                 )
             raise
+
+    @staticmethod
+    def _manual_risk(
+        signals: tuple[CollectionRiskSignal, ...],
+    ) -> CollectionRiskSignal | None:
+        return next((item for item in signals if item.requires_manual_review), None)
+
+    @staticmethod
+    def _risk_error(signal: CollectionRiskSignal) -> PlatformRiskError:
+        decision = classify_platform_error(
+            code=signal.standard_error_code,
+            message=signal.message,
+        )
+        return PlatformRiskError(
+            RiskEvent.now(
+                platform=signal.platform,
+                account_id=None,
+                code=signal.standard_error_code,
+                message=signal.message,
+                disposition=decision.disposition,
+                action=decision.action,
+            )
+        )
 
     @staticmethod
     def requested_comment_budget(
