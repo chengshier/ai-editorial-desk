@@ -69,6 +69,18 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         else None
                     ),
                     parameters=dict(context.source.config),
+                    run_id=str(run.id),
+                    platform=context.definition.platform,
+                    account_ref=(
+                        str(context.account.id)
+                        if context.account is not None
+                        else None
+                    ),
+                    browser_profile_ref=(
+                        context.account.browser_profile_ref
+                        if context.account is not None
+                        else None
+                    ),
                 )
             )
 
