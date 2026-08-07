@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AdminApi } from '../api'
 import { Empty, ErrorBanner, JsonView, Panel } from '../components/common'
 import { StateBadge } from '../components/StateBadge'
@@ -8,9 +8,20 @@ export function DefinitionsPage({ api }: { api: AdminApi }) {
   const [items, setItems] = useState<Definition[]>([])
   const [selected, setSelected] = useState<Definition | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const load = () => api.page<Definition>('/api/v1/admin/connector-definitions?page_size=100')
-    .then((page) => setItems(page.items)).catch((e: Error) => setError(e.message))
-  useEffect(() => { void load() }, [])
+
+  const load = useCallback(async () => {
+    try {
+      const page = await api.page<Definition>('/api/v1/admin/connector-definitions?page_size=100')
+      setItems(page.items)
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }, [api])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
   return <Panel title="Connector Definitions" actions={<button onClick={load}>刷新</button>}>
     <ErrorBanner error={error} />
     {!items.length ? <Empty /> : <div className="split"><div className="table-wrap"><table><thead><tr><th>名称</th><th>类型 / 平台</th><th>状态</th><th>版本</th></tr></thead><tbody>
