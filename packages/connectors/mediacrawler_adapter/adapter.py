@@ -76,7 +76,10 @@ class MediaCrawlerAdapter:
 
         if envelope.risk_events:
             event = envelope.risk_events[0]
-            code = self._standardize_result_error(event.code, event.message)
+            code = self._standardize_result_error(
+                event.standard_error_code,
+                event.message,
+            )
             error = MediaCrawlerAdapterError(
                 code,
                 self._safe_result_message(code),

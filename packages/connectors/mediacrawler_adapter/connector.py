@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
+
+from packages.common.config import get_settings
 from packages.connectors.base import (
     BaseConnector,
     CollectionItemError,
     CollectionResult,
+    CollectionRiskSignal,
     CollectRequest,
+)
+from packages.connectors.mediacrawler_adapter.account_profile import (
+    BrowserProfileResolver,
+    MediaCrawlerAccountContext,
 )
 from packages.connectors.mediacrawler_adapter.adapter import MediaCrawlerAdapter
 from packages.connectors.mediacrawler_adapter.errors import (
@@ -20,15 +29,18 @@ from packages.connectors.mediacrawler_adapter.platforms.registry import (
 )
 from packages.connectors.mediacrawler_adapter.platforms.specs import get_platform_spec
 from packages.connectors.mediacrawler_adapter.protocol import (
+    LoginState,
+    MediaCrawlerCheckpoint,
     MediaCrawlerInvocation,
     MediaCrawlerMode,
     MediaCrawlerPlatform,
+    MediaCrawlerProfileContext,
     MediaCrawlerResultEnvelope,
 )
 
 
 class ConnectorCapabilityError(ValueError):
-    """Requested mode is outside the platform's effective M2-B capability."""
+    """Requested mode is outside the platform's effective capability."""
 
 
 class MediaCrawlerConnector(BaseConnector):
@@ -60,10 +72,28 @@ class MediaCrawlerConnector(BaseConnector):
         spec = get_platform_spec(platform.value)
         if mode.value not in spec.allowed_modes:
             raise ConnectorCapabilityError(
-                f"{platform.value} does not support MediaCrawler mode "
-                f"{mode.value} in M2-B"
+                f"{platform.value} does not support MediaCrawler mode {mode.value} "
+                "in the current implementation"
             )
 
+        account_context = self._account_context(request)
+        profile_context = MediaCrawlerProfileContext(
+            account_configured=(
+                account_context is not None
+                or request.account_ref is not None
+                or request.account_id is not None
+            ),
+            browser_profile_configured=(
+                account_context.browser_profile_ref is not None
+                if account_context is not None
+                else request.browser_profile_ref is not None
+            ),
+            login_state=(
+                account_context.login_state
+                if account_context is not None
+                else LoginState.UNKNOWN
+            ),
+        )
         parameters = dict(request.parameters)
         keyword: str | None = None
         creator_id: str | None = None
@@ -123,6 +153,11 @@ class MediaCrawlerConnector(BaseConnector):
             minimum=30,
             maximum=1800,
         )
+        checkpoint = self._checkpoint(
+            request.checkpoint,
+            platform=platform,
+            mode=mode,
+        )
 
         envelope = await self.adapter.invoke(
             MediaCrawlerInvocation(
@@ -137,9 +172,10 @@ class MediaCrawlerConnector(BaseConnector):
                 comment_limit=comment_limit,
                 include_comments=include_comments,
                 include_subcomments=include_subcomments,
-                checkpoint=request.checkpoint,
+                checkpoint=checkpoint,
                 account_ref=request.account_ref or request.account_id,
                 browser_profile_ref=request.browser_profile_ref,
+                profile_context=profile_context,
                 timeout_seconds=timeout_seconds,
             )
         )
@@ -147,6 +183,56 @@ class MediaCrawlerConnector(BaseConnector):
             envelope,
             allow_comments=include_comments,
         )
+
+    def _account_context(
+        self,
+        request: CollectRequest,
+    ) -> MediaCrawlerAccountContext | None:
+        if not isinstance(request.runtime_context, MediaCrawlerAccountContext):
+            return None
+        context = request.runtime_context
+        context.ensure_runnable()
+        if context.browser_profile_ref is not None:
+            settings = get_settings()
+            BrowserProfileResolver(
+                Path(settings.mediacrawler_profile_root)
+            ).resolve(context)
+        return context
+
+    @staticmethod
+    def _checkpoint(
+        raw: dict[str, Any] | None,
+        *,
+        platform: MediaCrawlerPlatform,
+        mode: MediaCrawlerMode,
+    ) -> MediaCrawlerCheckpoint | None:
+        if raw is None:
+            return None
+        try:
+            return MediaCrawlerCheckpoint.model_validate(raw)
+        except ValidationError:
+            cursor_value = raw.get("cursor")
+            cursor = cursor_value if isinstance(cursor_value, dict) else None
+            page_value = raw.get("page")
+            if page_value is None and cursor is not None:
+                page_value = cursor.get("page")
+            metadata_value = raw.get("metadata")
+            metadata: dict[str, Any] = (
+                metadata_value if isinstance(metadata_value, dict) else {}
+            )
+            return MediaCrawlerCheckpoint(
+                platform=platform,
+                mode=mode,
+                cursor=cursor,
+                page=(
+                    page_value
+                    if isinstance(page_value, int) and page_value >= 1
+                    else None
+                ),
+                last_external_id=_string_or_none(raw.get("last_external_id")),
+                latest_published_at=raw.get("latest_published_at"),
+                metadata=metadata,
+            )
 
     def _to_collection_result(
         self,
@@ -158,11 +244,7 @@ class MediaCrawlerConnector(BaseConnector):
         signals = []
         comments = []
         errors = [
-            CollectionItemError(
-                error.code,
-                error.message,
-                error.external_ref,
-            )
+            CollectionItemError(error.code, error.message, error.external_ref)
             for error in envelope.errors
         ]
         failed_items = 0
@@ -183,8 +265,7 @@ class MediaCrawlerConnector(BaseConnector):
         if envelope.items and not signals:
             raise MediaCrawlerAdapterError(
                 MediaCrawlerErrorCode.PARSE_ERROR,
-                f"{envelope.platform.value} mapper could not recognize "
-                "the result format",
+                f"{envelope.platform.value} mapper could not recognize the result format",
             )
 
         if envelope.comments and not allow_comments:
@@ -192,8 +273,7 @@ class MediaCrawlerConnector(BaseConnector):
             errors.append(
                 CollectionItemError(
                     "mediacrawler_unexpected_comments",
-                    "MediaCrawler returned comments although comment collection "
-                    "was disabled",
+                    "MediaCrawler returned comments although comment collection was disabled",
                     None,
                 )
             )
@@ -211,21 +291,45 @@ class MediaCrawlerConnector(BaseConnector):
                         )
                     )
 
+        risk_signals = tuple(
+            CollectionRiskSignal(
+                platform=event.platform.value,
+                source_error_code=event.source_error_code,
+                standard_error_code=event.standard_error_code,
+                severity=event.severity.value,
+                retryable=event.retryable,
+                action_hint=event.action_hint,
+                requires_manual_review=event.requires_manual_review,
+                message=event.message,
+                checkpoint_safe_to_commit=event.checkpoint_safe_to_commit,
+                metadata=dict(event.metadata),
+            )
+            for event in envelope.risk_events
+        )
         return CollectionResult(
             signals=tuple(signals),
-            checkpoint=envelope.checkpoint,
+            checkpoint=(
+                envelope.checkpoint.model_dump(mode="json")
+                if envelope.checkpoint is not None
+                else None
+            ),
             errors=tuple(errors[:100]),
             metadata={
                 "mediacrawler_protocol_version": envelope.protocol_version,
                 "mediacrawler_status": envelope.status.value,
                 "mediacrawler_counters": envelope.counters.model_dump(mode="json"),
+                "mediacrawler_features": envelope.feature_metadata.model_dump(
+                    mode="json"
+                ),
                 "mapped_count": len(signals),
                 "failed_map_count": failed_items,
                 "mapped_comment_count": len(comments),
                 "failed_comment_map_count": failed_comments,
                 "mediacrawler_warning_count": len(envelope.warnings),
+                "mediacrawler_risk_signal_count": len(risk_signals),
             },
             comments=tuple(comments),
+            risk_signals=risk_signals,
         )
 
     @staticmethod
@@ -260,3 +364,7 @@ class MediaCrawlerConnector(BaseConnector):
         else:
             resolved = int(value)
         return max(minimum, min(maximum, resolved))
+
+
+def _string_or_none(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None

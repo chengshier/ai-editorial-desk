@@ -20,6 +20,7 @@ from packages.connectors.mediacrawler_adapter.errors import (
 )
 from packages.connectors.mediacrawler_adapter.protocol import (
     MEDIACRAWLER_PROTOCOL_VERSION,
+    MediaCrawlerCheckpoint,
     MediaCrawlerCounters,
     MediaCrawlerInvocation,
     MediaCrawlerMode,
@@ -35,6 +36,20 @@ from packages.connectors.mediacrawler_adapter.runner import (
 from packages.risk_guard.models import ErrorDisposition, PlatformRiskError
 
 
+def _checkpoint(
+    *,
+    cursor: str,
+    page: int = 1,
+) -> MediaCrawlerCheckpoint:
+    return MediaCrawlerCheckpoint(
+        platform=MediaCrawlerPlatform.WEIBO,
+        mode=MediaCrawlerMode.SEARCH,
+        cursor={"fixture": cursor},
+        page=page,
+        metadata={"legacy_test": "m2a"},
+    )
+
+
 def _invocation(**overrides):  # type: ignore[no-untyped-def]
     values = {
         "run_id": uuid4(),
@@ -46,7 +61,7 @@ def _invocation(**overrides):  # type: ignore[no-untyped-def]
         "comment_limit": 0,
         "include_comments": False,
         "include_subcomments": False,
-        "checkpoint": {"cursor": "safe"},
+        "checkpoint": _checkpoint(cursor="safe"),
         "account_ref": "account-id",
         "browser_profile_ref": "profile-ref",
         "timeout_seconds": 2,
@@ -55,7 +70,10 @@ def _invocation(**overrides):  # type: ignore[no-untyped-def]
     return MediaCrawlerInvocation(**values)
 
 
-def _envelope(invocation: MediaCrawlerInvocation, **overrides):  # type: ignore[no-untyped-def]
+def _envelope(
+    invocation: MediaCrawlerInvocation,
+    **overrides,
+):  # type: ignore[no-untyped-def]
     values = {
         "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION,
         "run_id": invocation.run_id,
@@ -75,7 +93,7 @@ def _envelope(invocation: MediaCrawlerInvocation, **overrides):  # type: ignore[
             }
         ],
         "comments": [],
-        "checkpoint": {"cursor": "next"},
+        "checkpoint": _checkpoint(cursor="next", page=2),
         "counters": MediaCrawlerCounters(items=1),
         "warnings": [],
         "risk_events": [],
@@ -108,7 +126,9 @@ def test_invocation_serializes_and_rejects_invalid_contracts() -> None:
         _invocation(checkpoint={"cookies": "secret"})
 
 
-def test_result_loader_rejects_malformed_version_missing_and_oversized(tmp_path: Path) -> None:
+def test_result_loader_rejects_malformed_version_missing_and_oversized(
+    tmp_path: Path,
+) -> None:
     invocation = _invocation()
     good = _envelope(invocation)
     result_path = tmp_path / "result.json"
@@ -263,7 +283,9 @@ async def test_subprocess_success_and_result_sanitization(tmp_path: Path) -> Non
     assert "cookie" not in result.items[0]
 
 
-async def test_subprocess_timeout_cancel_nonzero_no_result_and_malformed(tmp_path: Path) -> None:
+async def test_subprocess_timeout_cancel_nonzero_no_result_and_malformed(
+    tmp_path: Path,
+) -> None:
     home = _home(tmp_path)
 
     timeout_runner = FixtureRunner(
@@ -280,7 +302,9 @@ async def test_subprocess_timeout_cancel_nonzero_no_result_and_malformed(tmp_pat
         process=FakeProcess(delay=10),
         write_result=False,
     )
-    task = asyncio.create_task(cancel_runner.run(_invocation(timeout_seconds=30)))
+    task = asyncio.create_task(
+        cancel_runner.run(_invocation(timeout_seconds=30))
+    )
     await asyncio.sleep(0)
     task.cancel()
     with pytest.raises(MediaCrawlerAdapterError) as cancelled:
@@ -329,9 +353,13 @@ async def test_subprocess_timeout_cancel_nonzero_no_result_and_malformed(tmp_pat
         ("account restricted", MediaCrawlerErrorCode.ACCOUNT_RESTRICTED),
         ("network timeout", MediaCrawlerErrorCode.NETWORK_TIMEOUT),
         ("browser disconnected", MediaCrawlerErrorCode.BROWSER_DISCONNECTED),
+        ("temporary failure in name resolution", MediaCrawlerErrorCode.DNS_ERROR),
     ],
 )
-def test_error_mapping_fixtures(diagnostic: str, expected: MediaCrawlerErrorCode) -> None:
+def test_error_mapping_fixtures(
+    diagnostic: str,
+    expected: MediaCrawlerErrorCode,
+) -> None:
     assert classify_subprocess_failure(exit_code=1, stderr=diagnostic) is expected
 
 
@@ -345,7 +373,10 @@ class StaticRunner:
         self.envelope = envelope
         self.error = error
 
-    async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def run(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         if self.error is not None:
             raise self.error
         assert self.envelope is not None

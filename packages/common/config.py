@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     mediacrawler_home: str = "third_party/MediaCrawler"
     mediacrawler_python: str = "python"
     mediacrawler_timeout_seconds: int = Field(default=900, ge=30, le=7200)
+    mediacrawler_profile_root: str = ".runtime/mediacrawler_profiles"
 
     @field_validator("database_url")
     @classmethod

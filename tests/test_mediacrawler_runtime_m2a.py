@@ -23,6 +23,7 @@ from packages.connectors.mediacrawler_adapter.errors import (
 )
 from packages.connectors.mediacrawler_adapter.protocol import (
     MEDIACRAWLER_PROTOCOL_VERSION,
+    MediaCrawlerCheckpoint,
     MediaCrawlerCounters,
     MediaCrawlerInvocation,
     MediaCrawlerResultEnvelope,
@@ -50,7 +51,10 @@ class FakeAdapter:
     async def health_check(self):  # type: ignore[no-untyped-def]
         return {"status": "ok"}
 
-    async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def invoke(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         self.calls += 1
         self.invocations.append(invocation)
         now = datetime.now(UTC)
@@ -77,7 +81,13 @@ class FakeAdapter:
                 }
             ],
             comments=[],
-            checkpoint={"cursor": "fixture-next"},
+            checkpoint=MediaCrawlerCheckpoint(
+                platform=invocation.platform,
+                mode=invocation.mode,
+                page=2,
+                last_external_id="fixture-post",
+                metadata={"legacy_test": "m2a"},
+            ),
             counters=MediaCrawlerCounters(items=1),
             warnings=[],
             risk_events=[],
@@ -88,7 +98,10 @@ class FakeAdapter:
 
 
 class ErrorRunner:
-    async def run(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def run(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         del invocation
         raise MediaCrawlerAdapterError(
             MediaCrawlerErrorCode.CAPTCHA_REQUIRED,
@@ -143,7 +156,7 @@ async def _enabled_mediacrawler_source(db_session):  # type: ignore[no-untyped-d
         display_name="fixture account",
         account_identifier=f"fixture-{uuid4()}",
         credential_ref=None,
-        browser_profile_ref="profile-ref-fixture",
+        browser_profile_ref=None,
         actor="admin",
     )
     ids = (instance.id, source.id, account.id)
@@ -181,7 +194,9 @@ def _runtime(connector: MediaCrawlerConnector) -> CollectorRuntime:
 async def test_mediacrawler_runtime_ingests_idempotently_and_advances_checkpoint(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
-    instance_id, source_id, account_id = await _enabled_mediacrawler_source(db_session)
+    instance_id, source_id, account_id = await _enabled_mediacrawler_source(
+        db_session
+    )
     adapter = FakeAdapter()
     runtime = _runtime(MediaCrawlerConnector(adapter=adapter))  # type: ignore[arg-type]
 
@@ -195,7 +210,7 @@ async def test_mediacrawler_runtime_ingests_idempotently_and_advances_checkpoint
     assert adapter.calls == 2
     assert adapter.invocations[0].platform.value == "weibo"
     assert adapter.invocations[0].account_ref == str(account_id)
-    assert adapter.invocations[0].browser_profile_ref == "profile-ref-fixture"
+    assert adapter.invocations[0].browser_profile_ref is None
 
     checkpoint = await db_session.scalar(
         select(ConnectorCheckpoint).where(
@@ -203,7 +218,12 @@ async def test_mediacrawler_runtime_ingests_idempotently_and_advances_checkpoint
         )
     )
     assert checkpoint is not None
-    assert checkpoint.checkpoint_data == {"cursor": "fixture-next"}
+    assert checkpoint.checkpoint_data["schema_version"] == "1.0"
+    assert checkpoint.checkpoint_data["platform"] == "weibo"
+    assert checkpoint.checkpoint_data["mode"] == "search"
+    assert checkpoint.checkpoint_data["page"] == 2
+    assert checkpoint.checkpoint_data["last_external_id"] == "fixture-post"
+    assert checkpoint.cursor == {"page": 2}
     assert checkpoint.version == 3
     assert int(
         await db_session.scalar(
@@ -219,7 +239,9 @@ async def test_mediacrawler_runtime_ingests_idempotently_and_advances_checkpoint
 async def test_mediacrawler_checkpoint_does_not_advance_when_ingestion_fails(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
-    instance_id, source_id, account_id = await _enabled_mediacrawler_source(db_session)
+    instance_id, source_id, account_id = await _enabled_mediacrawler_source(
+        db_session
+    )
     connector = MediaCrawlerConnector(
         adapter=FakeAdapter(invalid_url=True)  # type: ignore[arg-type]
     )
@@ -242,7 +264,9 @@ async def test_mediacrawler_checkpoint_does_not_advance_when_ingestion_fails(
 async def test_mediacrawler_risk_enters_paused_risk(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
-    instance_id, source_id, account_id = await _enabled_mediacrawler_source(db_session)
+    instance_id, source_id, account_id = await _enabled_mediacrawler_source(
+        db_session
+    )
     adapter = MediaCrawlerAdapter(
         runner=ErrorRunner(),
         settings=SimpleNamespace(  # type: ignore[arg-type]
@@ -257,7 +281,10 @@ async def test_mediacrawler_risk_enters_paused_risk(
 
     assert result.status is ConnectorRunStatus.PAUSED_RISK
     assert int(
-        await db_session.scalar(select(func.count()).select_from(PlatformRiskEvent)) or 0
+        await db_session.scalar(
+            select(func.count()).select_from(PlatformRiskEvent)
+        )
+        or 0
     ) == 1
 
 
@@ -265,7 +292,9 @@ async def test_mediacrawler_risk_enters_paused_risk(
 async def test_mediacrawler_budget_rejects_before_adapter(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
-    instance_id, source_id, account_id = await _enabled_mediacrawler_source(db_session)
+    instance_id, source_id, account_id = await _enabled_mediacrawler_source(
+        db_session
+    )
     adapter = FakeAdapter()
     await CollectionBudgetService(db_session).create(
         scope_type="connector",
@@ -286,6 +315,11 @@ async def test_mediacrawler_budget_rejects_before_adapter(
     with pytest.raises(BudgetExceededError):
         connector = MediaCrawlerConnector(adapter=adapter)  # type: ignore[arg-type]
         await _runtime(connector).execute(
-            _task(instance_id, source_id, account_id, requested_limit=2)
+            _task(
+                instance_id,
+                source_id,
+                account_id,
+                requested_limit=2,
+            )
         )
     assert adapter.calls == 0

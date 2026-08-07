@@ -26,7 +26,9 @@ class MediaCrawlerErrorCode(StrEnum):
     ACCOUNT_ABNORMAL = "ACCOUNT_ABNORMAL"
     AUTOMATION_DETECTED = "AUTOMATION_DETECTED"
     NETWORK_TIMEOUT = "NETWORK_TIMEOUT"
+    DNS_ERROR = "DNS_ERROR"
     PARSE_ERROR = "PARSE_ERROR"
+    SIGNATURE_PROVIDER_ERROR = "SIGNATURE_PROVIDER_ERROR"
     UNKNOWN_PLATFORM_ERROR = "UNKNOWN_PLATFORM_ERROR"
 
 
@@ -87,7 +89,11 @@ def classify_subprocess_failure(
         or "访问受限" in diagnostic
     ):
         return MediaCrawlerErrorCode.ACCOUNT_RESTRICTED
-    if "account abnormal" in diagnostic or "账号异常" in diagnostic or "-104" in diagnostic:
+    if (
+        "account abnormal" in diagnostic
+        or "账号异常" in diagnostic
+        or "-104" in diagnostic
+    ):
         return MediaCrawlerErrorCode.ACCOUNT_ABNORMAL
     if (
         "login expired" in diagnostic
@@ -111,7 +117,11 @@ def classify_subprocess_failure(
         or "http 403" in diagnostic
     ):
         return MediaCrawlerErrorCode.PERMISSION_DENIED
-    if "rate limit" in diagnostic or "too many requests" in diagnostic or "429" in diagnostic:
+    if (
+        "rate limit" in diagnostic
+        or "too many requests" in diagnostic
+        or "429" in diagnostic
+    ):
         return MediaCrawlerErrorCode.RATE_LIMITED
     if (
         "browser disconnected" in diagnostic
@@ -119,7 +129,19 @@ def classify_subprocess_failure(
         or "target page, context or browser has been closed" in diagnostic
     ):
         return MediaCrawlerErrorCode.BROWSER_DISCONNECTED
-    if "network timeout" in diagnostic or "timed out" in diagnostic or "timeout" in diagnostic:
+    if (
+        "name or service not known" in diagnostic
+        or "temporary failure in name resolution" in diagnostic
+        or "nodename nor servname provided" in diagnostic
+        or "dns lookup" in diagnostic
+        or "dns error" in diagnostic
+    ):
+        return MediaCrawlerErrorCode.DNS_ERROR
+    if (
+        "network timeout" in diagnostic
+        or "timed out" in diagnostic
+        or "timeout" in diagnostic
+    ):
         return MediaCrawlerErrorCode.NETWORK_TIMEOUT
     if "parse error" in diagnostic or "解析失败" in diagnostic:
         return MediaCrawlerErrorCode.PARSE_ERROR

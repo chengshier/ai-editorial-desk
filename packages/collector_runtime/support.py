@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +24,11 @@ from packages.connector_management.services import (
 )
 from packages.connectors import ConnectorRegistry, RawSignal
 from packages.connectors.http import ConnectorFetchError
+from packages.connectors.mediacrawler_adapter.account_profile import (
+    AccountExecutionBlocked,
+    MediaCrawlerAccountContext,
+)
+from packages.connectors.mediacrawler_adapter.protocol import LoginState
 from packages.database.models import (
     ConnectorCheckpoint,
     ConnectorInstance,
@@ -92,12 +98,40 @@ class CollectorRuntimeSupport:
             if bool(definition.capabilities.get("requires_account")) and account is None:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
+            runtime_context = self._runtime_account_context(
+                definition.connector_type,
+                account,
+            )
             return PreflightContext(
                 instance=instance,
                 definition=definition,
                 source=source,
                 account=account,
+                runtime_context=runtime_context,
             )
+
+    @staticmethod
+    def _runtime_account_context(
+        connector_type: str,
+        account: PlatformAccount | None,
+    ) -> object | None:
+        if connector_type != "mediacrawler" or account is None:
+            return None
+        context = MediaCrawlerAccountContext(
+            platform_account_id=account.id,
+            account_identifier=account.account_identifier,
+            credential_ref=account.credential_ref,
+            browser_profile_ref=account.browser_profile_ref,
+            account_status=account.status,
+            cooldown_until=account.cooldown_until,
+            manual_review_required=account.manual_review_required,
+            login_state=LoginState.UNKNOWN,
+        )
+        try:
+            context.ensure_runnable()
+        except AccountExecutionBlocked as exc:
+            raise PreflightRejectedError(str(exc)) from exc
+        return context
 
     async def load_checkpoint(
         self,
@@ -156,8 +190,8 @@ class CollectorRuntimeSupport:
         published = [
             item.published_at for item in signals if item.published_at is not None
         ]
-        last_published_at = max(published, default=None)
-        last_external_id = next(
+        signal_last_published_at = max(published, default=None)
+        signal_last_external_id = next(
             (
                 item.external_id
                 for item in reversed(signals)
@@ -165,11 +199,26 @@ class CollectorRuntimeSupport:
             ),
             None,
         )
+        candidate_published_at = self._checkpoint_datetime(
+            checkpoint_data.get("latest_published_at")
+        )
+        candidate_external_id = checkpoint_data.get("last_external_id")
+        last_published_at = candidate_published_at or signal_last_published_at
+        last_external_id = (
+            candidate_external_id
+            if isinstance(candidate_external_id, str) and candidate_external_id
+            else signal_last_external_id
+        )
+        cursor_value = checkpoint_data.get("cursor")
+        cursor = dict(cursor_value) if isinstance(cursor_value, dict) else None
+        page = checkpoint_data.get("page")
+        if cursor is None and isinstance(page, int) and page >= 1:
+            cursor = {"page": page}
         async with self.session_factory() as session:
             await ConnectorCheckpointService(session).update(
                 checkpoint_id=checkpoint_id,
                 expected_version=expected_version,
-                cursor=None,
+                cursor=cursor,
                 watermark=(
                     last_published_at.isoformat()
                     if last_published_at is not None
@@ -179,6 +228,20 @@ class CollectorRuntimeSupport:
                 last_published_at=last_published_at,
                 checkpoint_data=checkpoint_data,
             )
+
+    @staticmethod
+    def _checkpoint_datetime(value: Any) -> datetime | None:
+        if isinstance(value, datetime):
+            return value
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return None
+        return parsed
 
     async def settle(
         self,

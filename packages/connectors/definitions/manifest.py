@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from packages.connectors.mediacrawler_adapter.platforms.specs import (
-    M2B_IMPLEMENTATION_VERSION,
+    M2C_IMPLEMENTATION_VERSION,
     PLATFORM_SPECS,
     build_config_schema,
     build_ui_schema,
@@ -46,7 +46,7 @@ def _mediacrawler_definition(platform: str) -> ConnectorDefinitionManifest:
         capabilities=spec.capabilities,
         config_schema=build_config_schema(spec),
         ui_schema=build_ui_schema(spec),
-        implementation_version=M2B_IMPLEMENTATION_VERSION,
+        implementation_version=M2C_IMPLEMENTATION_VERSION,
     )
 
 

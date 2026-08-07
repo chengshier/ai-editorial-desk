@@ -56,6 +56,16 @@ class RuntimeRiskGuard:
         error: PlatformRiskError,
         actor: str,
         metadata: dict[str, Any] | None = None,
+        raw_error_code: str | None = None,
+        standard_error_code: str = "platform_risk",
+        risk_level: str = "high",
+        retryable: bool = False,
+        response_context: dict[str, Any] | None = None,
+        collected_count: int = 0,
+        inserted_count: int = 0,
+        duplicate_count: int = 0,
+        failed_count: int = 1,
+        checkpoint_after: dict[str, Any] | None = None,
     ) -> None:
         event = error.event
         now = datetime.now(UTC)
@@ -67,14 +77,14 @@ class RuntimeRiskGuard:
                     connector_run_id=run_id,
                     platform=platform,
                     risk_type="platform_restriction",
-                    risk_level="high",
-                    raw_error_code=event.code,
-                    standard_error_code="platform_risk",
+                    risk_level=risk_level,
+                    raw_error_code=raw_error_code or event.code,
+                    standard_error_code=standard_error_code,
                     message=event.message,
                     action_taken=event.action,
-                    retryable=False,
+                    retryable=retryable,
                     request_context={},
-                    response_context={},
+                    response_context=sanitize_context(response_context or {}),
                     manual_review_required=True,
                 )
             )
@@ -93,7 +103,7 @@ class RuntimeRiskGuard:
                     account.status = target_status
                     account.manual_review_required = True
                     account.last_warning_at = now
-                    account.last_warning_code = event.code
+                    account.last_warning_code = standard_error_code
                     account.updated_by = actor
                     AuditLogRepository(session).add(
                         entity_type="platform_account",
@@ -104,7 +114,7 @@ class RuntimeRiskGuard:
                         after_data={
                             "status": target_status.value,
                             "manual_review_required": True,
-                            "risk_code": event.code,
+                            "risk_code": standard_error_code,
                         },
                     )
             run = await session.get(ConnectorRun, run_id)
@@ -112,9 +122,13 @@ class RuntimeRiskGuard:
                 run.status = ConnectorRunStatus.PAUSED_RISK
                 run.finished_at = now
                 run.progress_updated_at = now
-                run.error_code = event.code
+                run.error_code = standard_error_code
                 run.error_message = event.message
-                run.failed_count = 1
+                run.collected_count = collected_count
+                run.inserted_count = inserted_count
+                run.duplicate_count = duplicate_count
+                run.failed_count = failed_count
+                run.checkpoint_after = checkpoint_after
                 run.run_metadata = sanitize_context(
                     {
                         **(metadata or run.run_metadata),
