@@ -27,6 +27,7 @@ from packages.database.models import (
     ConnectorInstance,
     ConnectorRun,
     ConnectorRunStatus,
+    ConnectorRunTriggerType,
     ConnectorValidationRecord,
     ConnectorValidationStatus,
     PlatformAccount,
@@ -43,6 +44,12 @@ RETRYABLE_STATUSES = frozenset(
         ConnectorRunStatus.FAILED,
         ConnectorRunStatus.PARTIAL,
         ConnectorRunStatus.CANCELLED,
+    }
+)
+SMOKE_TRIGGER_TYPES = frozenset(
+    {
+        ConnectorRunTriggerType.TEST,
+        ConnectorRunTriggerType.MANUAL,
     }
 )
 
@@ -534,8 +541,13 @@ class ConnectorValidationService:
                 raise ResourceNotFoundError("Connector Definition 不存在")
             if implementation_version != definition.implementation_version:
                 raise ConflictError("validation 必须针对当前 implementation_version")
-            if status is ConnectorValidationStatus.PASSED and not real_smoke_test:
-                raise BusinessValidationError("CI/Mock 结果不能写入真实 PASSED validation")
+            if status is ConnectorValidationStatus.PASSED:
+                await self._require_real_smoke_evidence(
+                    definition=definition,
+                    environment=environment,
+                    real_smoke_test=real_smoke_test,
+                    safe_evidence=safe_evidence,
+                )
             record = ConnectorValidationRecord(
                 connector_type=connector_type,
                 platform=platform,
@@ -556,6 +568,32 @@ class ConnectorValidationService:
             self.session.add(record)
             await self.session.flush()
         return record
+
+    async def _require_real_smoke_evidence(
+        self,
+        *,
+        definition: ConnectorDefinition,
+        environment: str,
+        real_smoke_test: bool,
+        safe_evidence: dict[str, Any],
+    ) -> None:
+        if environment.strip().casefold() in {"ci", "mock"}:
+            raise BusinessValidationError("CI/Mock 环境不能写入真实 PASSED validation")
+        if not real_smoke_test:
+            raise BusinessValidationError("CI/Mock 结果不能写入真实 PASSED validation")
+        raw_run_id = safe_evidence.get("run_id")
+        try:
+            run_id = UUID(str(raw_run_id))
+        except (TypeError, ValueError) as exc:
+            raise BusinessValidationError("PASSED validation 必须绑定成功 smoke Run ID") from exc
+        run = await self.session.get(ConnectorRun, run_id)
+        if run is None or run.status is not ConnectorRunStatus.SUCCEEDED:
+            raise BusinessValidationError("PASSED validation 只能绑定 SUCCEEDED smoke Run")
+        if run.trigger_type not in SMOKE_TRIGGER_TYPES:
+            raise BusinessValidationError("PASSED validation 只能绑定人工 Test/Manual Run")
+        instance = await self.session.get(ConnectorInstance, run.connector_instance_id)
+        if instance is None or instance.definition_id != definition.id:
+            raise BusinessValidationError("smoke Run 与 Connector Definition 不匹配")
 
     async def effective_status(self, definition: ConnectorDefinition) -> ConnectorValidationStatus:
         record = await self.session.scalar(
