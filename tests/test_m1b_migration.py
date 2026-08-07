@@ -9,6 +9,8 @@ from packages.database.session import dispose_database, get_async_engine
 
 def test_m1b_migration_downgrade_one_preserves_m1a_tables() -> None:
     config = Config("alembic.ini")
+    asyncio.run(dispose_database())
+    command.downgrade(config, "base")
     command.upgrade(config, "20260806_0002")
     command.downgrade(config, "-1")
 
