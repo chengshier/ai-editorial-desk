@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from packages.connectors.mediacrawler_adapter.platforms.specs import (
-    M2B_IMPLEMENTATION_VERSION,
+    M2C_IMPLEMENTATION_VERSION,
     PLATFORM_SPECS,
     build_config_schema,
     build_ui_schema,
@@ -46,7 +46,7 @@ def _mediacrawler_definition(platform: str) -> ConnectorDefinitionManifest:
         capabilities=spec.capabilities,
         config_schema=build_config_schema(spec),
         ui_schema=build_ui_schema(spec),
-        implementation_version=M2B_IMPLEMENTATION_VERSION,
+        implementation_version=M2C_IMPLEMENTATION_VERSION,
     )
 
 
@@ -118,16 +118,18 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "items": {
                         "type": "string",
                         "pattern": "^[A-Za-z0-9_]+$",
-                        "maxLength": 64,
                     },
                 },
                 "sort": {
                     "type": "string",
-                    "enum": ["new", "rising", "hot", "top"],
+                    "enum": ["hot", "new", "top", "rising"],
                 },
-                "time_filter": {
-                    "type": "string",
-                    "enum": ["hour", "day", "week", "month", "year", "all"],
+                "include_comments": {"type": "boolean", "default": False},
+                "comment_limit": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 50,
+                    "default": 0,
                 },
             },
         ),
@@ -139,88 +141,43 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
     ),
     ConnectorDefinitionManifest(
         connector_type="hotlist",
-        platform="hotlist",
-        display_name="国内公开热榜",
+        platform="baidu_realtime",
+        display_name="百度实时热搜",
         capabilities={
             "registration_state": "registered",
             "hotlist": True,
             "requires_account": False,
-            "supports_checkpoint": True,
+            "supports_checkpoint": False,
         },
         config_schema=_object_schema(
-            title="国内公开热榜来源配置",
-            required=("sources",),
+            title="百度实时热搜配置",
             properties={
-                "sources": {
-                    "type": "array",
-                    "minItems": 1,
-                    "maxItems": 1,
-                    "uniqueItems": True,
-                    "items": {
-                        "type": "string",
-                        "enum": ["baidu_realtime"],
-                    },
-                    "default": ["baidu_realtime"],
-                    "description": "M1 仅开放百度官方实时热搜公开 JSON 入口",
-                },
-                "categories": {
-                    "type": "array",
-                    "maxItems": 30,
-                    "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 100,
-                    },
-                    "description": "保留后续公开热榜分类能力，M1 百度实时榜暂不使用",
-                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 20,
+                }
             },
         ),
-        ui_schema={
-            "sources": {
-                "widget": "checkbox_group",
-                "label": "公开热榜来源",
-                "help": "当前仅允许无需登录的百度官方实时热搜入口",
-                "order": 10,
-            },
-            "categories": {
-                "widget": "tags",
-                "label": "分类",
-                "order": 20,
-            },
-        },
-        implementation_version="0.2.0",
+        ui_schema={"limit": {"widget": "number"}},
+        implementation_version="0.1.0",
     ),
     ConnectorDefinitionManifest(
         connector_type="manual",
-        platform="manual_url",
-        display_name="手工 URL",
+        platform="web",
+        display_name="手工 URL 导入",
         capabilities={
             "registration_state": "registered",
-            "manual_import": True,
+            "detail": True,
             "requires_account": False,
             "supports_checkpoint": False,
         },
         config_schema=_object_schema(
-            title="手工 URL 配置",
-            properties={
-                "allowed_domains": {
-                    "type": "array",
-                    "maxItems": 100,
-                    "uniqueItems": True,
-                    "items": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 255,
-                    },
-                },
-                "default_language": {
-                    "type": "string",
-                    "minLength": 2,
-                    "maxLength": 16,
-                },
-            },
+            title="手工 URL 导入配置",
+            properties={},
         ),
-        ui_schema={"allowed_domains": {"widget": "tags"}},
+        ui_schema={},
         implementation_version="0.1.0",
     ),
 )
