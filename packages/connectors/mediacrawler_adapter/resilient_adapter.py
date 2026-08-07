@@ -35,7 +35,10 @@ class MediaCrawlerResilienceAdapter(MediaCrawlerAdapter):
         base = await super().health_check()
         return {**base, "protocol_version": MEDIACRAWLER_PROTOCOL_VERSION}
 
-    async def invoke(self, invocation: MediaCrawlerInvocation) -> MediaCrawlerResultEnvelope:
+    async def invoke(
+        self,
+        invocation: MediaCrawlerInvocation,
+    ) -> MediaCrawlerResultEnvelope:
         try:
             envelope = await self.runner.run(invocation)
         except MediaCrawlerAdapterError as exc:
@@ -70,7 +73,7 @@ class MediaCrawlerResilienceAdapter(MediaCrawlerAdapter):
             if event.requires_manual_review and not safe_partial:
                 try:
                     code = MediaCrawlerErrorCode(event.standard_error_code)
-                except ValueError:
+                except ValueError as exc:
                     decision = classify_platform_error(
                         code=event.standard_error_code,
                         message=event.message,
@@ -84,7 +87,7 @@ class MediaCrawlerResilienceAdapter(MediaCrawlerAdapter):
                             disposition=decision.disposition,
                             action=decision.action,
                         )
-                    )
+                    ) from exc
                 raise to_platform_risk_error(
                     MediaCrawlerAdapterError(code, event.message),
                     platform=invocation.platform.value,
@@ -94,7 +97,9 @@ class MediaCrawlerResilienceAdapter(MediaCrawlerAdapter):
             first = envelope.errors[0] if envelope.errors else None
             raise ConnectorFetchError(
                 first.code if first is not None else "UNKNOWN_PLATFORM_ERROR",
-                first.message if first is not None else "MediaCrawler platform execution failed",
+                first.message
+                if first is not None
+                else "MediaCrawler platform execution failed",
                 retryable=False,
             )
         return envelope
