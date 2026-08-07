@@ -6,6 +6,7 @@ from typing import Any
 
 from packages.common.config import Settings, get_settings
 from packages.connectors.mediacrawler_adapter.connector import MediaCrawlerConnector
+from packages.connectors.mediacrawler_adapter.protocol import MediaCrawlerInvocation
 from packages.connectors.mediacrawler_adapter.resilience import (
     MediaCrawlerResilienceRunner,
     ResumePageRunner,
@@ -13,7 +14,6 @@ from packages.connectors.mediacrawler_adapter.resilience import (
 from packages.connectors.mediacrawler_adapter.resilient_adapter import (
     MediaCrawlerResilienceAdapter,
 )
-from packages.connectors.mediacrawler_adapter.protocol import MediaCrawlerInvocation
 from packages.connectors.registry import ConnectorRegistry
 
 M2D_TARGET_PLATFORMS = ("bilibili", "zhihu", "weibo")
