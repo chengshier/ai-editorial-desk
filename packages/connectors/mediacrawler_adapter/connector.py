@@ -37,7 +37,6 @@ from packages.connectors.mediacrawler_adapter.protocol import (
     MediaCrawlerProfileContext,
     MediaCrawlerResultEnvelope,
 )
-from packages.risk_guard.models import AccountStatus
 
 
 class ConnectorCapabilityError(ValueError):
@@ -79,9 +78,15 @@ class MediaCrawlerConnector(BaseConnector):
 
         account_context = self._account_context(request)
         profile_context = MediaCrawlerProfileContext(
-            account_configured=account_context is not None,
-            browser_profile_configured=bool(
-                account_context and account_context.browser_profile_ref
+            account_configured=(
+                account_context is not None
+                or request.account_ref is not None
+                or request.account_id is not None
+            ),
+            browser_profile_configured=(
+                account_context.browser_profile_ref is not None
+                if account_context is not None
+                else request.browser_profile_ref is not None
             ),
             login_state=(
                 account_context.login_state
@@ -183,23 +188,9 @@ class MediaCrawlerConnector(BaseConnector):
         self,
         request: CollectRequest,
     ) -> MediaCrawlerAccountContext | None:
-        if isinstance(request.runtime_context, MediaCrawlerAccountContext):
-            context = request.runtime_context
-        elif request.account_ref or request.account_id:
-            account_value = request.account_ref or request.account_id
-            assert account_value is not None
-            context = MediaCrawlerAccountContext(
-                platform_account_id=UUID(account_value),
-                account_identifier=account_value,
-                credential_ref=None,
-                browser_profile_ref=request.browser_profile_ref,
-                account_status=AccountStatus.HEALTHY,
-                cooldown_until=None,
-                manual_review_required=False,
-                login_state=LoginState.UNKNOWN,
-            )
-        else:
+        if not isinstance(request.runtime_context, MediaCrawlerAccountContext):
             return None
+        context = request.runtime_context
         context.ensure_runnable()
         if context.browser_profile_ref is not None:
             settings = get_settings()
