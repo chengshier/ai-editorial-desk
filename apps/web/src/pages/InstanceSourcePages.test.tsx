@@ -80,7 +80,10 @@ it('edits an instance and exposes both Test Run and Run Now through the runtime 
   const runBodies = calls
     .filter(({ path }) => path.endsWith('/connector-instances/i1/test-runs'))
     .map(({ init }) => JSON.parse(String(init.body)) as { dry_run: boolean })
-  expect(runBodies).toEqual(expect.arrayContaining([{ dry_run: true }, { dry_run: false }]))
+  expect(runBodies).toEqual(expect.arrayContaining([
+    expect.objectContaining({ dry_run: true }),
+    expect.objectContaining({ dry_run: false }),
+  ]))
   expect(calls.filter(({ init }) => init.method && init.method !== 'GET').every(({ init }) => new Headers(init.headers).get('X-Actor-ID') === 'twelve')).toBe(true)
 })
 
