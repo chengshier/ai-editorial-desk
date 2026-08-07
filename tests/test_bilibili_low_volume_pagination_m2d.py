@@ -5,7 +5,6 @@ import asyncio
 import copy
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, List, Tuple
 
 import pytest
 
@@ -97,9 +96,9 @@ def _load_harness_class():  # type: ignore[no-untyped-def]
         ast.Module(body=[*selected, harness_class], type_ignores=[])
     )
     namespace = {
-        "Dict": Dict,
-        "List": List,
-        "Tuple": Tuple,
+        "Dict": dict,
+        "List": list,
+        "Tuple": tuple,
         "asyncio": asyncio,
         "utils": SimpleNamespace(logger=_Logger()),
         "source_keyword_var": _KeywordVar(),
