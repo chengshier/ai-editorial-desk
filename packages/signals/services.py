@@ -6,7 +6,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.connector_management.exceptions import ConflictError, ResourceNotFoundError
+from packages.connector_management.exceptions import (
+    BusinessValidationError,
+    ConflictError,
+    ResourceNotFoundError,
+    SchemaValidationError,
+)
 from packages.connector_management.repositories import (
     AuditLogRepository,
     ConnectorInstanceRepository,
@@ -36,6 +41,13 @@ def _source_snapshot(source: Source) -> dict[str, Any]:
     }
 
 
+def _validate_source_config(config: dict[str, Any]) -> None:
+    try:
+        validate_no_sensitive_fields(config, field_name="source.config")
+    except SchemaValidationError as exc:
+        raise BusinessValidationError(exc.message, details=exc.details) from exc
+
+
 class SourceService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -56,7 +68,7 @@ class SourceService:
         enabled: bool,
         actor: str,
     ) -> Source:
-        validate_no_sensitive_fields(config, field_name="source.config")
+        _validate_source_config(config)
         async with self.session.begin():
             instance = await self.instances.get(connector_instance_id)
             if instance is None:
@@ -134,7 +146,7 @@ class SourceService:
         actor: str,
     ) -> Source:
         if "config" in changes:
-            validate_no_sensitive_fields(changes["config"], field_name="source.config")
+            _validate_source_config(changes["config"])
         async with self.session.begin():
             source = await self.repository.get(source_id)
             if source is None:
