@@ -1,22 +1,36 @@
 # AI Editorial Desk
 
-AI 编辑部系统：面向短视频创作者的多平台事件发现、资料整理、编辑判断与内容生产辅助系统。
+AI 编辑部系统：面向短视频创作者的多来源事件发现、资料整理、编辑判断与内容生产辅助系统。
 
-项目当前已完成 **M1-B：连接器配置管理、运行记录与检查点服务**。完整产品路线和当前开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)。
+**M1-C 已完成开发与 CI 验收，当前等待 PR 合并；合并后进入 M1-D。** 完整产品路线和当前开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)。
 
-## 当前结构
+## 当前能力
 
 ```text
-apps/api/                         FastAPI 主服务、健康检查和内部管理 API
-packages/database/                SQLAlchemy 2.x AsyncIO、Session、类型和 ORM 模型
-packages/connectors/              Connector SDK、代码 Definition Manifest 和 MediaCrawler Adapter
-packages/connector_management/    Repository、Service、Schema 校验、状态机和审计逻辑
-packages/risk_guard/              平台账号状态、错误分类和风险动作
-migrations/                       异步 Alembic 环境与版本迁移
-scripts/                          连接器定义同步等内部维护命令
-docker/postgres/                  PostgreSQL 扩展初始化
-docs/                             PRD、技术文档、实施规划和进度记录
-third_party/MediaCrawler/          Git Subtree 引入的完整第三方源码
+代码 Definition
+→ 实例与 Source 配置
+→ 账号状态、Risk Guard 与数据库预算预检
+→ PENDING Run 原子领取
+→ RSS / 手工 URL 有界采集
+→ Raw Signal 标准化与幂等写入
+→ 已提交信号后推进 Checkpoint
+→ Run 终态、风险与审计记录
+```
+
+M1-C 只将 `rss` 和 `manual` 注册为真实可运行实现。MediaCrawler 七个平台、Reddit 和热榜仍只是 Definition，不会被标记为 implemented 或 validated。
+
+## 主要结构
+
+```text
+apps/api/                         FastAPI、健康检查和内部管理 API
+packages/connectors/              Connector 领域协议、RSS、手工 URL、安全 HTTP 边界
+packages/connector_management/    Definition、实例、账号、Run、Checkpoint 和审计
+packages/collector_runtime/       任务协议、预检、预算、原子领取、风险和运行时编排
+packages/signals/                 URL、幂等规则、Source 和 Raw Signal 入库服务
+packages/database/                Async SQLAlchemy、类型与 ORM
+packages/risk_guard/              账号状态、风险分类和人工处置
+migrations/                       独立可往返 Alembic migration
+third_party/MediaCrawler/          Git Subtree 第三方源码，本批不修改平台业务代码
 ```
 
 ## 本地启动
@@ -28,7 +42,6 @@ cp .env.example .env
 # 修改 POSTGRES_PASSWORD、DATABASE_URL、APP_SECRET_KEY 和 APP_ADMIN_TOKEN
 
 docker compose up -d postgres
-
 python -m venv .venv
 # Windows PowerShell: .venv\Scripts\Activate.ps1
 # macOS/Linux: source .venv/bin/activate
@@ -39,39 +52,39 @@ python -m scripts.sync_connector_definitions
 uvicorn apps.api.main:app --reload
 ```
 
-定义同步命令可以重复运行。代码通过 `connector_type + platform` 定位 Definition，只更新代码拥有的名称、能力、Schema 和实现版本，不覆盖运营人员调整的 `is_enabled`。
+## 内部管理接口
 
-## 健康与管理接口
-
-- `GET /health`：只检查 API 进程存活；
-- `GET /ready`：在限定超时内检查 PostgreSQL；
-- `/api/v1/admin/*`：内部管理接口，必须携带 `X-Admin-Token`；
-- 修改接口还必须携带 `X-Actor-ID`，用于 `updated_by` 和审计记录。
-
-该 Token 仅是 M1-B 的最小内部保护，不是完整用户认证或 RBAC。
-
-主要管理资源：
+所有 `/api/v1/admin/*` 请求需要 `X-Admin-Token`，修改接口还需要 `X-Actor-ID`。
 
 ```text
 /api/v1/admin/connector-definitions
 /api/v1/admin/connector-instances
 /api/v1/admin/platform-accounts
+/api/v1/admin/sources
+/api/v1/admin/raw-signals
+/api/v1/admin/collection-budgets
 /api/v1/admin/connector-runs
 /api/v1/admin/platform-risk-events
+POST /api/v1/admin/connector-instances/{id}/test-runs
+POST /api/v1/admin/manual-imports
 ```
 
-## M1-B 数据与安全规则
+该 Token 是内部开发阶段的最小保护，不是完整认证或 RBAC。
 
-- Connector Definition 由代码 Manifest 管理，并通过 Draft 2020-12 JSON Schema 驱动配置；
-- 普通 `config` 和 `schedule_config` 递归拒绝 Cookie、Token、API Key、密码、Session 和 Credential 等敏感字段；
-- 凭据只保存 `credential_ref` / `browser_profile_ref`，管理响应不返回引用原值；
-- Connector Instance 的实际配置变化才递增 `config_version`；
-- 实例、账号和风险事件修改与 `configuration_change_logs` 在同一事务提交；
-- 审计前后数据和 Run metadata 使用递归脱敏 JSONB；
-- Platform Account 状态复用 Risk Guard `AccountStatus`，受限或停用账号不能直接恢复健康；
-- Connector Run 终态不可继续修改；
-- Checkpoint 使用 `expected_version` 和数据库原子条件执行乐观更新；
-- Checkpoint 继续独立于 MediaCrawler 内部数据库。
+## M1-C 核心规则
+
+- `sources` 表示实例下的具体采集范围；归档只停用，不删除历史信号；
+- Connector 输出独立领域模型，不创建 ORM、不提交事务、不调用 AI；
+- URL 只接受 HTTP/HTTPS，统一规范化 scheme、host、默认端口、fragment 和有限跟踪参数；
+- 幂等键规则版本为 `v1`：优先 external ID，其次 canonical URL，最后来源、内容哈希与发布时间；
+- Raw Signal 使用 PostgreSQL `ON CONFLICT DO NOTHING RETURNING`，并发重复只能创建一条；
+- RSS 支持 RSS 2.0、Atom、ETag、Last-Modified、304、超时、响应体与 Content-Type 限制；
+- 手工 URL 每次 DNS 解析和每一跳重定向都验证地址，拒绝本机、私网、链路本地、多播、保留和云元数据地址；
+- Run 领取和终态采用带旧状态条件的数据库原子更新；
+- 预算使用数据库行锁与自然日 usage 记录，不依赖进程内计数；
+- 网络请求不持有长数据库事务；每批信号成功提交后才允许推进 Checkpoint；
+- 普通 RSS/HTTP 错误不会被误标记为账号封禁；真实平台风险可进入 `PAUSED_RISK` 和人工复核；
+- API、日志、Run metadata、风险上下文和 Raw payload 不返回或持久化明文凭据。
 
 ## 验证
 
@@ -84,14 +97,12 @@ alembic downgrade -1
 alembic upgrade head
 python -m scripts.sync_connector_definitions
 python -m scripts.sync_connector_definitions
-
-# 条件允许时执行完整往返
 alembic downgrade base
 alembic upgrade head
 ```
 
-CI 使用 PostgreSQL 16 + pgvector，不使用 SQLite 替代生产模型。根项目 Ruff 和 mypy 不检查 `third_party/MediaCrawler` 上游源码。
+CI 使用 PostgreSQL 16 + pgvector。RSS 和手工 URL 测试只使用 Fixture、MockTransport 或不抓取模式，不依赖真实互联网。
 
-## M1-B 边界
+## 当前边界
 
-本批次不执行真实 MediaCrawler 子进程，不包含 Scheduler、Worker、前端配置中心、完整凭据加密、完整认证/RBAC、配置快照回滚、Signal、Event、聚类、Embedding、AI Provider 或稿件生成，也不修改 MediaCrawler 平台业务源码和上游导入记录。
+M1-C 不包含 Scheduler、Worker、Celery、Redis 队列、前端配置页面、MediaCrawler 子进程、平台实跑、评论采集、浏览器登录、事件聚类、Embedding、AI Provider、AI 评分、证据提取或稿件生成。下一阶段应进入 **M1-D**，而不是直接进入 M2。

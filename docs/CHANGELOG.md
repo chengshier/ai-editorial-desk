@@ -1,5 +1,37 @@
 # 文档与架构变更记录
 
+## 2026-08-07 — M1-C PostgreSQL 验收收口
+
+- 修复 `collection_budget_usage` migration 缺少 UUID 主键列、但已声明主键约束的问题，并增加主键回归测试；
+- 将 Source 敏感配置拒绝统一映射为 400 业务错误，同时保留 M1-B Connector Schema 的 422 校验语义；
+- 修正 M1-B migration 测试的起始版本，使其明确验证 `base → 0002 → 0001`，不依赖当前数据库已处于哪个 head；
+- 手工 URL 连接器不再将 `UnsafeURLError` 包装为普通抓取失败，SSRF、私网和元数据地址风险直接中止；
+- 修正 Risk Guard 运行测试在 `rollback()` 后访问过期 ORM 实例的问题，改为预先缓存不可变 UUID；
+- GitHub Actions 最终执行完整 `pytest`，并按 `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 顺序验证 Alembic；
+- PostgreSQL 16 + pgvector 环境中 101 项测试通过，覆盖 Run 原子领取、预算并发预留、Raw Signal 幂等、SSRF 与 Risk Guard；
+- 本次收口未降低唯一约束、锁、事务保护或安全测试标准，未接入 Scheduler/Worker、MediaCrawler、Event、Embedding、LLM 或 M1-D。
+
+## 2026-08-06 — M1-C
+
+- 新增 `sources`、`raw_signals`、`collection_budgets` 和 `collection_budget_usage` 四组正式模型；
+- 新增独立 `20260806_0003_m1c_collector_runtime.py` migration，不修改 M1-A/M1-B migration；
+- Connector 统一输出独立 RawSignal 领域模型，不直接创建 ORM 或提交事务；
+- 新增 HTTP/HTTPS URL 规范化、有限跟踪参数移除、稳定 content hash 和 v1 幂等键；
+- Raw Signal 使用 PostgreSQL `ON CONFLICT DO NOTHING RETURNING`，支持并发单条创建；
+- 实现 RSS 2.0、Atom、ETag、Last-Modified、304、条目级错误和安全 Checkpoint；
+- 实现手工 URL 导入、有限 HTML/文本提取、用户内容回退和内容来源标记；
+- 新增逐跳 DNS/重定向 SSRF 防护、超时、响应体、Content-Type 和安全请求头限制；
+- 新增显式 Implementation Registry，仅注册 RSS 与手工 URL 的真实实现；
+- 新增可序列化 CollectionTask，预留 manual/test/scheduled/retry 触发类型；
+- 将 Run 领取和终态转换改为带旧状态条件的数据库原子更新；
+- 新增数据库预算规则、按时区自然日 usage、行锁预留和并发限制；
+- 建立受控 Collector Runtime，网络调用不占用长事务，信号提交后才推进 Checkpoint；
+- 接入 Risk Guard，真实平台风险可写事件并进入 `PAUSED_RISK`，普通 RSS/HTTP 错误不误判为封禁；
+- 新增 Source、Raw Signal、Budget、test-run 和 manual-import 内部管理 API；
+- Definition API 增加 registered、implemented、enabled、validated 计算状态；
+- 新增 RSS、Atom、304、SSRF、重定向、超时、响应限制、幂等、预算和 Run 并发测试；
+- 本批未接 Scheduler/Worker，未执行 MediaCrawler，未进入 Event、Embedding、LLM 或稿件生成。
+
 ## 2026-08-06 — M1-B
 
 - 增加 11 个代码管理的 Connector Definition Manifest，覆盖 MediaCrawler 七个平台、RSS、Reddit、热榜和手工 URL；

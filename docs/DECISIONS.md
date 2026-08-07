@@ -61,3 +61,34 @@ Connector Definition 由代码 Manifest 管理，并通过幂等命令同步到�
 在完整用户和 RBAC 建立前，`/api/v1/admin/*` 使用环境变量 `APP_ADMIN_TOKEN` 和请求头 `X-Admin-Token` 进行最小内部保护，修改接口额外要求 `X-Actor-ID`。
 
 该机制仅用于内部开发阶段，不宣称为完整认证系统。配置修改使用轻量 `configuration_change_logs` 记录脱敏前后数据；M1-B 不实现完整快照回滚。
+
+## D-011 Raw Signal 身份与幂等
+
+Connector 输出使用独立领域模型，不能直接创建 SQLAlchemy ORM 或提交事务。Raw Signal 身份算法集中管理并固定为 `v1`：
+
+1. 有稳定 external ID 时使用 `connector_type + platform + external_id`；
+2. 否则使用 `connector_type + platform + canonical_url`；
+3. 再否则使用 `source_id + content_hash + published_at`。
+
+数据库以 `idempotency_key` 唯一约束和 PostgreSQL `ON CONFLICT` 作为并发最终保护，不允许只依赖“先查再插”。
+
+## D-012 Collector Runtime 事务边界
+
+Collector Runtime 不建立跨网络调用的大事务：
+
+- 预检、Run 领取、预算预留、每批信号写入、Checkpoint 更新、Run 终态和预算结算均为短事务；
+- Run 领取和终态必须使用带旧状态条件的数据库原子更新；
+- Checkpoint 只跟随已经成功提交的信号推进；
+- 已提交信号不会因后续单条错误或进程失败被回滚；
+- 普通网络失败与平台风控事件分开处理。
+
+## D-013 公共 URL 网络边界
+
+RSS 与手工 URL 共享安全 HTTP 边界：
+
+- 只允许 HTTP/HTTPS；
+- DNS 返回的每个地址和 Redirect 每一跳都重新验证；
+- 拒绝本机、私网、链路本地、多播、保留、未指定和云元数据地址；
+- 不发送 Cookie、Authorization 或用户凭据；
+- 限制跳转、连接/读取时间、响应体大小和 Content-Type；
+- 错误响应不暴露内部网络、原始响应体或敏感请求头。

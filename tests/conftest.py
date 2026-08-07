@@ -23,9 +23,13 @@ from packages.database.session import (  # noqa: E402
 
 TABLES_IN_DELETE_ORDER = (
     "configuration_change_logs",
+    "raw_signals",
+    "collection_budget_usage",
+    "collection_budgets",
     "platform_risk_events",
     "connector_checkpoints",
     "connector_runs",
+    "sources",
     "platform_accounts",
     "connector_instances",
     "connector_definitions",

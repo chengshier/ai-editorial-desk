@@ -52,18 +52,15 @@ jobs:
       - name: Pytest
         run: pytest
 
-      - name: Alembic M1-B round trip
+      - name: Full Alembic round trip
         run: |
           alembic upgrade head
           alembic downgrade -1
+          alembic upgrade head
+          alembic downgrade base
           alembic upgrade head
 
       - name: Connector definition sync is idempotent
         run: |
           python -m scripts.sync_connector_definitions
           python -m scripts.sync_connector_definitions
-
-      - name: Full migration round trip
-        run: |
-          alembic downgrade base
-          alembic upgrade head

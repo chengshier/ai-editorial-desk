@@ -5,8 +5,12 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import require_admin_token
-from apps.api.schemas.admin import ConnectorDefinitionPage, ConnectorDefinitionResponse
+from apps.api.schemas.m1c import (
+    ConnectorDefinitionRuntimePage,
+    ConnectorDefinitionRuntimeResponse,
+)
 from packages.connector_management.services import ConnectorDefinitionQueryService
+from packages.connectors.implementations import implementation_registry
 from packages.database.session import get_database_session
 
 router = APIRouter(
@@ -17,7 +21,7 @@ router = APIRouter(
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 
 
-@router.get("", response_model=ConnectorDefinitionPage)
+@router.get("", response_model=ConnectorDefinitionRuntimePage)
 async def list_definitions(
     session: Session,
     page: Annotated[int, Query(ge=1)] = 1,
@@ -25,7 +29,7 @@ async def list_definitions(
     connector_type: str | None = None,
     platform: str | None = None,
     is_enabled: bool | None = None,
-) -> ConnectorDefinitionPage:
+) -> ConnectorDefinitionRuntimePage:
     result = await ConnectorDefinitionQueryService(session).list(
         page=page,
         page_size=page_size,
@@ -33,8 +37,14 @@ async def list_definitions(
         platform=platform,
         is_enabled=is_enabled,
     )
-    return ConnectorDefinitionPage(
-        items=[ConnectorDefinitionResponse.model_validate(item) for item in result.items],
+    return ConnectorDefinitionRuntimePage(
+        items=[
+            ConnectorDefinitionRuntimeResponse.from_orm_model(
+                item,
+                implementation_registry,
+            )
+            for item in result.items
+        ],
         page=result.page,
         page_size=result.page_size,
         total=result.total,
@@ -42,10 +52,13 @@ async def list_definitions(
     )
 
 
-@router.get("/{definition_id}", response_model=ConnectorDefinitionResponse)
+@router.get("/{definition_id}", response_model=ConnectorDefinitionRuntimeResponse)
 async def get_definition(
     definition_id: UUID,
     session: Session,
-) -> ConnectorDefinitionResponse:
+) -> ConnectorDefinitionRuntimeResponse:
     item = await ConnectorDefinitionQueryService(session).get(definition_id)
-    return ConnectorDefinitionResponse.model_validate(item)
+    return ConnectorDefinitionRuntimeResponse.from_orm_model(
+        item,
+        implementation_registry,
+    )

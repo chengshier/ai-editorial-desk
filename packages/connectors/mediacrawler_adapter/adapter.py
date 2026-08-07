@@ -1,11 +1,15 @@
 import asyncio
 import json
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 
 from packages.common.config import get_settings
-from packages.connectors.base import BaseConnector, CollectRequest, RawSignal
+from packages.connectors.base import (
+    BaseConnector,
+    CollectionResult,
+    CollectRequest,
+    RawSignal,
+)
 
 
 class MediaCrawlerAdapterError(RuntimeError):
@@ -38,7 +42,7 @@ class MediaCrawlerAdapter(BaseConnector):
             "entrypoint": str(entrypoint),
         }
 
-    async def collect(self, request: CollectRequest) -> AsyncIterator[RawSignal]:
+    async def collect(self, request: CollectRequest) -> CollectionResult:
         home = self._home()
         entrypoint = home / "main.py"
         if not entrypoint.is_file():
@@ -71,6 +75,7 @@ class MediaCrawlerAdapter(BaseConnector):
                 f"MediaCrawler exited with code {process.returncode}: {error_text}"
             )
 
+        signals: list[RawSignal] = []
         for line in stdout.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line.startswith("{"):
@@ -79,7 +84,8 @@ class MediaCrawlerAdapter(BaseConnector):
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            yield self._map_payload(payload)
+            signals.append(self._map_payload(payload))
+        return CollectionResult(signals=tuple(signals))
 
     def _build_command(self, entrypoint: Path, request: CollectRequest) -> list[str]:
         command = [
