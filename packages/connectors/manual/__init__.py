@@ -172,11 +172,11 @@ class ManualURLConnector(BaseConnector):
                     base_url=response.url,
                 )
                 fetch_status = "fetched"
-            except (ConnectorFetchError, UnsafeURLError) as exc:
+            except UnsafeURLError:
+                raise
+            except ConnectorFetchError as exc:
                 fetch_status = "failed"
-                fetch_error_code = (
-                    exc.code if isinstance(exc, ConnectorFetchError) else "unsafe_url"
-                )
+                fetch_error_code = exc.code
                 if not user_title and not user_text:
                     raise ManualImportError("无法抓取公开页面，且未提供可保存内容") from exc
 
