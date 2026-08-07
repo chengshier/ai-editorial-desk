@@ -102,7 +102,9 @@ class MediaCrawlerConnector(BaseConnector):
             if keyword is None:
                 raise ConnectorCapabilityError("search mode requires keyword")
         elif mode is MediaCrawlerMode.ACCOUNT:
-            creator_id = request.query or self._string_value(parameters.get("creator_id"))
+            creator_id = request.query or self._string_value(
+                parameters.get("creator_id")
+            )
             if creator_id is None:
                 raise ConnectorCapabilityError("account mode requires creator_id")
         elif mode in {MediaCrawlerMode.DETAIL, MediaCrawlerMode.COMMENTS}:
@@ -114,14 +116,23 @@ class MediaCrawlerConnector(BaseConnector):
             if not content_ids and request.query:
                 content_ids = (request.query,)
             if not content_ids:
-                raise ConnectorCapabilityError(f"{mode.value} mode requires content_ids")
+                raise ConnectorCapabilityError(
+                    f"{mode.value} mode requires content_ids"
+                )
 
-        include_comments = bool(parameters.get("include_comments", False)) or mode is MediaCrawlerMode.COMMENTS
+        include_comments = (
+            bool(parameters.get("include_comments", False))
+            or mode is MediaCrawlerMode.COMMENTS
+        )
         if include_comments and not spec.comments:
-            raise ConnectorCapabilityError(f"{platform.value} does not support comments")
+            raise ConnectorCapabilityError(
+                f"{platform.value} does not support comments"
+            )
         include_subcomments = bool(parameters.get("include_subcomments", False))
         if include_subcomments and not include_comments:
-            raise ConnectorCapabilityError("include_subcomments requires include_comments")
+            raise ConnectorCapabilityError(
+                "include_subcomments requires include_comments"
+            )
         comment_limit = self._bounded_integer(
             parameters.get("comment_limit"),
             default=20 if include_comments else 0,
@@ -137,7 +148,11 @@ class MediaCrawlerConnector(BaseConnector):
             minimum=30,
             maximum=1800,
         )
-        checkpoint = self._checkpoint(request.checkpoint, platform=platform, mode=mode)
+        checkpoint = self._checkpoint(
+            request.checkpoint,
+            platform=platform,
+            mode=mode,
+        )
 
         envelope = await self.adapter.invoke(
             MediaCrawlerInvocation(
@@ -159,9 +174,15 @@ class MediaCrawlerConnector(BaseConnector):
                 timeout_seconds=timeout_seconds,
             )
         )
-        return self._to_collection_result(envelope, allow_comments=include_comments)
+        return self._to_collection_result(
+            envelope,
+            allow_comments=include_comments,
+        )
 
-    def _account_context(self, request: CollectRequest) -> MediaCrawlerAccountContext | None:
+    def _account_context(
+        self,
+        request: CollectRequest,
+    ) -> MediaCrawlerAccountContext | None:
         if isinstance(request.runtime_context, MediaCrawlerAccountContext):
             context = request.runtime_context
         elif request.account_ref or request.account_id:
@@ -182,7 +203,9 @@ class MediaCrawlerConnector(BaseConnector):
         context.ensure_runnable()
         if context.browser_profile_ref is not None:
             settings = get_settings()
-            BrowserProfileResolver(Path(settings.mediacrawler_profile_root)).resolve(context)
+            BrowserProfileResolver(
+                Path(settings.mediacrawler_profile_root)
+            ).resolve(context)
         return context
 
     @staticmethod
@@ -197,18 +220,31 @@ class MediaCrawlerConnector(BaseConnector):
         try:
             return MediaCrawlerCheckpoint.model_validate(raw)
         except ValidationError:
-            cursor = raw.get("cursor") if isinstance(raw.get("cursor"), dict) else None
+            cursor = (
+                raw.get("cursor")
+                if isinstance(raw.get("cursor"), dict)
+                else None
+            )
             page_value = raw.get("page")
             if page_value is None and cursor is not None:
                 page_value = cursor.get("page")
+            metadata = (
+                raw.get("metadata")
+                if isinstance(raw.get("metadata"), dict)
+                else {}
+            )
             return MediaCrawlerCheckpoint(
                 platform=platform,
                 mode=mode,
                 cursor=cursor,
-                page=page_value if isinstance(page_value, int) and page_value >= 1 else None,
-                last_external_id=self_value(raw.get("last_external_id")),
+                page=(
+                    page_value
+                    if isinstance(page_value, int) and page_value >= 1
+                    else None
+                ),
+                last_external_id=_string_or_none(raw.get("last_external_id")),
                 latest_published_at=raw.get("latest_published_at"),
-                metadata=raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {},
+                metadata=metadata,
             )
 
     def _to_collection_result(
@@ -295,7 +331,9 @@ class MediaCrawlerConnector(BaseConnector):
                 "mediacrawler_protocol_version": envelope.protocol_version,
                 "mediacrawler_status": envelope.status.value,
                 "mediacrawler_counters": envelope.counters.model_dump(mode="json"),
-                "mediacrawler_features": envelope.feature_metadata.model_dump(mode="json"),
+                "mediacrawler_features": envelope.feature_metadata.model_dump(
+                    mode="json"
+                ),
                 "mapped_count": len(signals),
                 "failed_map_count": failed_items,
                 "mapped_comment_count": len(comments),
@@ -315,7 +353,11 @@ class MediaCrawlerConnector(BaseConnector):
     def _string_tuple(value: Any) -> tuple[str, ...]:
         if not isinstance(value, (list, tuple)):
             return ()
-        return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+        return tuple(
+            item.strip()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        )
 
     @classmethod
     def _first_string(cls, value: Any) -> str | None:
@@ -337,5 +379,5 @@ class MediaCrawlerConnector(BaseConnector):
         return max(minimum, min(maximum, resolved))
 
 
-def self_value(value: Any) -> str | None:
+def _string_or_none(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
