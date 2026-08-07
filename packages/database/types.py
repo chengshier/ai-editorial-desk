@@ -85,7 +85,7 @@ def is_sensitive_key(key: str) -> bool:
 
 
 @overload
-def sanitize_context(value: dict[str, Any]) -> dict[str, Any]: ...
+def sanitize_context(value: Mapping[Any, Any]) -> dict[str, Any]: ...
 
 
 @overload
