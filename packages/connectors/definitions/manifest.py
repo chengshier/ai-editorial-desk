@@ -118,18 +118,16 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
                     "items": {
                         "type": "string",
                         "pattern": "^[A-Za-z0-9_]+$",
+                        "maxLength": 64,
                     },
                 },
                 "sort": {
                     "type": "string",
-                    "enum": ["hot", "new", "top", "rising"],
+                    "enum": ["new", "rising", "hot", "top"],
                 },
-                "include_comments": {"type": "boolean", "default": False},
-                "comment_limit": {
-                    "type": "integer",
-                    "minimum": 0,
-                    "maximum": 50,
-                    "default": 0,
+                "time_filter": {
+                    "type": "string",
+                    "enum": ["hour", "day", "week", "month", "year", "all"],
                 },
             },
         ),
@@ -141,43 +139,88 @@ CONNECTOR_DEFINITIONS: tuple[ConnectorDefinitionManifest, ...] = (
     ),
     ConnectorDefinitionManifest(
         connector_type="hotlist",
-        platform="baidu_realtime",
-        display_name="百度实时热搜",
+        platform="hotlist",
+        display_name="国内公开热榜",
         capabilities={
             "registration_state": "registered",
             "hotlist": True,
             "requires_account": False,
-            "supports_checkpoint": False,
+            "supports_checkpoint": True,
         },
         config_schema=_object_schema(
-            title="百度实时热搜配置",
+            title="国内公开热榜来源配置",
+            required=("sources",),
             properties={
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 50,
-                    "default": 20,
-                }
+                "sources": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 1,
+                    "uniqueItems": True,
+                    "items": {
+                        "type": "string",
+                        "enum": ["baidu_realtime"],
+                    },
+                    "default": ["baidu_realtime"],
+                    "description": "M1 仅开放百度官方实时热搜公开 JSON 入口",
+                },
+                "categories": {
+                    "type": "array",
+                    "maxItems": 30,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                    },
+                    "description": "保留后续公开热榜分类能力，M1 百度实时榜暂不使用",
+                },
             },
         ),
-        ui_schema={"limit": {"widget": "number"}},
-        implementation_version="0.1.0",
+        ui_schema={
+            "sources": {
+                "widget": "checkbox_group",
+                "label": "公开热榜来源",
+                "help": "当前仅允许无需登录的百度官方实时热搜入口",
+                "order": 10,
+            },
+            "categories": {
+                "widget": "tags",
+                "label": "分类",
+                "order": 20,
+            },
+        },
+        implementation_version="0.2.0",
     ),
     ConnectorDefinitionManifest(
         connector_type="manual",
-        platform="web",
-        display_name="手工 URL 导入",
+        platform="manual_url",
+        display_name="手工 URL",
         capabilities={
             "registration_state": "registered",
-            "detail": True,
+            "manual_import": True,
             "requires_account": False,
             "supports_checkpoint": False,
         },
         config_schema=_object_schema(
-            title="手工 URL 导入配置",
-            properties={},
+            title="手工 URL 配置",
+            properties={
+                "allowed_domains": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "uniqueItems": True,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255,
+                    },
+                },
+                "default_language": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 16,
+                },
+            },
         ),
-        ui_schema={},
+        ui_schema={"allowed_domains": {"widget": "tags"}},
         implementation_version="0.1.0",
     ),
 )
