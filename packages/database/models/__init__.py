@@ -18,8 +18,8 @@ from packages.database.models.scheduling import (
     CollectionScheduleTrigger,
     ConnectorValidationRecord,
     ConnectorValidationStatus,
-    ScheduleTriggerStatus,
     SchedulerInstance,
+    ScheduleTriggerStatus,
     ScheduleType,
 )
 from packages.database.models.signals import (
