@@ -44,6 +44,7 @@ from packages.scheduling.admin import (
     ScheduleAdminService,
 )
 from packages.scheduling.repository import ScheduleRepository
+from packages.scheduling.scheduler import PersistentScheduler
 from packages.signals.services import SourceService
 
 
@@ -268,6 +269,77 @@ async def test_scheduler_heartbeat_is_persisted(db_session) -> None:  # type: ig
         assert stored.started_at == started
         assert stored.last_heartbeat == heartbeat
         assert stored.recent_trigger_failures == 2
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_scheduler_tick_runs_runtime_once_and_advances_schedule(db_session) -> None:  # type: ignore[no-untyped-def]
+    _, instance, source = await _enabled_rss_source(db_session)
+    instance_id = instance.id
+    source_id = source.id
+    schedule = await ScheduleAdminService(db_session).create(
+        connector_instance_id=instance_id,
+        source_id=source_id,
+        platform_account_id=None,
+        name="scheduler-runtime-loop",
+        schedule_type=ScheduleType.INTERVAL,
+        interval_seconds=300,
+        cron_expression=None,
+        timezone="UTC",
+        requested_limit=2,
+        actor="admin",
+    )
+    schedule_id = schedule.id
+    await db_session.execute(
+        update(CollectionSchedule)
+        .where(CollectionSchedule.id == schedule_id)
+        .values(next_run_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    await db_session.commit()
+
+    fake = FakeRSSConnector(
+        CollectionResult(
+            signals=(
+                RawSignal(
+                    platform="rss",
+                    external_id="scheduled-one",
+                    url="https://example.com/scheduled-one",
+                    title="scheduled one",
+                ),
+            ),
+            checkpoint={"cursor": "scheduled-one"},
+        )
+    )
+    scheduler = PersistentScheduler(
+        session_factory=get_async_sessionmaker(),
+        runtime=_runtime(fake),
+        instance_key="scheduler-runtime-test",
+        poll_seconds=0.01,
+    )
+    assert await scheduler.tick() == 1
+    assert fake.calls == 1
+
+    session_factory = get_async_sessionmaker()
+    async with session_factory() as session:
+        refreshed = await session.get(CollectionSchedule, schedule_id)
+        assert refreshed is not None
+        assert refreshed.last_run_id is not None
+        assert refreshed.next_run_at > datetime.now(UTC)
+        run = await session.get(ConnectorRun, refreshed.last_run_id)
+        assert run is not None
+        assert run.status is ConnectorRunStatus.SUCCEEDED
+        assert run.source_id == source_id
+        trigger_count = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(CollectionScheduleTrigger)
+                .where(CollectionScheduleTrigger.schedule_id == schedule_id)
+            )
+            or 0
+        )
+        assert trigger_count == 1
+
+    assert await scheduler.tick() == 0
+    assert fake.calls == 1
 
 
 @pytest.mark.usefixtures("clean_database")
@@ -502,11 +574,13 @@ async def test_checkpoint_reset_is_optimistic_audited_and_keeps_raw_signals(
 async def test_connector_validation_requires_real_smoke_and_expires_on_version_change(
     db_session,
 ) -> None:  # type: ignore[no-untyped-def]
-    definition, _, _ = await _enabled_rss_source(db_session)
+    definition, instance, source = await _enabled_rss_source(db_session)
     connector_type = definition.connector_type
     platform = definition.platform
     version = definition.implementation_version
     definition_id = definition.id
+    instance_id = instance.id
+    source_id = source.id
     service = ConnectorValidationService(db_session)
     assert await service.effective_status(definition) is ConnectorValidationStatus.NOT_TESTED
     await db_session.rollback()
@@ -536,6 +610,36 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
         real_smoke_test=True,
     )
     assert failed.status is ConnectorValidationStatus.FAILED
+
+    with pytest.raises(BusinessValidationError, match="Run ID"):
+        await service.record(
+            connector_type=connector_type,
+            platform=platform,
+            implementation_version=version,
+            environment="local",
+            status=ConnectorValidationStatus.PASSED,
+            actor="reviewer",
+            notes="缺少 Run 证据",
+            safe_evidence={"items": 1},
+            real_smoke_test=True,
+        )
+
+    smoke = await _runtime(FakeRSSConnector()).execute(
+        CollectionTask(
+            task_id=uuid4(),
+            connector_instance_id=instance_id,
+            source_id=source_id,
+            platform_account_id=None,
+            mode="feed",
+            requested_limit=1,
+            checkpoint_version=None,
+            trigger_type=TriggerType.TEST,
+            triggered_by="reviewer",
+            created_at=datetime.now(UTC),
+            dry_run=True,
+        )
+    )
+    assert smoke.status is ConnectorRunStatus.SUCCEEDED
     passed = await service.record(
         connector_type=connector_type,
         platform=platform,
@@ -543,11 +647,16 @@ async def test_connector_validation_requires_real_smoke_and_expires_on_version_c
         environment="local",
         status=ConnectorValidationStatus.PASSED,
         actor="reviewer",
-        notes="真实低量验收通过",
-        safe_evidence={"items": 1, "token": "must-redact"},
+        notes="人工真实低量验收通过",
+        safe_evidence={
+            "run_id": str(smoke.run_id),
+            "items": smoke.collected_count,
+            "token": "must-redact",
+        },
         real_smoke_test=True,
     )
     await db_session.refresh(passed)
+    assert passed.safe_evidence["run_id"] == str(smoke.run_id)
     assert passed.safe_evidence["token"] == "[REDACTED]"
     current = await db_session.get(ConnectorDefinition, definition_id)
     assert current is not None
