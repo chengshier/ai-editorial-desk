@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.database.models import (
     CollectionSchedule,
     CollectionScheduleTrigger,
-    ScheduleTriggerStatus,
     SchedulerInstance,
+    ScheduleTriggerStatus,
 )
 from packages.database.types import utc_now
 
