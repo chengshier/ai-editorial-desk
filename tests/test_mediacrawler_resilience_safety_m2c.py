@@ -132,10 +132,7 @@ def test_browser_profile_resolver_rejects_missing_and_symlink(
     outside = tmp_path / "outside"
     outside.mkdir()
     link = root / "linked"
-    try:
-        link.symlink_to(outside, target_is_directory=True)
-    except OSError:
-        pytest.skip("symlink creation is unavailable in this test environment")
+    link.symlink_to(outside, target_is_directory=True)
     with pytest.raises(BrowserProfileResolutionError):
         resolver.resolve(_account(profile_ref="linked"))
 
