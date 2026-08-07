@@ -7,6 +7,31 @@ from sqlalchemy import inspect
 from packages.database.session import dispose_database, get_async_engine
 
 
+def test_m1c_migration_creates_budget_usage_primary_key() -> None:
+    config = Config("alembic.ini")
+    command.upgrade(config, "head")
+
+    async def inspect_budget_usage() -> tuple[set[str], list[str]]:
+        async with get_async_engine().connect() as connection:
+            columns = await connection.run_sync(
+                lambda sync: {
+                    item["name"]
+                    for item in inspect(sync).get_columns("collection_budget_usage")
+                }
+            )
+            primary_key = await connection.run_sync(
+                lambda sync: inspect(sync)
+                .get_pk_constraint("collection_budget_usage")
+                .get("constrained_columns", [])
+            )
+            return columns, primary_key
+
+    columns, primary_key = asyncio.run(inspect_budget_usage())
+    assert "id" in columns
+    assert primary_key == ["id"]
+    asyncio.run(dispose_database())
+
+
 def test_m1c_migration_downgrade_one_preserves_m1b_tables() -> None:
     config = Config("alembic.ini")
     command.upgrade(config, "head")
