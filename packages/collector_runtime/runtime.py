@@ -102,7 +102,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     connector_run_id=run.id,
                     connector_type=context.definition.connector_type,
                     signal=signal,
-                    canonical_url=normalize_http_url(signal.canonical_url or signal.url),
+                    canonical_url=normalize_http_url(
+                        signal.canonical_url or signal.url
+                    ),
                 )
                 for signal in collection.signals
             ]
@@ -111,7 +113,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
             signal_by_external_id: dict[str, UUID] = {}
             comment_inserted_count = 0
             comment_duplicate_count = 0
-            reported_comment_count = self.reported_comment_count(collection.metadata)
+            reported_comment_count = self.reported_comment_count(
+                collection.metadata
+            )
             reported_comment_count += len(collection.comments)
             comment_candidates = collection.comments
             if reported_comment_count > requested_comments:
@@ -131,13 +135,19 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         results = await RawSignalService(session).ingest_many(batch)
                     signal_ids.extend(item.signal_id for item in results)
                     inserted_count += sum(1 for item in results if item.created)
-                    duplicate_count += sum(1 for item in results if item.duplicate)
+                    duplicate_count += sum(
+                        1 for item in results if item.duplicate
+                    )
                     for signal, result in zip(batch, results, strict=True):
                         if signal.external_id:
-                            signal_by_external_id[signal.external_id] = result.signal_id
+                            signal_by_external_id[signal.external_id] = (
+                                result.signal_id
+                            )
 
                 for comment in comment_candidates:
-                    raw_signal_id = signal_by_external_id.get(comment.content_external_id)
+                    raw_signal_id = signal_by_external_id.get(
+                        comment.content_external_id
+                    )
                     if raw_signal_id is None:
                         runtime_errors.append(
                             CollectionItemError(
@@ -149,7 +159,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         continue
                     try:
                         async with self.session_factory() as session:
-                            comment_result = await RawSignalCommentService(session).ingest(
+                            comment_result = await RawSignalCommentService(
+                                session
+                            ).ingest(
                                 raw_signal_id=raw_signal_id,
                                 comment=comment,
                             )
@@ -167,7 +179,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
             manual_risk = self._manual_risk(collection.risk_signals)
             checkpoint_error: VersionConflictError | None = None
             checkpoint_committed = False
-            checkpoint_safe = manual_risk is None or manual_risk.checkpoint_safe_to_commit
+            checkpoint_safe = (
+                manual_risk is None
+                or manual_risk.checkpoint_safe_to_commit
+            )
             if (
                 not task.dry_run
                 and checkpoint is not None
@@ -235,7 +250,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         duplicate_count=duplicate_count,
                         failed_count=1 + int(checkpoint_error is not None),
                         checkpoint_after=(
-                            collection.checkpoint if checkpoint_committed else None
+                            collection.checkpoint
+                            if checkpoint_committed
+                            else None
                         ),
                     )
                 await self.settle(
@@ -268,7 +285,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     fetch_status=collection.metadata.get("fetch_status"),
                 )
 
-            failed_count = len(runtime_errors) + int(checkpoint_error is not None)
+            failed_count = len(runtime_errors) + int(
+                checkpoint_error is not None
+            )
             if failed_count and normalized:
                 target_status = ConnectorRunStatus.PARTIAL
             elif failed_count:
@@ -298,13 +317,18 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     error_code=error_code,
                     error_message=error_message,
                     checkpoint_after=(
-                        collection.checkpoint if checkpoint_committed else None
+                        collection.checkpoint
+                        if checkpoint_committed
+                        else None
                     ),
                     metadata=metadata,
                 )
             async with self.session_factory() as session:
                 source_service = SourceService(session)
-                if target_status in {ConnectorRunStatus.SUCCEEDED, ConnectorRunStatus.PARTIAL}:
+                if target_status in {
+                    ConnectorRunStatus.SUCCEEDED,
+                    ConnectorRunStatus.PARTIAL,
+                }:
                     await source_service.mark_success(context.source.id)
                 else:
                     await source_service.mark_error(
@@ -363,7 +387,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
                 completed=True,
             )
             async with self.session_factory() as session:
-                await SourceService(session).mark_error(context.source.id, exc.event.code)
+                await SourceService(session).mark_error(
+                    context.source.id,
+                    exc.event.code,
+                )
                 risk_run = await ConnectorRunService(session).get(run.id)
             self.log_result(
                 context=context,
@@ -390,12 +417,19 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     retry_count=task.retry_count,
                     error_code="budget_rejected",
                     error_message="采集预算不足，未启动网络请求",
-                    metadata={"task": task.to_dict(), "budget": {"rejected": True}},
+                    metadata={
+                        "task": task.to_dict(),
+                        "budget": {"rejected": True},
+                    },
                 )
             raise
         except Exception as exc:
             if claimed:
-                code = exc.code if isinstance(exc, ConnectorFetchError) else "collector_execution_failed"
+                code = (
+                    exc.code
+                    if isinstance(exc, ConnectorFetchError)
+                    else "collector_execution_failed"
+                )
                 async with self.session_factory() as session:
                     failed = await ConnectorRunService(session).finalize(
                         run_id=run.id,
@@ -410,7 +444,9 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         metadata={
                             "task": task.to_dict(),
                             "budget": {
-                                "reservations": self.budget_metadata(reservations),
+                                "reservations": self.budget_metadata(
+                                    reservations
+                                ),
                                 "actual_items": collected_count,
                                 "actual_comments": actual_comments,
                                 "completed": True,
@@ -424,7 +460,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
                     completed=True,
                 )
                 async with self.session_factory() as session:
-                    await SourceService(session).mark_error(context.source.id, code)
+                    await SourceService(session).mark_error(
+                        context.source.id,
+                        code,
+                    )
                 self.log_result(
                     context=context,
                     run=failed,
@@ -454,7 +493,10 @@ class CollectorRuntime(CollectorRuntimeSupport):
     def _manual_risk(
         signals: tuple[CollectionRiskSignal, ...],
     ) -> CollectionRiskSignal | None:
-        return next((item for item in signals if item.requires_manual_review), None)
+        return next(
+            (item for item in signals if item.requires_manual_review),
+            None,
+        )
 
     @staticmethod
     def _risk_error(signal: CollectionRiskSignal) -> PlatformRiskError:
