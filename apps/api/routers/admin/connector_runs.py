@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import require_actor_id, require_admin_token
 from apps.api.routers.admin.collector_runtime import get_collector_runtime
-from apps.api.schemas.m1c import ConnectorRunRuntimePage, ConnectorRunRuntimeResponse, TestRunResponse
+from apps.api.schemas.m1c import (
+    ConnectorRunRuntimePage,
+    ConnectorRunRuntimeResponse,
+    TestRunResponse,
+)
 from apps.api.schemas.m1d import RunActionRequest, RunDebugPage, RunDebugResponse
 from packages.collector_runtime import CollectorRuntime
 from packages.connector_management.services import ConnectorRunService
