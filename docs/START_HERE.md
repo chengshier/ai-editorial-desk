@@ -2,7 +2,10 @@
 
 ## 当前阶段
 
-项目已完成 **M1-C：原始信号、真实基础连接器与受控采集运行时** 的开发实现，当前等待 PR 验收与合并。下一步应进入 **M1-D**，不直接进入 M2。
+- **M1-A：已完成**；
+- **M1-B：已完成**；
+- **M1-C：已完成开发与 CI 验收，当前等待 PR 合并**；
+- 下一步进入 **M1-D：完成 M1 剩余范围**，不直接进入 M2。
 
 ## 必读文档顺序
 
@@ -73,14 +76,20 @@ Definition、Implementation Registry 和运营启停是三个独立概念，不�
 - Signal 之后的 Event、聚类、Embedding、AI Provider、评分、证据和稿件；
 - 自动恢复账号、代理轮换、验证码破解和指纹伪造。
 
-## M1-D 建议
+## M1-D 建议：完成 M1 剩余范围
 
-1. 建立 Event 候选与 Raw Signal → Event 的显式领域边界；
-2. 增加 Signal 质量与来源可信度基础字段，但暂不调用 LLM；
-3. 完善 Collector Runtime 的崩溃 Run 识别、人工重试和运行详情；
-4. 为 Scheduler/Worker 落地任务存储与租约协议，但继续保持连接器接口不变；
-5. 补充 RSS/手工 URL 的真实低量验收流程和 validated 状态管理；
-6. 再评估何时进入 MediaCrawler Adapter，不提前做平台增强。
+1. Scheduler 与数据库调度状态；
+2. 崩溃任务识别、人工重试与 Run 调试；
+3. 至少一个无需登录、公开、低风险的国内热榜入口；
+4. 基础连接器配置 Web 页面；
+5. JSON Schema 动态表单基础组件；
+6. Run 日志页面；
+7. Checkpoint 调试 API/页面；
+8. Risk Event 和账号暂停/人工恢复操作页面；
+9. RSS、手工 URL、热榜的低量真实验收和 validated 状态管理；
+10. 完成 M1 总体验收后才进入 M2。
+
+**Event、EventSignal、Embedding、去重、事件聚类以及人工合并/拆分不属于 M1-D；这些能力按正式路线在 M3 进入。**
 
 ## 开发原则
 
