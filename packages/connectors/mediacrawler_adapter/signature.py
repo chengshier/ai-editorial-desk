@@ -70,11 +70,18 @@ class SignatureProviderRegistry:
         provider: SignatureProvider,
     ) -> None:
         if platform in self._providers:
-            raise ValueError(f"signature provider already registered: {platform.value}")
+            raise ValueError(
+                f"signature provider already registered: {platform.value}"
+            )
         self._providers[platform] = provider
 
     def get(self, platform: MediaCrawlerPlatform | str) -> SignatureProvider:
-        normalized = MediaCrawlerPlatform(platform)
+        try:
+            normalized = MediaCrawlerPlatform(platform)
+        except ValueError as exc:
+            raise SignatureProviderError(
+                "unsupported platform for controlled signature provider"
+            ) from exc
         try:
             return self._providers[normalized]
         except KeyError as exc:
