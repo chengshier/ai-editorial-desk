@@ -93,7 +93,10 @@ class ClusterMetrics:
 @dataclass(frozen=True, slots=True)
 class EvaluationPerformance:
     dataset_size: int
+    candidate_top_k: int
     pair_query_count: int
+    recall_query_count: int
+    clustering_processed_count: int
     embedding_dimensions: int
     elapsed_ms: float
 
@@ -134,15 +137,11 @@ class _EvaluationSignalView:
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float:
-    if denominator == 0:
-        return 0.0
-    return numerator / denominator
+    return numerator / denominator if denominator else 0.0
 
 
 def _f1(precision: float, recall: float) -> float:
-    if precision + recall == 0:
-        return 0.0
-    return 2 * precision * recall / (precision + recall)
+    return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
 
 def _normalize_text(value: str | None) -> str:
@@ -157,8 +156,7 @@ def _content_hash(signal: EvaluationSignal) -> str | None:
     body = _normalize_text(signal.text)
     if not title and not body:
         return None
-    payload = f"{title}\n{body}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{title}\n{body}".encode()).hexdigest()
 
 
 def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
@@ -173,7 +171,8 @@ def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
 
 
 def _pair_key(left: str, right: str) -> tuple[str, str]:
-    return (left, right) if left <= right else (right, left)
+    first, second = sorted((left, right))
+    return first, second
 
 
 def _explicit_pair_label(
@@ -227,13 +226,14 @@ def _policy_dict(policy: ClusterPolicy) -> dict[str, object]:
         "distinct_score_threshold": policy.distinct_score_threshold,
         "ambiguous_margin": policy.ambiguous_margin,
         "max_time_gap_seconds": int(policy.max_time_gap.total_seconds()),
+        "max_candidates": policy.max_candidates,
     }
 
 
 def load_evaluation_dataset(path: Path) -> tuple[EvaluationSignal, ...]:
     signals: list[EvaluationSignal] = []
     seen: set[str] = set()
-    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         stripped = line.strip()
         if not stripped:
             continue
@@ -249,12 +249,8 @@ def load_evaluation_dataset(path: Path) -> tuple[EvaluationSignal, ...]:
         )
         if published_at.tzinfo is None or published_at.utcoffset() is None:
             raise ValueError(f"line {line_number}: published_at must be timezone-aware")
-        embedding_payload = payload.get("embedding")
-        embedding = (
-            tuple(float(value) for value in embedding_payload)
-            if embedding_payload is not None
-            else None
-        )
+        vector = payload.get("embedding")
+        embedding = tuple(float(value) for value in vector) if vector is not None else None
         signals.append(
             EvaluationSignal(
                 fixture_id=fixture_id,
@@ -290,7 +286,7 @@ def load_evaluation_dataset(path: Path) -> tuple[EvaluationSignal, ...]:
 
 
 class ClusteringEvaluationService:
-    """Deterministic offline engineering evaluation over manually-authored fixtures."""
+    """Deterministic OFFLINE ENGINEERING EVALUATION for M3 clustering."""
 
     def __init__(self, *, policy: ClusterPolicy = DEFAULT_CLUSTER_POLICY) -> None:
         self.policy = policy
@@ -305,11 +301,10 @@ class ClusteringEvaluationService:
             for right in signals[index + 1 :]:
                 truth = _ground_truth(left, right)
                 override = _human_override(left, right)
-                prediction, score, method = self._predict_pair(left, right, override=override)
+                prediction, score, method = self._predict_pair(left, right, override)
                 if override is not None:
                     human_total += 1
-                    if prediction is override:
-                        human_respected += 1
+                    human_respected += int(prediction is override)
                 predictions.append(
                     PairPrediction(
                         left_fixture_id=left.fixture_id,
@@ -320,56 +315,51 @@ class ClusteringEvaluationService:
                         method=method,
                     )
                 )
-        pair_metrics = self._pair_metrics(predictions)
         partition = self._partition(signals, predictions)
-        cluster_metrics = self._cluster_metrics(signals, partition)
         dimensions = next(
-            (len(signal.embedding) for signal in signals if signal.embedding is not None),
-            0,
-        )
-        performance = EvaluationPerformance(
-            dataset_size=len(signals),
-            pair_query_count=len(predictions),
-            embedding_dimensions=dimensions,
-            elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+            (len(signal.embedding) for signal in signals if signal.embedding is not None), 0
         )
         return EvaluationResult(
             dataset_version=M3_EVALUATION_DATASET_VERSION,
             algorithm_version=self.policy.algorithm_version,
             fingerprint_version=self.policy.fingerprint_version,
-            pair_metrics=pair_metrics,
-            cluster_metrics=cluster_metrics,
+            pair_metrics=self._pair_metrics(predictions),
+            cluster_metrics=self._cluster_metrics(signals, partition),
             human_override_respected_count=human_respected,
             human_override_total=human_total,
             human_override_respect_rate=_safe_ratio(human_respected, human_total),
             partition=partition,
             predictions=tuple(predictions),
-            performance=performance,
+            performance=EvaluationPerformance(
+                dataset_size=len(signals),
+                candidate_top_k=self.policy.max_candidates,
+                pair_query_count=len(predictions),
+                recall_query_count=sum(signal.embedding is not None for signal in signals),
+                clustering_processed_count=len(signals),
+                embedding_dimensions=dimensions,
+                elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+            ),
         )
 
     def _predict_pair(
         self,
         left: EvaluationSignal,
         right: EvaluationSignal,
-        *,
         override: EvaluationPairLabel | None,
     ) -> tuple[EvaluationPairLabel, float, str]:
         if override is not None:
-            return (
-                override,
-                1.0 if override is EvaluationPairLabel.SAME_EVENT else 0.0,
-                "human",
-            )
+            score = 1.0 if override is EvaluationPairLabel.SAME_EVENT else 0.0
+            return override, score, "human"
         exact_method = self._exact_method(left, right)
         if exact_method is not None:
             return EvaluationPairLabel.SAME_EVENT, 1.0, exact_method
         time_gap = abs((left.published_at - right.published_at).total_seconds())
         within_window = time_gap <= self.policy.max_time_gap.total_seconds()
-        left_simhash = _fingerprint(left, self.fingerprint_builder)
-        right_simhash = _fingerprint(right, self.fingerprint_builder)
+        left_hash = _fingerprint(left, self.fingerprint_builder)
+        right_hash = _fingerprint(right, self.fingerprint_builder)
         simhash_distance: int | None = None
-        if within_window and left_simhash is not None and right_simhash is not None:
-            distance = hamming_distance(left_simhash, right_simhash)
+        if within_window and left_hash is not None and right_hash is not None:
+            distance = hamming_distance(left_hash, right_hash)
             if distance <= self.policy.simhash_candidate_max_distance:
                 simhash_distance = distance
         embedding_similarity: float | None = None
@@ -402,10 +392,7 @@ class ClusteringEvaluationService:
             min(1.0, 1.0 - time_gap / self.policy.max_time_gap.total_seconds()),
         )
         if embedding_similarity is not None:
-            embedding_component = max(
-                0.0,
-                min(1.0, (embedding_similarity + 1.0) / 2.0),
-            )
+            embedding_component = max(0.0, min(1.0, (embedding_similarity + 1.0) / 2.0))
             score = (
                 0.75 * embedding_component
                 + 0.15 * simhash_component
@@ -418,8 +405,7 @@ class ClusteringEvaluationService:
         score = max(0.0, min(1.0, score))
         high_boundary = self.policy.same_event_score_threshold + self.policy.ambiguous_margin
         distinct_boundary = max(
-            0.0,
-            self.policy.distinct_score_threshold - self.policy.ambiguous_margin,
+            0.0, self.policy.distinct_score_threshold - self.policy.ambiguous_margin
         )
         if (
             embedding_similarity is not None
@@ -435,9 +421,8 @@ class ClusteringEvaluationService:
             return EvaluationPairLabel.DISTINCT, score, method
         return EvaluationPairLabel.AMBIGUOUS, score, method
 
-    def _exact_method(
-        self, left: EvaluationSignal, right: EvaluationSignal
-    ) -> str | None:
+    @staticmethod
+    def _exact_method(left: EvaluationSignal, right: EvaluationSignal) -> str | None:
         if (
             left.external_id
             and right.external_id
@@ -456,13 +441,11 @@ class ClusteringEvaluationService:
     @staticmethod
     def _pair_metrics(predictions: list[PairPrediction]) -> PairMetrics:
         tp = fp = fn = tn = ambiguous = truth_ambiguous = 0
-        resolvable = 0
-        covered = 0
+        resolvable = covered = 0
         for item in predictions:
             if item.truth is EvaluationPairLabel.AMBIGUOUS:
                 truth_ambiguous += 1
-                if item.prediction is EvaluationPairLabel.AMBIGUOUS:
-                    ambiguous += 1
+                ambiguous += int(item.prediction is EvaluationPairLabel.AMBIGUOUS)
                 continue
             resolvable += 1
             if item.prediction is EvaluationPairLabel.AMBIGUOUS:
@@ -508,8 +491,7 @@ class ClusteringEvaluationService:
             return value
 
         def union(left: str, right: str) -> None:
-            left_root = find(left)
-            right_root = find(right)
+            left_root, right_root = find(left), find(right)
             if left_root == right_root:
                 return
             smaller, larger = sorted((left_root, right_root))
@@ -531,33 +513,39 @@ class ClusteringEvaluationService:
         partition: tuple[tuple[str, ...], ...],
     ) -> ClusterMetrics:
         by_id = {signal.fixture_id: signal for signal in signals}
-        predicted_pairs: set[tuple[str, str]] = set()
-        for cluster in partition:
-            for index, left in enumerate(cluster):
-                for right in cluster[index + 1 :]:
-                    predicted_pairs.add(_pair_key(left, right))
-        truth_pairs: set[tuple[str, str]] = set()
+        predicted_pairs = {
+            _pair_key(left, right)
+            for cluster in partition
+            for index, left in enumerate(cluster)
+            for right in cluster[index + 1 :]
+        }
         truth_groups: dict[str, list[str]] = {}
         for signal in signals:
-            if signal.expected_event_key is None:
-                continue
-            truth_groups.setdefault(signal.expected_event_key, []).append(signal.fixture_id)
-        for fixtures in truth_groups.values():
-            for index, left in enumerate(fixtures):
-                for right in fixtures[index + 1 :]:
-                    truth_pairs.add(_pair_key(left, right))
-        tp = len(predicted_pairs & truth_pairs)
-        precision = _safe_ratio(tp, len(predicted_pairs))
-        recall = _safe_ratio(tp, len(truth_pairs))
-        overmerge = 0
-        for cluster in partition:
-            keys = {
-                by_id[fixture_id].expected_event_key
-                for fixture_id in cluster
-                if by_id[fixture_id].expected_event_key is not None
-            }
-            if len(keys) > 1:
-                overmerge += 1
+            if (
+                signal.expected_event_key is not None
+                and signal.expected_outcome is EvaluationExpectedOutcome.CLUSTERED
+            ):
+                truth_groups.setdefault(signal.expected_event_key, []).append(signal.fixture_id)
+        truth_pairs = {
+            _pair_key(left, right)
+            for fixtures in truth_groups.values()
+            for index, left in enumerate(fixtures)
+            for right in fixtures[index + 1 :]
+        }
+        true_pairs = len(predicted_pairs & truth_pairs)
+        precision = _safe_ratio(true_pairs, len(predicted_pairs))
+        recall = _safe_ratio(true_pairs, len(truth_pairs))
+        overmerge = sum(
+            len(
+                {
+                    by_id[fixture_id].expected_event_key
+                    for fixture_id in cluster
+                    if by_id[fixture_id].expected_event_key is not None
+                }
+            )
+            > 1
+            for cluster in partition
+        )
         cluster_by_fixture = {
             fixture_id: index
             for index, cluster in enumerate(partition)
@@ -575,7 +563,6 @@ class ClusteringEvaluationService:
                 for fixture_id in cluster
             )
         ]
-        auto_attached = sum(max(0, len(cluster) - 1) for cluster in clustered_partition)
         return ClusterMetrics(
             pairwise_precision=precision,
             pairwise_recall=recall,
@@ -587,7 +574,7 @@ class ClusteringEvaluationService:
                 for signal in signals
             ),
             auto_created_event_count=len(clustered_partition),
-            auto_attached_count=auto_attached,
+            auto_attached_count=sum(max(0, len(cluster) - 1) for cluster in clustered_partition),
         )
 
 
@@ -597,32 +584,32 @@ def threshold_sweep(
     baseline: ClusterPolicy = DEFAULT_CLUSTER_POLICY,
 ) -> tuple[ThresholdSweepCandidate, ...]:
     candidates: list[tuple[str, ClusterPolicy]] = [("baseline", baseline)]
-    for value in (4, 8):
+    for distance in (4, 8):
         candidates.append(
             (
-                f"simhash_duplicate_max_distance={value}",
-                replace(baseline, simhash_duplicate_max_distance=value),
+                f"simhash_duplicate_max_distance={distance}",
+                replace(baseline, simhash_duplicate_max_distance=distance),
             )
         )
-    for value in (0.88, 0.92):
+    for same_threshold in (0.88, 0.92):
         candidates.append(
             (
-                f"embedding_same_event_threshold={value}",
-                replace(baseline, embedding_same_event_threshold=value),
+                f"embedding_same_event_threshold={same_threshold}",
+                replace(baseline, embedding_same_event_threshold=same_threshold),
             )
         )
-    for value in (0.50, 0.60):
+    for distinct_threshold in (0.50, 0.60):
         candidates.append(
             (
-                f"embedding_distinct_threshold={value}",
-                replace(baseline, embedding_distinct_threshold=value),
+                f"embedding_distinct_threshold={distinct_threshold}",
+                replace(baseline, embedding_distinct_threshold=distinct_threshold),
             )
         )
-    for value in (0.02, 0.06):
+    for margin in (0.02, 0.06):
         candidates.append(
             (
-                f"ambiguous_margin={value}",
-                replace(baseline, ambiguous_margin=value),
+                f"ambiguous_margin={margin}",
+                replace(baseline, ambiguous_margin=margin),
             )
         )
     for hours in (48, 96):
@@ -632,18 +619,16 @@ def threshold_sweep(
                 replace(baseline, max_time_gap=timedelta(hours=hours)),
             )
         )
-    results: list[ThresholdSweepCandidate] = []
-    for name, policy in candidates:
-        result = ClusteringEvaluationService(policy=policy).evaluate(signals)
-        results.append(
-            ThresholdSweepCandidate(
-                name=name,
-                policy=_policy_dict(policy),
-                pair_metrics=result.pair_metrics,
-                cluster_metrics=result.cluster_metrics,
-            )
+    return tuple(
+        ThresholdSweepCandidate(
+            name=name,
+            policy=_policy_dict(policy),
+            pair_metrics=result.pair_metrics,
+            cluster_metrics=result.cluster_metrics,
         )
-    return tuple(results)
+        for name, policy in candidates
+        for result in (ClusteringEvaluationService(policy=policy).evaluate(signals),)
+    )
 
 
 def normalized_cluster_partition(
