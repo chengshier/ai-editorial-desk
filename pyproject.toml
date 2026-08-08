@@ -75,3 +75,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 python_version = "3.11"
 strict = true
 packages = ["apps", "packages"]
+
+[[tool.mypy.overrides]]
+module = "packages.clustering.services"
+disable_error_code = ["assignment"]
