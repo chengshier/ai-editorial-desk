@@ -158,9 +158,10 @@ python -m apps.scheduler.main
 
 读取接口需要 `X-Admin-Token`；所有修改操作还必须提供 `X-Actor-ID`。
 
-PowerShell 可先准备本地 Header：
+注意：应用会读取 `.env`，但 PowerShell 不会自动把 `.env` 中的 `APP_ADMIN_TOKEN` 注入当前 `$env:`。在执行下面的 `Invoke-RestMethod` 示例前，需要只在当前本地 shell 中把**与 `.env` 相同的本地 token**设置一次；不要把真实值提交 Git、粘贴到 PR/Issue 或聊天记录：
 
 ```powershell
+$env:APP_ADMIN_TOKEN = "<SAME_LOCAL_ADMIN_TOKEN_AS_DOTENV>"
 $Api = "http://127.0.0.1:8000/api/v1/admin"
 $Headers = @{
   "X-Admin-Token" = $env:APP_ADMIN_TOKEN
@@ -168,7 +169,7 @@ $Headers = @{
 }
 ```
 
-不要把 `APP_ADMIN_TOKEN` 打印、截图或提交到文档。
+不要打印、截图或持久化该 token。
 
 ---
 
@@ -347,7 +348,7 @@ $Budget = Invoke-RestMethod -Method Post -Headers $Headers `
   -Uri "$Api/collection-budgets"
 ```
 
-`check_m2_smoke_environment` 不会自动创建 Budget：没有显式适用 Budget 会 BLOCKED；至少一条适用 Budget 必须满足上述 M2-D 安全上限。
+`check_m2_smoke_environment` 不会自动创建、reserve 或修改 Budget：没有显式适用 Budget 会 BLOCKED；至少一条适用 Budget 必须满足上述 M2-D 安全上限，并且当前 `CollectionBudgetUsage` 的当日剩余额度必须仍允许本次请求。该检查只做 read-only projection，不写 usage。
 
 ---
 
@@ -444,7 +445,8 @@ python -m scripts.check_m2_smoke_environment `
 - localhost:9222 TCP；
 - Profile root 与 opaque profile ref 的本地解析；
 - Account 是否 runnable；
-- 显式低量 Budget；
+- 显式低量 Budget 的静态上限；
+- 当前 `CollectionBudgetUsage` 的当日 usage projection 是否仍允许该低量请求；
 - unresolved RiskEvent；
 - proxy=false 安全边界；
 - 目标平台当前 low-volume search engineering Gate；
