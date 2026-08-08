@@ -1,9 +1,10 @@
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
 
-from packages.clustering.reprocessing import ClusteringReprocessService, ReprocessAction
+from packages.clustering.reprocessing import ClusteringReprocessService
 from packages.clustering.repositories import (
     MatchOverrideRepository,
     SignalEventSuppressionRepository,
@@ -18,7 +19,6 @@ from packages.database.models import (
     EventSignalRelation,
     EventStatus,
     MatchOverrideDecision,
-    RawSignalRecord,
     SignalFingerprintRecord,
     SignalMatchDecisionRecord,
 )
@@ -95,7 +95,9 @@ async def test_reprocess_dry_run_changes_only_processing_audit(db_session) -> No
     await _event_with_signal(db_session, second.id, title="Fragment B")
     signal_ids = [first.id, second.id]
     before_memberships = await _membership_map(db_session, signal_ids)
-    before_event_count = int(await db_session.scalar(select(func.count()).select_from(EventRecord)) or 0)
+    before_event_count = int(
+        await db_session.scalar(select(func.count()).select_from(EventRecord)) or 0
+    )
     before_decision_count = int(
         await db_session.scalar(select(func.count()).select_from(SignalMatchDecisionRecord)) or 0
     )
@@ -121,7 +123,10 @@ async def test_reprocess_dry_run_changes_only_processing_audit(db_session) -> No
     assert summary.unchanged == 1
     assert summary.would_detach == 0
     assert await _membership_map(db_session, signal_ids) == before_memberships
-    assert int(await db_session.scalar(select(func.count()).select_from(EventRecord)) or 0) == before_event_count
+    assert (
+        int(await db_session.scalar(select(func.count()).select_from(EventRecord)) or 0)
+        == before_event_count
+    )
     assert int(
         await db_session.scalar(select(func.count()).select_from(SignalMatchDecisionRecord)) or 0
     ) == before_decision_count
@@ -129,7 +134,8 @@ async def test_reprocess_dry_run_changes_only_processing_audit(db_session) -> No
         await db_session.scalar(select(func.count()).select_from(SignalFingerprintRecord)) or 0
     ) == before_fingerprint_count
     assert int(
-        await db_session.scalar(select(func.count()).select_from(ClusteringProcessingRunRecord)) or 0
+        await db_session.scalar(select(func.count()).select_from(ClusteringProcessingRunRecord))
+        or 0
     ) == 1
 
 
@@ -320,7 +326,7 @@ async def test_reprocess_is_bounded_and_rejects_unregistered_algorithm(db_sessio
         )
     with pytest.raises(BusinessValidationError):
         await service.reprocess(
-            signal_ids=[RawSignalRecord().id for _ in range(2)],
+            signal_ids=[uuid4(), uuid4()],
             time_from=None,
             time_to=None,
             algorithm_version="event-match-v1",
