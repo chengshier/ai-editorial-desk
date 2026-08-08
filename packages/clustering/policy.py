@@ -18,7 +18,7 @@ class ClusterPolicy:
     simhash_candidate_max_distance: int = 18
     embedding_same_event_threshold: float = 0.90
     embedding_distinct_threshold: float = 0.55
-    same_event_score_threshold: float = 0.88
+    same_event_score_threshold: float = 0.84
     distinct_score_threshold: float = 0.50
     ambiguous_margin: float = 0.04
     max_time_gap: timedelta = timedelta(hours=72)
@@ -46,6 +46,8 @@ class ClusterPolicy:
             raise ValueError("distinct score threshold must be lower than same-event threshold")
         if self.ambiguous_margin < 0 or self.ambiguous_margin >= 0.5:
             raise ValueError("ambiguous margin must be in [0, 0.5)")
+        if self.same_event_score_threshold + self.ambiguous_margin > 1:
+            raise ValueError("same-event threshold plus ambiguous margin cannot exceed 1")
         if self.max_time_gap.total_seconds() <= 0:
             raise ValueError("max_time_gap must be positive")
         if self.max_candidates < 1 or self.max_fingerprint_scan < self.max_candidates:
