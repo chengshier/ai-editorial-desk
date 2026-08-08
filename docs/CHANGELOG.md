@@ -1,5 +1,24 @@
 # 文档与架构变更记录
 
+## 2026-08-08 — M3-B Embedding / Vector Recall Foundation
+
+- PR #11 已合并，基于最新 `main` `1aa6d87350f8902fec6fffeb55cee3a7905385cc` 创建独立分支 `feature/m3b-embedding-recall`，未从 `feature/m3a-event-foundation` 继续派生；
+- 正式增加 Python `pgvector` dependency，并新增 `20260808_0007_m3b_signal_embeddings.py`；migration 使用 `CREATE EXTENSION IF NOT EXISTS vector` 保证数据库 capability，downgrade 不 `DROP EXTENSION vector`；
+- 新增独立 `signal_embeddings`，Embedding 作为 RawSignal 之上的可重建、版本化派生 artifact，不向 `raw_signals` 回写单版本 vector；
+- `signal_embeddings` 使用 `UNIQUE(signal_id, embedding_version)`，不同 embedding version 可以并存；同 version 下 input/provider/model/dimension 语义变化返回 `EMBEDDING_VERSION_CONFLICT`，不 silent overwrite；
+- 向量列采用 dimensionless `VECTOR()`，每条 artifact 保存 `dimensions`，PostgreSQL CHECK 保证 `dimensions > 0`、`vector_dims(embedding) = dimensions`、`vector_norm(embedding) > 0`；
+- 建立确定性 `signal-text-v1` input schema，只使用规范化后的 RawSignal `title + text`，最终 Provider 输入计算 SHA-256 保存 `input_hash`；空内容返回 `NO_EMBEDDABLE_TEXT`，不 embed 空字符串或 URL；
+- 建立 Embedding 专用 `EmbeddingProvider` Protocol 与 request/result domain objects，只表达 provider/model/version/dimensions/batch vectors/可选 usage-latency-error metadata；不实现通用 AI Gateway，也不注册生产 Fake Provider；
+- 新增 `EmbeddingBatchProcessor` / `EmbeddingService`，支持受控 batch、已存在 skip、有限 retry、provider wrong result count、dimension mismatch、NaN/Infinity/zero vector 等明确失败；Provider 调用位于数据库事务之外；
+- 并发写入继续采用 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING` + UNIQUE 作为最终保护；两个 Worker 同 signal/version 最终只保留一个 artifact；
+- 新增 PostgreSQL exact cosine recall，只比较相同 `embedding_version + dimensions`，排除自身，支持 top_k、min_similarity 和时间窗，统一 `similarity = 1 - cosine_distance`；
+- 新增只读 Admin metadata / recall API，不返回完整 vector 或 RawSignal `raw_payload`，也不允许客户端指定任意 Provider URL/API Key；
+- 本批不创建 HNSW / IVFFlat；当前优先保证版本化、维度隔离和 exact recall 正确性，ANN 后置到有真实规模依据的性能阶段；
+- M3-B Recall 只返回候选，不实现 Dedup/Clustering，不自动创建/合并 Event，不自动写 `EventSignal attached_by=embedding`，不创建 Event centroid；
+- PostgreSQL 16 + pgvector 业务实现 CI 已通过：Ruff success；mypy **143 source files**；pytest **297 passed / 1 warning**；Alembic `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` success；Definition 第二次同步 `created=0 / updated=0 / unchanged=11 / failed=0`；Web lint/typecheck/test/build success；
+- M2 状态继续保持 `M2 Engineering Complete`、`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`、`M2 Real-world Validation = NOT COMPLETE`；M3-B 不访问真实平台，也不把任何 Validation 改写为 PASSED；
+- 当前状态正式记录为 `M3-A COMPLETE`、`M3-B COMPLETE`、`M3-C / M3-D NOT STARTED`、`M3 Overall NOT COMPLETE`。
+
 ## 2026-08-08 — M3-A Event / EventSignal Foundation
 
 - 基于 PR #10 合并后的最新 `main` `f36d8f26dd0b282c2465bf09bd9fdadc0081d2ae` 创建独立分支 `feature/m3a-event-foundation`，未从 M2 feature 分支继续派生；
@@ -25,7 +44,7 @@
 ## 2026-08-08 — M2-D Engineering Closure / Real Smoke Deferred
 
 - 正式采用阶段语义：`M2 Engineering Complete`；`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；不表述为 `M2 Real-world Validation Complete`；
-- M2-A / M2-B / M2-C 工程已完成，M2-D offline engineering/readiness 已完成；PR #10 合并后允许从最新 `main` 独立进入 M3 Engineering；
+- M2-A / M2-B / M2-C 工程完成，M2-D offline engineering/readiness 已完成；PR #10 合并后允许从最新 `main` 独立进入 M3 Engineering；
 - B站 low-volume normal search compatibility 已完成：复用 pinned client 已有 `page_size`，`requested_limit=1/3/5` 时真实 client page-size 为 1/3/5，不请求 20 后再本地截断；
 - 知乎 low-volume normal search compatibility 已完成：复用 pinned `page_size → offset/limit`，`requested_limit=1/3/5` 时真实 client page-size 为 1/3/5，不新增或猜测 API 参数；
 - 微博 pinned client 没有已证实的 `page_size/count/limit`，因此 `WEIBO_LOW_VOLUME_SEARCH = BLOCKED`，并正式接受为 `Accepted Known Limitation`；不猜参数、不逆向接口、不扩展 Signature、不通过本地截断伪造低量请求；

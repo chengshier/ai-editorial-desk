@@ -6,6 +6,7 @@ from packages.database.models.connectors import (
     ConnectorInstance,
     PlatformAccount,
 )
+from packages.database.models.embeddings import SignalEmbeddingRecord
 from packages.database.models.events import (
     EventRecord,
     EventSignalAttachedBy,
@@ -63,5 +64,6 @@ __all__ = [
     "ScheduleTriggerStatus",
     "SchedulerInstance",
     "ScheduleType",
+    "SignalEmbeddingRecord",
     "Source",
 ]

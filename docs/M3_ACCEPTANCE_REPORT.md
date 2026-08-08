@@ -4,13 +4,11 @@
 
 ```text
 M3-A Event / EventSignal: COMPLETE
-M3-B Embedding: NOT STARTED
+M3-B Embedding / Vector Recall: COMPLETE
 M3-C Dedup / Clustering: NOT STARTED
 M3-D: NOT STARTED
 M3 Overall: NOT COMPLETE
 ```
-
-M3-A 只完成 `RawSignal → Event / EventSignal` 正式数据与处理基础。本报告不将 M3-A 的完成表述为 M3 整体完成。
 
 M2 状态继续保持：
 
@@ -20,283 +18,310 @@ M2 Real Smoke Validation: DEFERRED / NOT_TESTED
 M2 Real-world Validation: NOT COMPLETE
 ```
 
-进入 M3 Engineering 不代表任何真实平台 Validation 已经 PASSED。
+M3-B 工程完成不代表任何真实平台 Validation 已经 PASSED，也不代表 M3 整体完成。
 
-## 开发基线
+## M3-B 开发基线
 
-- PR #10 `feat: 完成 M2-D 离线验证准备与工程收口` 已合并；
-- M3-A 基线 main：`f36d8f26dd0b282c2465bf09bd9fdadc0081d2ae`；
-- 分支：`feature/m3a-event-foundation`；
-- PR：#11 `feat: 完成 M3-A Event与EventSignal基础`；
-- PR #11 保持 Open，不自行合并；
-- M3-A 分支从最新 main 直接创建，没有从 M2 feature 分支派生。
+- PR #11 `feat: 完成 M3-A Event与EventSignal基础` 已合并；
+- M3-B 基线 main：`1aa6d87350f8902fec6fffeb55cee3a7905385cc`；
+- 分支：`feature/m3b-embedding-recall`；
+- PR：#12 `feat: 完成 M3-B Embedding与向量召回基础`；
+- PR #12 保持 Open，不自行合并；
+- M3-B 分支从合并后的最新 main 直接创建，没有从 `feature/m3a-event-foundation` 派生。
 
-## Event
+## SignalEmbedding
+
+Embedding 被定义为 RawSignal 之上的可重建、版本化派生 artifact，独立存储于：
+
+```text
+signal_embeddings
+```
 
 正式字段：
 
 ```text
 id
-title
-summary
-category
-status
-first_seen_at
-last_updated_at
-primary_language
-entities
-keywords
-source_count
-platform_count
-created_at
-updated_at
-```
-
-状态合法值：
-
-```text
-emerging
-growing
-stable
-declining
-resolved
-```
-
-M3-A 没有 Trend Engine，因此只建立合法状态结构，人工创建默认 `emerging`，不实现自动状态转换。
-
-`summary / category / primary_language` 允许为空，`entities / keywords` 默认空结构。M3-A 不调用 AI 补齐这些字段；`title` 由人工输入，不伪装为 AI 事件摘要。
-
-## EventSignal
-
-正式字段：
-
-```text
-id
-event_id
 signal_id
-relation
-confidence
-attached_by
-created_at
-updated_at
-```
-
-relation：
-
-```text
-origin
-report
-repost
-reaction
-official_response
-correction
-```
-
-attached_by 数据结构：
-
-```text
-rule
+provider_key
+model_name
+dimensions
+embedding_version
+input_schema_version
+input_hash
 embedding
-llm
-human
+created_at
 ```
 
-数据库枚举为后续阶段保留完整合法值，但 M3-A Admin 写入只允许当前真实存在的 `human` attach；本阶段没有执行 rule auto-attach、Embedding 或 LLM。
+artifact 不提供任意 update 语义；模型或输入规则升级不会覆盖旧版本。
 
-`confidence` 在 Service 和 API 层拒绝 NaN / Infinity，并在 PostgreSQL 通过 CHECK 保证 `0 <= confidence <= 1`。
-
-## 唯一性与并发幂等
-
-最终关系唯一约束：
+### 唯一性与数据库约束
 
 ```text
-UNIQUE(event_id, signal_id)
+UNIQUE(signal_id, embedding_version)
+dimensions > 0
+char_length(input_hash) = 64
+provider_key / model_name / embedding_version / input_schema_version 非空
+vector_dims(embedding) = dimensions
+vector_norm(embedding) > 0
 ```
 
-没有对 `signal_id` 单独增加 UNIQUE，因此同一 RawSignal 可以关联多个 Event。
+`signal_id` FK 指向 `raw_signals.id`，使用 `ON DELETE CASCADE`：RawSignal 删除时派生 Embedding 可以清理，但删除 Embedding 不会删除 RawSignal。
 
-attach 使用三层语义：
+重复和并发写入使用 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING` + UNIQUE 作为最终保护，不依赖单纯的 `SELECT → INSERT`。
+
+## Vector Dimension 策略
+
+M3-B 正式增加 Python `pgvector` integration，Embedding 列使用：
 
 ```text
-Event SELECT ... FOR UPDATE
-+ PostgreSQL INSERT ... ON CONFLICT DO NOTHING
-+ UNIQUE(event_id, signal_id)
+dimensionless VECTOR()
 ```
 
-Service 对重复 attach 返回既有关联，不生成第二条记录；并发 attach 最终由 PostgreSQL UNIQUE 提供最终保护，不依赖“先 select 再 insert”。重复 attach 不覆盖既有 relation/confidence，也不推进 Event 的业务更新时间。
+不硬编码 1536、3072、768 等供应商维度。每条 artifact 单独保存 `dimensions`；真实 PostgreSQL 测试证明同一 Signal 的不同 embedding version 可以分别保存不同 dimensions。
 
-## 聚合计数
-
-Event 聚合值只从 `EventSignal → RawSignal` 实际关系重算：
+Recall 只比较：
 
 ```text
-source_count   = COUNT(DISTINCT RawSignal.source_id)
-platform_count = COUNT(DISTINCT RawSignal.platform)
+same embedding_version
+same dimensions
 ```
 
-多个 Signal 属于同一个 Source 时，`source_count` 只计一次；多个 Source 属于同一 Platform 时，`platform_count` 只计一次。attach / detach 后重新计算；客户端不能提交或覆盖聚合计数。M3-A 未额外增加 `signal_count`。
+因此不同版本或不同维度不会互相计算距离。
 
-## 时间语义
+## pgvector Extension
+
+Migration：
 
 ```text
-first_seen_at = MIN(COALESCE(RawSignal.published_at, RawSignal.collected_at))
+migrations/versions/20260808_0007_m3b_signal_embeddings.py
+revision: 20260808_0007
+down_revision: 20260808_0006
 ```
 
-- 优先采用 RawSignal 的可靠 `published_at`；
-- `published_at` 缺失时回退 `collected_at`；
-- 空 Event 的 `first_seen_at = NULL`；
-- detach 后根据剩余关系重新计算；
-- 不使用当前时间伪装历史事件首次出现时间。
+upgrade 使用：
 
-`last_updated_at` 表示 Event 处理层最后一次有效业务变更时间，全部为 UTC aware：
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
 
-- manual create：设置当前 UTC；
-- 首次有效 attach：推进；
-- 有效 detach：推进；
-- repeated attach：不推进；
-- no-op repeated detach：不推进。
+Alembic 从 M3-B 起正式保证 vector schema capability 可用。downgrade 删除 `signal_embeddings`，但不 `DROP EXTENSION vector`，因为 extension 是共享数据库能力，未来其他表可能继续使用。
 
-## RawSignal 安全边界
+Migration 不 backfill 历史 RawSignal、不调用 Provider、不执行网络请求，也不填充假向量。
 
-Event 是 RawSignal 之上的派生层。Event attach / detach / 失败事务不修改或删除 RawSignal 的：
+## Embedding Input
+
+当前确定性输入版本：
 
 ```text
-original_url
-canonical_url
-external_id
+input_schema_version = signal-text-v1
+```
+
+只使用规范化后的：
+
+```text
+RawSignal.title
+RawSignal.text
+```
+
+不会加入 metrics、raw_payload、Cookie、credential、connector config 或 URL。
+
+规则：
+
+- title + text：稳定拼接；
+- title only / text only：分别生成有效输入；
+- 空白统一规范化；
+- title 与 text 均为空或纯空白：`NO_EMBEDDABLE_TEXT`；
+- 不 embed 空字符串，不使用 URL 伪装正文；
+- 最终实际发送给 Provider 的规范化文本计算 SHA-256，保存 `input_hash`。
+
+## embedding_version 语义
+
+`embedding_version` 是系统级稳定语义版本，不等于 `model_name`。
+
+它必须覆盖：
+
+- input schema；
+- preprocessing 语义；
+- provider / model 配置版本；
+- dimensions 变化。
+
+同一 `signal_id + embedding_version` 已存在且 input/provider/model/dimensions 语义一致时幂等 skip；如果 `input_hash` 或上述配置语义发生变化但 version 未升级，则返回：
+
+```text
+EMBEDDING_VERSION_CONFLICT
+```
+
+要求开发者升级 embedding version，不 silent overwrite。
+
+## Embedding Provider Contract
+
+`packages/embeddings/providers.py` 建立 M3-B 专用 `EmbeddingProvider` Protocol 与 request/result domain objects，表达：
+
+```text
+provider_key
+model_name
+embedding_version
+dimensions
+batch inputs
+vectors
+optional usage metadata
+optional latency metadata
+optional error metadata
+```
+
+Provider 不访问数据库；Repository 不调用 Provider；Service 协调二者。
+
+当前没有生产 OpenAI / Anthropic / Gemini / Ollama Provider，也没有通用 AI Gateway。Fake / Mapping Provider 只存在 tests，不作为生产默认 Provider 注册。
+
+## Batch Processor
+
+`EmbeddingBatchProcessor` / `EmbeddingService` 支持：
+
+- 显式 signal IDs；
+- signal ID 去重；
+- 可配置 batch size，不加载整张 RawSignal 表；
+- Provider 调用位于数据库事务之外；
+- 已有 artifact skip；
+- 空文本 skip；
+- wrong result count 整个 pending chunk 明确失败，不静默错位；
+- dimension mismatch、空向量、NaN、Infinity、zero vector 拒绝写入；
+- retryable provider/network failure 与 invalid response 分开；
+- retry 默认 1 次，显式上限 3 次，不无限 retry；
+- 返回 generated / skipped / failed counters 与逐项 code；
+- 结构化日志记录 provider/model/version/dimensions/batch/counters/latency，不记录完整 vector、API Key 或完整正文。
+
+RawSignal 在整个生成/失败流程中保持采集事实不可变。
+
+## Exact Vector Recall
+
+`SignalSimilarityService` / `SignalEmbeddingRepository.exact_cosine_recall` 提供 exact recall。
+
+输入：
+
+```text
+signal_id
+embedding_version
+top_k
+optional min_similarity
+optional time_from
+optional time_to
+```
+
+查询规则：
+
+- same embedding_version；
+- same dimensions；
+- exclude self；
+- optional threshold；
+- optional effective time range，时间语义为 `COALESCE(published_at, collected_at)`；
+- PostgreSQL exact cosine distance 排序。
+
+统一相似度：
+
+```text
+similarity = 1 - cosine_distance
+```
+
+similarity 越大表示越相似。
+
+输出：
+
+```text
+candidate_signal_id
+similarity
+embedding_version
+published_at
 collected_at
-raw_payload
 platform
 source_id
 ```
 
-EventSignal 的 `signal_id` FK 使用 `ON DELETE RESTRICT`；`event_id` FK 使用 `ON DELETE CASCADE`。M3-A 不提供 Event hard-delete API。EventSignal detach 只删除关联本身，RawSignal 永久保留。
-
-## Repository / Service
-
-新增：
-
-```text
-packages/events/repositories.py
-packages/events/services.py
-```
-
-职责：
-
-- `EventRepository`：Event CRUD / list / `FOR UPDATE`；
-- `EventSignalRepository`：关联查询、分页、PostgreSQL 幂等 attach、聚合统计、detach；
-- `EventService`：业务事务、输入保护、attach/detach、聚合与时间更新、既有 AuditLog 复用。
-
-继续复用项目唯一 AsyncSession 生命周期，没有建立第二套 Session/Engine。
-
-Connector 和 CollectorRuntime 未接入 Event；采集成功后不要求同步创建 Event。
+不返回完整 vector 或 RawSignal `raw_payload`。
 
 ## Admin API
 
-继续遵循现有 `/api/v1/admin`、Admin Token 和 `X-Actor-ID` 规则：
+继续使用现有 Admin Token：
 
 ```text
-POST   /api/v1/admin/events
-GET    /api/v1/admin/events
-GET    /api/v1/admin/events/{event_id}
-GET    /api/v1/admin/events/{event_id}/signals
-POST   /api/v1/admin/events/{event_id}/signals
-DELETE /api/v1/admin/events/{event_id}/signals/{signal_id}
+GET  /api/v1/admin/embeddings/signals/{signal_id}
+POST /api/v1/admin/embeddings/recall
 ```
 
-- Event list 支持分页与 status 过滤；
-- EventSignal list 支持分页；
-- create / attach / detach 要求 Actor；
-- attach / detach 复用现有通用 AuditLog；
-- EventSignal API 只返回关联元数据，不返回 RawSignal `raw_payload`；
-- 本阶段没有开发 Event Workbench 前端页面。
+metadata endpoint 只返回 provider/model/version/dimensions/input hash/created time；Recall 只返回安全候选元数据。
 
-## Migration
+M3-B 没有提供允许客户端提交任意 Provider URL、API Key 或生产 Fake Provider 的生成 endpoint。
 
-新增：
+## ANN 决策
 
-```text
-migrations/versions/20260808_0006_m3a_event_foundation.py
-```
+M3-B **没有**创建 HNSW / IVFFlat。
 
-Revision：
+当前阶段优先保证：
 
-```text
-20260808_0006
-```
+- artifact versioning；
+- dimension isolation；
+- exact cosine correctness；
+- PostgreSQL 并发幂等。
 
-Down revision：
-
-```text
-20260807_0005
-```
-
-新增表：
-
-```text
-events
-event_signals
-```
-
-包含 PostgreSQL FK / UNIQUE / CHECK / INDEX。M3-A migration 不包含 vector、HNSW、IVFFlat、centroid、Embedding model/provider/version 字段。
+目前没有数据规模证据证明 exact search 不可接受，因此 ANN 与参数调优后置到有真实规模依据的性能阶段，避免提前增加运维和版本复杂度。
 
 ## PostgreSQL 测试
 
-M3-A 新增测试覆盖：
+M3-B 新增并在真实 PostgreSQL 16 + pgvector 中覆盖：
 
-- Event create / read / list / status / UTC / nullable future enrichment fields；
-- EventSignal attach、重复幂等、并发重复、missing Event、missing RawSignal；
-- confidence 越界、NaN、Infinity、relation / attached_by API 校验；
-- 多 Signal 同 Source、多 Source 同 Platform、多 Platform、detach 重算、空 Event；
-- `published_at` 优先、`collected_at` fallback、`first_seen_at` / `last_updated_at`；
-- 同一 RawSignal 可属于多个 Event；
-- attach 不修改 RawSignal、detach 不删除 RawSignal、失败操作不污染 RawSignal；
-- EventSignal API 不回传 `raw_payload`；
-- PostgreSQL schema introspection 验证 FK / UNIQUE / CHECK / INDEX，并显式验证不存在 `UNIQUE(signal_id)`；
-- M1 / M2 全量回归继续执行。
+- deterministic input builder、title+text/title only/text only/empty/whitespace/hash；
+- dimensionless vector ORM/type；
+- insert / metadata read；
+- 同 Signal 不同 version、不同 dimensions 共存；
+- duplicate idempotent；
+- version conflict；
+- PostgreSQL FK / UNIQUE / dimension CHECK / zero-vector CHECK；
+- NaN / Infinity / empty / wrong dimensions 应用层拒绝；
+- 两 Worker 同 signal/version 并发生成最终只有一条；
+- RawSignal 不被 Embedding 操作修改；
+- RawSignal 删除只向下 CASCADE embedding；
+- batch 1 item / multi-item / mixed existing+missing+empty / wrong result count / retry boundary / batch size；
+- exact cosine 排序、自身排除、top_k、threshold、time window；
+- embedding version 隔离、dimension 隔离；
+- missing target embedding；
+- Admin unauthorized / metadata / recall / safe output；
+- migration vector extension、dimensionless vector type、FK/UNIQUE/CHECK/INDEX 与 downgrade extension 保留；
+- M1 / M2 / M3-A 全量回归继续执行。
 
 ## CI 验收
 
-M3-A 业务实现 HEAD：
+M3-B 业务实现 HEAD：
 
 ```text
-c9db09bce9c7c41229594bb7d346b47899dc8291
+1af81ad09181259c4128d23eaa5164274a7cc187
 ```
 
-GitHub Actions：
-
-```text
-CI #183
-run id: 31247490678
-status: completed / success
-```
-
-结果：
+已完成一次完整 GitHub Actions PostgreSQL Gate：
 
 - `ruff check .`：success；
-- `mypy apps packages`：success，134 source files；
-- PostgreSQL pytest：`263 passed / 1 warning`；
+- `mypy apps packages`：success，143 source files；
+- PostgreSQL pytest：`297 passed / 1 warning`；
 - Alembic：`upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 全部 success；
 - Definition 第一次同步：`created=11 / updated=0 / unchanged=0 / failed=0`；
-- Definition 第二次同步：`created=0 / updated=0 / unchanged=11 / failed=0`，幂等；
+- Definition 第二次同步：`created=0 / updated=0 / unchanged=11 / failed=0`；
 - Web：lint / typecheck / unit tests / production build 全部 success。
+
+最终文档 HEAD 继续由 PR #12 最新 CI 复验。
 
 ## 阶段边界确认
 
-本批明确没有实现或调用：
+M3-B 明确没有实现或调用：
 
-- OpenAI；
-- 云 Embedding；
-- Ollama / 本地模型；
-- vector similarity；
+- 真实 OpenAI / Anthropic / Gemini / Ollama Embedding；
+- 通用 AI Gateway / Chat Completion / Prompt Registry；
 - HNSW / IVFFlat；
-- centroid embedding；
 - SimHash / MinHash；
-- cosine / semantic similarity；
-- automatic event matching / automatic event creation；
-- Dedup / Event Clustering；
-- merge / split；
+- Dedup decision；
+- Event clustering；
+- automatic Event creation / merge / split；
+- Event centroid；
+- 自动写 `EventSignal attached_by=embedding`；
 - LLM event boundary；
-- AI Editorial Scoring。
+- M4 Evidence / Editorial Scoring；
+- Web Event Workbench。
 
-因此当前正式状态是 **M3-A COMPLETE；M3-B / M3-C / M3-D NOT STARTED；M3 Overall NOT COMPLETE**。
+因此当前正式状态是：**M3-A COMPLETE；M3-B COMPLETE；M3-C / M3-D NOT STARTED；M3 Overall NOT COMPLETE**。
