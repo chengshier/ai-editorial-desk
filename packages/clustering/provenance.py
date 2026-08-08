@@ -64,6 +64,9 @@ class ClusteringProcessingRunRepository:
         )
         self.session.add(record)
         await self.session.flush()
+        # Processing audit outlives the business transactions executed by a reprocess run.
+        # Detach after the INSERT so a later business rollback cannot expire this handle.
+        self.session.expunge(record)
         return record
 
     async def finish(
@@ -76,6 +79,9 @@ class ClusteringProcessingRunRepository:
         error_summary: str | None = None,
         finished_at: datetime | None = None,
     ) -> None:
+        # create() returns a detached audit handle on purpose; explicitly re-attach it
+        # only for the short finalization transaction.
+        self.session.add(record)
         record.status = status
         record.processed_count = processed_count
         record.counters = counters
