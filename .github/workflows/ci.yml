@@ -52,6 +52,12 @@ jobs:
       - name: Pytest
         run: pytest
 
+      - name: M3 offline engineering evaluation
+        run: python -m scripts.evaluate_m3_clustering --format text
+
+      - name: M3 exact recall and clustering performance baseline
+        run: pytest -q -s tests/test_clustering_performance_m3d.py
+
       - name: Full Alembic round trip
         run: |
           alembic upgrade head
