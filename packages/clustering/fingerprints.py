@@ -55,7 +55,8 @@ def _tokenize(text: str) -> tuple[str, ...]:
     latin_words = _WORD_RE.findall(text)
     tokens: list[str] = [f"w:{word}" for word in latin_words]
     tokens.extend(
-        f"wb:{left}_{right}" for left, right in zip(latin_words, latin_words[1:])
+        f"wb:{left}_{right}"
+        for left, right in zip(latin_words, latin_words[1:], strict=False)
     )
 
     cjk_runs: list[str] = []
