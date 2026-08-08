@@ -45,7 +45,7 @@ async def test_clustering_write_requires_actor() -> None:
             headers=ADMIN_HEADERS,
             json={},
         )
-    assert response.status_code == 400
+    assert response.status_code == 422
 
 
 @pytest.mark.usefixtures("clean_database")
