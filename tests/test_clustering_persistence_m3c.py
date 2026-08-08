@@ -52,7 +52,9 @@ async def test_fingerprint_insert_is_idempotent_and_cascades_with_raw_signal(db_
 
     async with db_session.begin():
         await db_session.delete(signal)
-    assert await db_session.get(SignalFingerprintRecord, fingerprint_id) is None
+    assert await db_session.scalar(
+        select(SignalFingerprintRecord).where(SignalFingerprintRecord.id == fingerprint_id)
+    ) is None
 
 
 @pytest.mark.usefixtures("clean_database")
