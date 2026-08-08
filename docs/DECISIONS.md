@@ -162,3 +162,30 @@ M1-D 使用 `connector_validation_records` 保存 NOT_TESTED / PASSED / FAILED /
 M1 完成后只进入 M2，不在 M1-D 中提前实现 Event、EventSignal、Embedding、pgvector 相似检索、事件聚类、人工合并/拆分、AI Gateway、AI Provider、AI 评分、证据提取或稿件生成。
 
 MediaCrawler 七个平台真实运行与五项增强同样没有在 M1-D 中提前执行。
+
+## D-020 M2 Real Smoke 延后策略
+
+M2 自本决策起正式区分**工程完成**与**真实平台验证完成**：
+
+```text
+M2 Engineering Complete
+M2 Real Smoke Validation Deferred / NOT_TESTED
+M2 Real-world Validation NOT COMPLETE
+```
+
+具体决策：
+
+- M2-A / M2-B / M2-C 工程完成；M2-D offline engineering/readiness 完成；
+- Real Smoke 可以因为本地真实联调环境暂不可用而 Deferred；
+- Deferred / NOT_TESTED **不得**转换、映射或伪造为 PASSED；
+- M3 / M4 / M5 Engineering 可以继续，不再因为 Real Smoke 环境暂不可用而无限阻塞；
+- PR #10 合并后允许从最新 `main` 独立进入 M3-A，不从 M2-D feature branch 派生；
+- 在 M5 宣布“真实世界 / Production Validation 完成”之前，必须至少补一次真实端到端平台 Smoke；
+- 未来真实 Smoke 首选从 B站或知乎开始；
+- 微博 `Search<=5` 当前保持 `WEIBO_LOW_VOLUME_SEARCH = BLOCKED`，并正式接受为 **Accepted Known Limitation**；
+- 微博 Gate 只有在 upstream 明确提供低量参数、新 pinned version 有可验证实现，或正规源码证据证明现有接口支持低量请求时才重新打开；
+- 不允许通过猜测 API 参数、接口逆向、扩展 Signature、请求 10/20 后本地截断等方式伪造低量 Gate；
+- 任何未来真实 Smoke 仍必须遵守现有 Risk Guard、极低 Budget、dedicated low-value Account、stable Browser Profile、visible existing CDP、concurrency=1、proxy=false、无 proxy rotation、无自动换号、无 stealth/fingerprint/CAPTCHA 绕过等边界；
+- 403 / 406 / 429 / CAPTCHA / automation detected / login expired / account restricted / blocked / abnormal 等信号出现时立即停止，不重试、不切换账号/Profile/代理。
+
+因此，**允许 M3 Engineering 开始不代表 M2 Real Smoke VERIFIED，也不代表 M2 Real-world Validation Complete**。

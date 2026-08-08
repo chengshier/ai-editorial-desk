@@ -1,5 +1,22 @@
 # 文档与架构变更记录
 
+## 2026-08-08 — M2-D Engineering Closure / Real Smoke Deferred
+
+- 正式采用阶段语义：`M2 Engineering Complete`；`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；不表述为 `M2 Real-world Validation Complete`；
+- M2-A / M2-B / M2-C 工程已完成，M2-D offline engineering/readiness 已完成；PR #10 合并后允许从最新 `main` 独立进入 M3 Engineering；
+- B站 low-volume normal search compatibility 已完成：复用 pinned client 已有 `page_size`，`requested_limit=1/3/5` 时真实 client page-size 为 1/3/5，不请求 20 后再本地截断；
+- 知乎 low-volume normal search compatibility 已完成：复用 pinned `page_size → offset/limit`，`requested_limit=1/3/5` 时真实 client page-size 为 1/3/5，不新增或猜测 API 参数；
+- 微博 pinned client 没有已证实的 `page_size/count/limit`，因此 `WEIBO_LOW_VOLUME_SEARCH = BLOCKED`，并正式接受为 `Accepted Known Limitation`；不猜参数、不逆向接口、不扩展 Signature、不通过本地截断伪造低量请求；
+- 新增 dedicated M2-D Smoke Harness，真实执行继续限制 `requested_limit<=5`、detail=1、comments<=5、subcomments=false、concurrency=1、proxy=false、visible existing CDP、人工 actor/confirmation 与 Risk Guard；
+- 新增 `docs/M2_REAL_SMOKE_SETUP.md`，覆盖 Python/Node/PostgreSQL/pgvector、双 venv、Migration、Definition sync、API/Web、低价值 Account、Browser Profile、极低 Budget、CDP 9222、Detail/Search/Comments、Run/Checkpoint/RiskEvent、真实 Validation 与停止清理；
+- 新增 `python -m scripts.check_m2_smoke_environment`，只读检查本地 DB/migration/Definitions/pinned vendor/CDP/Profile/Account/Budget/Risk/Validation，不访问平台、不读取 Cookie、不创建 Run、不自动修复账号；
+- 新增 `python -m scripts.check_m2_smoke_login`，仅供未来人工登录后执行；先要求 environment gate READY，再只连接 existing localhost CDP 判断预期 Cookie 名称是否存在，不读取 Cookie value、不导航平台页面、不发内容请求、不写 Validation；
+- 最终 M2-D 工程 HEAD `54149c4fa83922a270a8fe10eaed4499945ca0e6` 对应 GitHub Actions **CI #177**（run id `31242273861`）completed / success；
+- CI #177：Ruff success；mypy **128 source files**；pytest **240 passed / 1 warning**；Alembic 完整往返 success；Definition 第二次同步 `created=0 / updated=0 / unchanged=11 / failed=0`；Web lint/typecheck/test/build success；
+- 当前 B站 / 知乎 / 微博 Real Smoke 全部 NOT_TESTED，Real Run ID 均无，Validation 均 NOT_TESTED；不存在真实 PASSED Validation；
+- M5 宣布真实世界 / Production Validation 完成之前，必须至少补一次真实端到端平台 Smoke；未来优先从 B站或知乎开始；
+- 本次为纯文档与阶段状态收口，不新增 M3 Event / Embedding / Dedup / Clustering / AI 功能。
+
 ## 2026-08-07 — M2-B 七平台映射与配置 Schema 收口
 
 - 基于 PR #7 已合并后的最新 `main` 创建独立分支 `feature/m2b-platform-mappers`，未从 M2-A feature 分支继续派生；
