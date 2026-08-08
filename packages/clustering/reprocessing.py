@@ -615,6 +615,18 @@ class ClusteringReprocessService:
             if association.attached_by is EventSignalAttachedBy.HUMAN:
                 raise BusinessValidationError("HUMAN_MEMBERSHIP_PRESERVED")
             if association.event_id != plan.current_event_id:
+                if association.event_id == plan.target_event_id:
+                    return ReprocessPlan(
+                        signal_id=plan.signal_id,
+                        action=ReprocessAction.UNCHANGED,
+                        code="CONCURRENTLY_CONVERGED",
+                        current_event_id=association.event_id,
+                        target_event_id=association.event_id,
+                        candidate_signal_id=plan.candidate_signal_id,
+                        decision=plan.decision,
+                        score=plan.score,
+                        attached_by=association.attached_by,
+                    )
                 raise BusinessValidationError("apply 前 membership 已被其他处理修改")
             locked = await self.queries.lock_events(
                 [plan.current_event_id, plan.target_event_id]
