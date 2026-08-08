@@ -4,11 +4,11 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import func, select
 
-from packages.clustering.reprocessing import ClusteringReprocessService
 from packages.clustering.repositories import (
     MatchOverrideRepository,
     SignalEventSuppressionRepository,
 )
+from packages.clustering.reprocessing import ClusteringReprocessService
 from packages.connector_management.exceptions import BusinessValidationError
 from packages.database.models import (
     ClusteringProcessingRunRecord,
