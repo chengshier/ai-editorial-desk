@@ -57,21 +57,28 @@ async def test_concurrent_reprocess_apply_converges_without_duplicate_move(db_se
         text="相同正文用于模拟两个 worker 各建了一个 Event",
         url="https://example.com/m3d/concurrent/b",
     )
-    await _create_fragment(db_session, first.id, "Fragment A")
-    await _create_fragment(db_session, second.id, "Fragment B")
-    signal_ids = [first.id, second.id]
+    first_event = await _create_fragment(db_session, first.id, "Fragment A")
+    second_event = await _create_fragment(db_session, second.id, "Fragment B")
+    first_event_id = first_event.id
+    second_event_id = second_event.id
+    all_signal_ids = [first.id, second.id]
+    movable_signal_id = (
+        second.id if first_event_id.int < second_event_id.int else first.id
+    )
+    target_signal_ids = [movable_signal_id]
+    expected_event_id = min((first_event_id, second_event_id), key=lambda value: value.int)
     await db_session.rollback()
 
     async def apply_once(actor: str):
         session_factory = get_async_sessionmaker()
         async with session_factory() as session:
             return await ClusteringReprocessService(session).reprocess(
-                signal_ids=signal_ids,
+                signal_ids=target_signal_ids,
                 time_from=None,
                 time_to=None,
                 algorithm_version="event-match-v1",
                 embedding_version=None,
-                max_items=2,
+                max_items=1,
                 actor=actor,
                 apply=True,
                 confirmed=True,
@@ -84,18 +91,20 @@ async def test_concurrent_reprocess_apply_converges_without_duplicate_move(db_se
         ),
         timeout=30.0,
     )
-    assert left.scanned == right.scanned == 2
+    assert left.scanned == right.scanned == 1
+    assert left.failed == right.failed == 0
+    assert left.would_move + right.would_move == 1
     memberships = list(
         (
             await db_session.execute(
                 select(EventSignalRecord.signal_id, EventSignalRecord.event_id).where(
-                    EventSignalRecord.signal_id.in_(signal_ids)
+                    EventSignalRecord.signal_id.in_(all_signal_ids)
                 )
             )
         ).all()
     )
     assert len(memberships) == 2
-    assert len({event_id for _signal_id, event_id in memberships}) == 1
+    assert {event_id for _signal_id, event_id in memberships} == {expected_event_id}
     move_count = int(
         await db_session.scalar(
             select(func.count()).select_from(EventAssignmentRecord).where(
