@@ -32,6 +32,7 @@ from packages.connector_management.exceptions import (
 from packages.connector_management.repositories import AuditLogRepository
 from packages.database.models import (
     ClusteringProcessingMode,
+    ClusteringProcessingRunRecord,
     ClusteringProcessingStatus,
     EventAssignmentAction,
     EventRecord,
@@ -88,7 +89,7 @@ class ReprocessSummary:
     failed: int
     outcomes: tuple[ReprocessPlan, ...]
 
-    def counters(self) -> dict[str, int]:
+    def counters(self) -> dict[str, object]:
         return {
             "scanned": self.scanned,
             "would_attach": self.would_attach,
@@ -273,7 +274,7 @@ class ClusteringReprocessService:
         max_items: int,
         actor: str | None,
         apply: bool,
-    ):  # type: ignore[no-untyped-def]
+    ) -> ClusteringProcessingRunRecord:
         config_snapshot: dict[str, object] = {
             "target_kind": "signal_ids" if signal_ids else "time_range",
             "signal_count": len(signal_ids or []),
@@ -297,7 +298,11 @@ class ClusteringReprocessService:
                 config_snapshot=config_snapshot,
             )
 
-    async def _finish_run(self, run, summary: ReprocessSummary) -> None:  # type: ignore[no-untyped-def]
+    async def _finish_run(
+        self,
+        run: ClusteringProcessingRunRecord,
+        summary: ReprocessSummary,
+    ) -> None:
         status = (
             ClusteringProcessingStatus.SUCCEEDED
             if summary.failed == 0
@@ -382,8 +387,7 @@ class ClusteringReprocessService:
                         attached_by=attached_by,
                     )
                 canonical_event_id = min(
-                    (current.event_id, candidate_event_id),
-                    key=lambda value: value.int,
+                    (current.event_id, candidate_event_id), key=lambda value: value.int
                 )
                 if canonical_event_id == current.event_id:
                     return ReprocessPlan(
@@ -402,8 +406,7 @@ class ClusteringReprocessService:
                         target_event_id=canonical_event_id,
                     )
                 if await self._has_distinct_override_to_event(
-                    signal_id,
-                    canonical_event_id,
+                    signal_id, canonical_event_id
                 ):
                     return ReprocessPlan(
                         signal_id=signal_id,
@@ -424,8 +427,7 @@ class ClusteringReprocessService:
                     attached_by=attached_by,
                 )
             if any(
-                item.decision is MatchDecisionType.AMBIGUOUS
-                for item in preview.decisions
+                item.decision is MatchDecisionType.AMBIGUOUS for item in preview.decisions
             ):
                 return ReprocessPlan(
                     signal_id=signal_id,
@@ -581,7 +583,10 @@ class ClusteringReprocessService:
             )
 
     async def _decision_id(self, plan: ReprocessPlan) -> UUID | None:
-        if plan.candidate_signal_id is None or plan.attached_by is EventSignalAttachedBy.HUMAN:
+        if (
+            plan.candidate_signal_id is None
+            or plan.attached_by is EventSignalAttachedBy.HUMAN
+        ):
             return None
         record = await self.decisions.get(
             plan.signal_id,
@@ -719,9 +724,9 @@ class ClusteringReprocessService:
     def summary_payload(summary: ReprocessSummary) -> dict[str, object]:
         return {
             **summary.counters(),
-            "processing_run_id": str(summary.processing_run_id)
-            if summary.processing_run_id
-            else None,
+            "processing_run_id": (
+                str(summary.processing_run_id) if summary.processing_run_id else None
+            ),
             "algorithm_version": summary.algorithm_version,
             "dry_run": summary.dry_run,
             "outcomes": [asdict(item) for item in summary.outcomes],
