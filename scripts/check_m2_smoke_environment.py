@@ -38,6 +38,7 @@ from packages.database.models import (
 )
 from packages.database.session import dispose_database, get_async_sessionmaker
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
 PINNED_MEDIACRAWLER_COMMIT = "071c8c0acaece3e82f2532cffb19faeddc9ec1c3"
 EXPECTED_DEFINITION_COUNT = 11
 EXPECTED_MEDIACRAWLER_DEFINITION_COUNT = 7
@@ -96,6 +97,13 @@ def _pinned_vendor_record_ready(repo_root: Path) -> bool:
     except (OSError, UnicodeError):
         return False
     return PINNED_MEDIACRAWLER_COMMIT in documentation
+
+
+def _profile_root_check(settings: Settings) -> PreflightCheck:
+    profile_root = Path(settings.mediacrawler_profile_root).expanduser()
+    if profile_root.is_dir():
+        return _ready("profile_root", "MediaCrawler profile root exists")
+    return _blocked("profile_root", "MediaCrawler profile root does not exist")
 
 
 def _safe_budget_shape(budget: Any) -> bool:
@@ -188,7 +196,9 @@ async def _database_checks(
         checks.append(_ready("database", "DATABASE_URL is reachable"))
 
         try:
-            revision_rows = await session.execute(text("SELECT version_num FROM alembic_version"))
+            revision_rows = await session.execute(
+                text("SELECT version_num FROM alembic_version")
+            )
             database_versions = {str(row[0]) for row in revision_rows.all()}
         except Exception:
             database_versions = set()
@@ -230,36 +240,82 @@ async def _database_checks(
             )
         )
         if definition is None:
-            checks.append(_blocked("platform_definition", "MediaCrawler platform definition is missing"))
+            checks.append(
+                _blocked(
+                    "platform_definition",
+                    "MediaCrawler platform definition is missing",
+                )
+            )
             return checks
         if not definition.is_enabled:
-            checks.append(_blocked("platform_definition", "platform definition is disabled"))
+            checks.append(
+                _blocked("platform_definition", "platform definition is disabled")
+            )
         else:
-            checks.append(_ready("platform_definition", "platform definition is enabled"))
+            checks.append(
+                _ready("platform_definition", "platform definition is enabled")
+            )
 
         if connector_instance_id is None:
-            checks.append(_blocked("connector_instance", "connector instance id is missing or invalid"))
+            checks.append(
+                _blocked(
+                    "connector_instance",
+                    "connector instance id is missing or invalid",
+                )
+            )
             return checks
         instance = await session.get(ConnectorInstance, connector_instance_id)
         if instance is None or instance.definition_id != definition.id:
-            checks.append(_blocked("connector_instance", "connector instance is missing or mismatched"))
+            checks.append(
+                _blocked(
+                    "connector_instance",
+                    "connector instance is missing or mismatched",
+                )
+            )
             return checks
         if not instance.enabled or instance.status != "active":
-            checks.append(_blocked("connector_instance", "connector instance is not enabled and active"))
+            checks.append(
+                _blocked(
+                    "connector_instance",
+                    "connector instance is not enabled and active",
+                )
+            )
         else:
-            checks.append(_ready("connector_instance", "connector instance is enabled and active"))
+            checks.append(
+                _ready(
+                    "connector_instance",
+                    "connector instance is enabled and active",
+                )
+            )
 
         if source_id is None:
             checks.append(_blocked("source", "source id is missing or invalid"))
             return checks
         source = await session.get(Source, source_id)
         if source is None or source.connector_instance_id != instance.id:
-            checks.append(_blocked("source", "source is missing or does not belong to the instance"))
+            checks.append(
+                _blocked(
+                    "source",
+                    "source is missing or does not belong to the instance",
+                )
+            )
             return checks
-        if source.mode != mode or not source.enabled or source.status != "active":
-            checks.append(_blocked("source", "source mode/status/enabled state does not match this preflight"))
+        if (
+            source.source_type != "mediacrawler"
+            or source.mode != mode
+            or not source.enabled
+            or source.status != "active"
+        ):
+            checks.append(
+                _blocked(
+                    "source",
+                    "source type/mode/status/enabled state does not match this preflight",
+                )
+            )
         else:
-            checks.append(_ready("source", "source is active and matches the requested mode"))
+            checks.append(
+                _ready("source", "source is active and matches the requested mode")
+            )
         include_subcomments = bool(dict(source.config).get("include_subcomments", False))
         try:
             validate_smoke_request(
@@ -272,7 +328,12 @@ async def _database_checks(
         except SmokeSafetyError as exc:
             checks.append(_blocked("smoke_limits", str(exc)))
         else:
-            checks.append(_ready("smoke_limits", "requested limits satisfy the M2-D fail-closed gate"))
+            checks.append(
+                _ready(
+                    "smoke_limits",
+                    "requested limits satisfy the M2-D fail-closed gate",
+                )
+            )
 
         if account_id is None:
             checks.append(_blocked("account", "platform account id is missing or invalid"))
@@ -303,16 +364,36 @@ async def _database_checks(
             credential_note = (
                 "credential reference is configured; value hidden"
                 if account.credential_ref
-                else "credential reference is not configured; manual browser profile login is expected"
+                else (
+                    "credential reference is not configured; "
+                    "manual browser profile login is expected"
+                )
             )
-            checks.append(_ready("account", f"platform account is runnable; {credential_note}"))
+            checks.append(
+                _ready(
+                    "account",
+                    f"platform account is runnable; {credential_note}",
+                )
+            )
 
         try:
-            BrowserProfileResolver(Path(settings.mediacrawler_profile_root)).resolve(account_context)
+            BrowserProfileResolver(
+                Path(settings.mediacrawler_profile_root)
+            ).resolve(account_context)
         except (BrowserProfileResolutionError, ValueError):
-            checks.append(_blocked("browser_profile", "configured browser profile cannot be safely resolved"))
+            checks.append(
+                _blocked(
+                    "browser_profile",
+                    "configured browser profile cannot be safely resolved",
+                )
+            )
         else:
-            checks.append(_ready("browser_profile", "configured browser profile resolves under the controlled root"))
+            checks.append(
+                _ready(
+                    "browser_profile",
+                    "configured browser profile resolves under the controlled root",
+                )
+            )
 
         budgets = await CollectionBudgetRepository(session).applicable(
             platform=platform,
@@ -321,7 +402,12 @@ async def _database_checks(
             source_id=source.id,
         )
         if not budgets:
-            checks.append(_blocked("budget", "no explicit enabled budget applies; preflight will not create one"))
+            checks.append(
+                _blocked(
+                    "budget",
+                    "no explicit enabled budget applies; preflight will not create one",
+                )
+            )
         elif not all(
             _budget_allows_request(
                 budget,
@@ -330,11 +416,26 @@ async def _database_checks(
             )
             for budget in budgets
         ):
-            checks.append(_blocked("budget", "an applicable budget would reject the requested low-volume run"))
+            checks.append(
+                _blocked(
+                    "budget",
+                    "an applicable budget would reject the requested low-volume run",
+                )
+            )
         elif not any(_safe_budget_shape(budget) for budget in budgets):
-            checks.append(_blocked("budget", "no applicable budget is constrained to the M2-D low-volume safety caps"))
+            checks.append(
+                _blocked(
+                    "budget",
+                    "no applicable budget is constrained to the M2-D low-volume safety caps",
+                )
+            )
         else:
-            checks.append(_ready("budget", "an applicable explicit budget enforces the M2-D low-volume safety caps"))
+            checks.append(
+                _ready(
+                    "budget",
+                    "an explicit budget enforces the M2-D low-volume safety caps",
+                )
+            )
 
         unresolved_risks = int(
             await session.scalar(
@@ -349,9 +450,19 @@ async def _database_checks(
             or 0
         )
         if unresolved_risks:
-            checks.append(_blocked("risk_guard", "unresolved platform risk events exist for this account"))
+            checks.append(
+                _blocked(
+                    "risk_guard",
+                    "unresolved platform risk events exist for this account",
+                )
+            )
         else:
-            checks.append(_ready("risk_guard", "no unresolved platform risk event is recorded for this account"))
+            checks.append(
+                _ready(
+                    "risk_guard",
+                    "no unresolved platform risk event is recorded for this account",
+                )
+            )
 
         validation = await session.scalar(
             select(ConnectorValidationRecord)
@@ -372,7 +483,10 @@ async def _database_checks(
         checks.append(
             _ready(
                 "validation",
-                f"current validation status is {validation_status.value}; preflight does not modify it",
+                (
+                    f"current validation status is {validation_status.value}; "
+                    "preflight does not modify it"
+                ),
             )
         )
         await session.rollback()
@@ -380,19 +494,38 @@ async def _database_checks(
 
 
 async def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
-    repo_root = Path(__file__).resolve().parents[1]
     checks: list[PreflightCheck] = []
 
-    if _pinned_vendor_record_ready(repo_root):
-        checks.append(_ready("pinned_vendor", "pinned MediaCrawler commit record and vendored entry files are present"))
+    if _pinned_vendor_record_ready(REPO_ROOT):
+        checks.append(
+            _ready(
+                "pinned_vendor",
+                "pinned MediaCrawler commit record and vendored entry files are present",
+            )
+        )
     else:
-        checks.append(_blocked("pinned_vendor", "pinned MediaCrawler commit record or vendored entry files are missing"))
+        checks.append(
+            _blocked(
+                "pinned_vendor",
+                "pinned MediaCrawler commit record or vendored entry files are missing",
+            )
+        )
 
     audit = audit_platform(args.platform)
     if args.mode == "search" and not audit.search_low_volume_ready:
-        checks.append(_blocked("platform_search_gate", "platform has no evidenced <=5 real search request size"))
+        checks.append(
+            _blocked(
+                "platform_search_gate",
+                "platform has no evidenced <=5 real search request size",
+            )
+        )
     else:
-        checks.append(_ready("platform_search_gate", "platform/mode passes the current engineering low-volume gate"))
+        checks.append(
+            _ready(
+                "platform_search_gate",
+                "platform/mode passes the current engineering low-volume gate",
+            )
+        )
 
     if audit.ip_proxy_enabled:
         checks.append(_blocked("proxy", "M2-D smoke proxy must remain disabled"))
@@ -403,15 +536,20 @@ async def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
     try:
         settings = get_settings()
     except Exception:
-        checks.append(_blocked("settings", "local application settings are incomplete or invalid"))
+        checks.append(
+            _blocked(
+                "settings",
+                "local application settings are incomplete or invalid",
+            )
+        )
         return _result(checks)
-    checks.append(_ready("settings", "local application settings loaded without exposing secret values"))
-
-    profile_root = Path(settings.mediacrawler_profile_root).expanduser()
-    if profile_root.is_dir():
-        checks.append(_ready("profile_root", "MediaCrawler profile root exists"))
-    else:
-        checks.append(_blocked("profile_root", "MediaCrawler profile root does not exist"))
+    checks.append(
+        _ready(
+            "settings",
+            "local application settings loaded without exposing secret values",
+        )
+    )
+    checks.append(_profile_root_check(settings))
 
     if _cdp_port_ready():
         checks.append(_ready("cdp", "localhost CDP port 9222 accepts a TCP connection"))
@@ -420,7 +558,7 @@ async def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
 
     checks.extend(
         await _database_checks(
-            repo_root=repo_root,
+            repo_root=REPO_ROOT,
             settings=settings,
             platform=args.platform,
             connector_instance_id=_safe_uuid(args.connector_instance_id),
@@ -435,7 +573,11 @@ async def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _result(checks: list[PreflightCheck]) -> dict[str, Any]:
-    overall = "READY" if checks and all(item.status == "READY" for item in checks) else "BLOCKED"
+    overall = (
+        "READY"
+        if checks and all(item.status == "READY" for item in checks)
+        else "BLOCKED"
+    )
     return {
         "status": overall,
         "real_network_started": False,
