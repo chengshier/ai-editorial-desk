@@ -22,9 +22,9 @@ from packages.connectors.mediacrawler_adapter.smoke import (
     MAX_SMOKE_COMMENTS,
     MAX_SMOKE_ITEMS,
     PINNED_SEARCH_RESULT_FLOORS,
+    ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH,
     M2DSmokeSubprocessRunner,
     SmokeSafetyError,
-    ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH,
     audit_platform,
     validate_smoke_request,
 )
