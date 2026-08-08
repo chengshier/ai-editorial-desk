@@ -20,6 +20,8 @@ EXPECTED_TABLES = {
     "sources",
     "raw_signals",
     "raw_signal_comments",
+    "events",
+    "event_signals",
     "collection_budgets",
     "collection_budget_usage",
     "collection_schedules",

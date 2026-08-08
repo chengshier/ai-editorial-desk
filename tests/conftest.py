@@ -28,6 +28,8 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "event_signals",
+    "events",
     "collection_schedule_triggers",
     "collection_schedules",
     "scheduler_instances",
