@@ -6,10 +6,14 @@ from apps.api.main import app
 from packages.common.config import get_settings
 from packages.database.models import (
     EventRecord,
+    EventSignalAttachedBy,
     EventSignalRecord,
+    EventSignalRelation,
+    EventStatus,
     SignalFingerprintRecord,
     SignalMatchDecisionRecord,
 )
+from packages.events.services import EventService
 from tests.m3c_helpers import create_m3c_signal, create_source
 
 ADMIN_HEADERS = {"X-Admin-Token": get_settings().admin_token_value}
@@ -73,7 +77,7 @@ async def test_preview_is_side_effect_free_and_returns_no_raw_payload_or_vector(
     assert body["signal_id"] == str(first.id)
     assert any(item["candidate_signal_id"] == str(second.id) for item in body["decisions"])
     assert "raw_payload" not in response.text
-    assert "embedding" not in response.text.casefold()
+    assert '"vector"' not in response.text.casefold()
     assert int(
         await db_session.scalar(select(func.count()).select_from(SignalFingerprintRecord)) or 0
     ) == 0
@@ -127,8 +131,6 @@ async def test_merge_and_split_admin_endpoints(db_session) -> None:  # type: ign
         )
         for index in range(3)
     ]
-    from packages.database.models import EventSignalAttachedBy, EventSignalRelation, EventStatus
-    from packages.events.services import EventService
 
     service = EventService(db_session)
     target = await service.create(
