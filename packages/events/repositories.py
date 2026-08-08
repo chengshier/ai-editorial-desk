@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -56,7 +57,7 @@ class EventRepository:
         items = list((await self.session.scalars(statement)).all())
         return Page(items=items, page=page, page_size=page_size, total=total)
 
-    async def merged_children(self, event_id: UUID) -> list[EventRecord]:
+    async def merged_children(self, event_id: UUID) -> Sequence[EventRecord]:
         statement = (
             select(EventRecord)
             .where(EventRecord.merged_into_event_id == event_id)
@@ -104,7 +105,7 @@ class EventSignalRepository:
         items = list((await self.session.scalars(statement)).all())
         return Page(items=items, page=page, page_size=page_size, total=total)
 
-    async def list_all(self, event_id: UUID) -> list[EventSignalRecord]:
+    async def list_all(self, event_id: UUID) -> Sequence[EventSignalRecord]:
         statement = (
             select(EventSignalRecord)
             .where(EventSignalRecord.event_id == event_id)
