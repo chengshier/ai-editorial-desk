@@ -24,6 +24,7 @@ from packages.connectors.mediacrawler_adapter.smoke import (
     PINNED_SEARCH_RESULT_FLOORS,
     M2DSmokeSubprocessRunner,
     SmokeSafetyError,
+    ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH,
     audit_platform,
     validate_smoke_request,
 )
@@ -48,7 +49,7 @@ def _invocation() -> MediaCrawlerInvocation:
     )
 
 
-def test_first_batch_audit_only_releases_bilibili_search_floor_blocker() -> None:
+def test_first_batch_audit_releases_only_supported_low_volume_search_gates() -> None:
     assert M2D_TARGET_PLATFORMS == ("bilibili", "zhihu", "weibo")
     assert PINNED_SEARCH_RESULT_FLOORS == {
         "bilibili": 20,
@@ -56,17 +57,18 @@ def test_first_batch_audit_only_releases_bilibili_search_floor_blocker() -> None
         "weibo": 10,
     }
     assert BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH is True
+    assert ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH is True
 
-    bilibili = audit_platform("bilibili")
-    assert bilibili.search_low_volume_ready is True
-    assert bilibili.search_result_floor == 1
-    assert len(bilibili.blockers) == 2
-
-    for platform in ("zhihu", "weibo"):
+    for platform in ("bilibili", "zhihu"):
         audit = audit_platform(platform)
-        assert audit.search_low_volume_ready is False
-        assert audit.search_result_floor == PINNED_SEARCH_RESULT_FLOORS[platform]
-        assert len(audit.blockers) == 3
+        assert audit.search_low_volume_ready is True
+        assert audit.search_result_floor == 1
+        assert len(audit.blockers) == 2
+
+    weibo = audit_platform("weibo")
+    assert weibo.search_low_volume_ready is False
+    assert weibo.search_result_floor == PINNED_SEARCH_RESULT_FLOORS["weibo"]
+    assert len(weibo.blockers) == 3
 
     for platform in M2D_TARGET_PLATFORMS:
         audit = audit_platform(platform)
@@ -93,6 +95,13 @@ def test_smoke_request_limits_fail_closed_before_network() -> None:
     )
     validate_smoke_request(
         platform="bilibili",
+        mode="search",
+        requested_limit=5,
+        comment_limit=0,
+        include_subcomments=False,
+    )
+    validate_smoke_request(
+        platform="zhihu",
         mode="search",
         requested_limit=5,
         comment_limit=0,
