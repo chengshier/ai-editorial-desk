@@ -5,7 +5,9 @@ from sqlalchemy import func, select
 from apps.api.main import app
 from packages.common.config import get_settings
 from packages.database.models import (
+    ClusteringProcessingMode,
     ClusteringProcessingRunRecord,
+    ClusteringProcessingStatus,
     EventRecord,
     EventSignalRecord,
 )
@@ -75,7 +77,7 @@ async def test_reprocess_apply_requires_actor_and_confirmation(db_session) -> No
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_evaluation_api_only_uses_registered_dataset_and_policy() -> None:
+async def test_evaluation_api_only_uses_registered_dataset_and_policy(db_session) -> None:  # type: ignore[no-untyped-def]
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -108,6 +110,14 @@ async def test_evaluation_api_only_uses_registered_dataset_and_policy() -> None:
     assert '"embedding"' not in response.text.casefold()
     assert unknown_dataset.status_code == 422
     assert unknown_policy.status_code == 422
+
+    run = await db_session.scalar(select(ClusteringProcessingRunRecord))
+    assert run is not None
+    assert run.mode is ClusteringProcessingMode.EVALUATE
+    assert run.status is ClusteringProcessingStatus.SUCCEEDED
+    assert run.dataset_version == "m3-clustering-eval-v1"
+    assert run.algorithm_version == "event-match-v1"
+    assert run.requested_count == run.processed_count == 20
 
 
 @pytest.mark.usefixtures("clean_database")
