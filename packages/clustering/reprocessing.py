@@ -8,7 +8,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from packages.clustering.policy import ClusterPolicy, DEFAULT_CLUSTER_POLICY
+from packages.clustering.policy import DEFAULT_CLUSTER_POLICY, ClusterPolicy
 from packages.clustering.provenance import (
     ClusteringProcessingRunRepository,
     EventAssignmentRepository,
@@ -630,7 +630,9 @@ class ClusteringReprocessService:
             decision_id = await self._decision_id(plan)
             association.event_id = target_event.id
             association.relation = EventSignalRelation.RELATED
-            association.confidence = plan.score if plan.score is not None else association.confidence
+            association.confidence = (
+                plan.score if plan.score is not None else association.confidence
+            )
             association.attached_by = plan.attached_by or association.attached_by
             await self.session.flush()
             await self._recalculate_event(current_event)
