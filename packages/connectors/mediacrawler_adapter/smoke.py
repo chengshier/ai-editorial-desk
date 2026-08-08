@@ -29,6 +29,7 @@ PINNED_SEARCH_RESULT_FLOORS: dict[str, int] = {
     "weibo": 10,
 }
 BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH = True
+ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH = True
 
 LOGIN_STATE_MARKERS: dict[str, tuple[str, ...]] = {
     "bilibili": ("SESSDATA", "DedeUserID"),
@@ -81,9 +82,12 @@ def audit_platform(platform: str) -> SmokePreparationAudit:
     if platform not in M2D_TARGET_PLATFORMS:
         raise SmokeSafetyError(f"{platform} is not an M2-D first-batch real-smoke platform")
     pinned_floor = PINNED_SEARCH_RESULT_FLOORS[platform]
-    low_volume_ready = (
+    patched_low_volume = (
         platform == "bilibili" and BILIBILI_LOW_VOLUME_PAGE_SIZE_PATCH
-    ) or pinned_floor <= MAX_SMOKE_ITEMS
+    ) or (
+        platform == "zhihu" and ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH
+    )
+    low_volume_ready = patched_low_volume or pinned_floor <= MAX_SMOKE_ITEMS
     effective_floor = 1 if low_volume_ready else pinned_floor
     blockers: list[str] = []
     if not low_volume_ready:
@@ -206,6 +210,7 @@ __all__ = [
     "PINNED_SEARCH_RESULT_FLOORS",
     "SmokePreparationAudit",
     "SmokeSafetyError",
+    "ZHIHU_LOW_VOLUME_PAGE_SIZE_PATCH",
     "audit_platform",
     "build_smoke_registry",
     "validate_smoke_request",
