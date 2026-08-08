@@ -45,28 +45,29 @@ async def test_fingerprint_insert_is_idempotent_and_cascades_with_raw_signal(db_
             simhash=fingerprint.simhash,
             token_count=fingerprint.token_count,
         )
+    fingerprint_id = first.id
     assert first.id == second.id
     assert first_created is True
     assert second_created is False
 
     async with db_session.begin():
         await db_session.delete(signal)
-    assert await db_session.get(SignalFingerprintRecord, first.id) is None
+    assert await db_session.get(SignalFingerprintRecord, fingerprint_id) is None
 
 
 @pytest.mark.usefixtures("clean_database")
 async def test_fingerprint_foreign_key_rejects_missing_raw_signal(db_session) -> None:  # type: ignore[no-untyped-def]
-    async with db_session.begin():
-        db_session.add(
-            SignalFingerprintRecord(
-                signal_id=uuid4(),
-                fingerprint_version="signal-fingerprint-v1",
-                input_hash="a" * 64,
-                simhash="0f" * 8,
-                token_count=1,
+    with pytest.raises(IntegrityError):
+        async with db_session.begin():
+            db_session.add(
+                SignalFingerprintRecord(
+                    signal_id=uuid4(),
+                    fingerprint_version="signal-fingerprint-v1",
+                    input_hash="a" * 64,
+                    simhash="0f" * 8,
+                    token_count=1,
+                )
             )
-        )
-        with pytest.raises(IntegrityError):
             await db_session.flush()
 
 
@@ -80,19 +81,19 @@ async def test_database_rejects_noncanonical_match_pair(db_session) -> None:  # 
         db_session, source, external_id="canonical-db-b", title="B", text="正文 B"
     )
     left, right = sorted((first.id, second.id), key=lambda value: value.int)
-    async with db_session.begin():
-        db_session.add(
-            SignalMatchDecisionRecord(
-                left_signal_id=right,
-                right_signal_id=left,
-                decision=MatchDecisionType.AMBIGUOUS,
-                primary_method=MatchPrimaryMethod.COMBINED,
-                score=0.5,
-                components={},
-                algorithm_version="event-match-v1",
+    with pytest.raises(IntegrityError):
+        async with db_session.begin():
+            db_session.add(
+                SignalMatchDecisionRecord(
+                    left_signal_id=right,
+                    right_signal_id=left,
+                    decision=MatchDecisionType.AMBIGUOUS,
+                    primary_method=MatchPrimaryMethod.COMBINED,
+                    score=0.5,
+                    components={},
+                    algorithm_version="event-match-v1",
+                )
             )
-        )
-        with pytest.raises(IntegrityError):
             await db_session.flush()
 
 
