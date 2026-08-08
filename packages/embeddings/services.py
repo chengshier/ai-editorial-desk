@@ -28,7 +28,7 @@ from packages.embeddings.providers import (
     EmbeddingRequest,
     EmbeddingRequestItem,
 )
-from packages.embeddings.repositories import SimilarityCandidate, SignalEmbeddingRepository
+from packages.embeddings.repositories import SignalEmbeddingRepository, SimilarityCandidate
 from packages.signals.repositories import RawSignalRepository
 
 logger = logging.getLogger(__name__)
