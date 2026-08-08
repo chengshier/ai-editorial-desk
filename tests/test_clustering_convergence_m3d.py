@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -9,13 +11,48 @@ from packages.clustering.services import (
     ClusterOutcomeStatus,
     EventClusteringService,
 )
-from packages.database.models import EventSignalRecord
+from packages.database.models import (
+    EventSignalAttachedBy,
+    EventSignalRecord,
+    EventSignalRelation,
+    EventStatus,
+)
+from packages.events.services import EventService
 from tests.m3c_helpers import add_test_embeddings, create_m3c_signal, create_source
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceRef:
+    id: UUID
+    connector_instance_id: UUID
+
+
+async def _seed_anchor(db_session, signal, *, title: str) -> None:  # type: ignore[no-untyped-def]
+    service = EventService(db_session)
+    event = await service.create(
+        title=title,
+        summary=None,
+        category=None,
+        status=EventStatus.EMERGING,
+        primary_language="zh-CN",
+        entities=[],
+        keywords=[],
+        actor="m3d-convergence-fixture",
+    )
+    _association, created = await service.attach_signal(
+        event_id=event.id,
+        signal_id=signal.id,
+        relation=EventSignalRelation.RELATED,
+        confidence=1.0,
+        attached_by=EventSignalAttachedBy.RULE,
+        actor="m3d-convergence-fixture",
+    )
+    assert created is True
 
 
 async def _build_scenario(
     db_session,  # type: ignore[no-untyped-def]
-    source,
+    source: _SourceRef,
     *,
     name: str,
     base_time: datetime,
@@ -50,14 +87,13 @@ async def _build_scenario(
         embedding_version=embedding_version,
         vectors=vectors,
     )
-    seed_service = EventClusteringService(db_session)
-    for label in ("A0", "B0"):
-        seeded = await seed_service.cluster_signal(
-            signal_id=all_signals[label].id,
-            embedding_version=embedding_version,
-            actor="m3d-convergence-seed",
-        )
-        assert seeded.status is ClusterOutcomeStatus.CREATED_EVENT
+
+    # A0/B0 are fixture anchors, not part of the processing-order experiment.
+    # Build their Events explicitly so the seed itself cannot see the yet-unprocessed
+    # candidates and abstain before the convergence test has started.
+    await _seed_anchor(db_session, all_signals["A0"], title=f"{name}-Event-A")
+    await _seed_anchor(db_session, all_signals["B0"], title=f"{name}-Event-B")
+
     targets = {
         label: signal
         for label, signal in all_signals.items()
@@ -115,9 +151,10 @@ EXPECTED_PARTITION = frozenset(
 @pytest.mark.usefixtures("clean_database")
 async def test_processing_order_converges_to_same_normalized_partition(db_session) -> None:  # type: ignore[no-untyped-def]
     source = await create_source(db_session)
+    source_ref = _SourceRef(source.id, source.connector_instance_id)
     forward_signals, forward_embedding = await _build_scenario(
         db_session,
-        source,
+        source_ref,
         name="forward",
         base_time=datetime(2026, 8, 1, 1, 0, tzinfo=UTC),
     )
@@ -131,7 +168,7 @@ async def test_processing_order_converges_to_same_normalized_partition(db_sessio
 
     reverse_signals, reverse_embedding = await _build_scenario(
         db_session,
-        source,
+        source_ref,
         name="reverse",
         base_time=datetime(2026, 8, 5, 1, 0, tzinfo=UTC),
     )
@@ -151,9 +188,10 @@ async def test_processing_order_converges_to_same_normalized_partition(db_sessio
 @pytest.mark.usefixtures("clean_database")
 async def test_batch_boundaries_converge_and_ambiguous_signal_stays_unassigned(db_session) -> None:  # type: ignore[no-untyped-def]
     source = await create_source(db_session)
+    source_ref = _SourceRef(source.id, source.connector_instance_id)
     batch_one_signals, batch_one_embedding = await _build_scenario(
         db_session,
-        source,
+        source_ref,
         name="batch-one",
         base_time=datetime(2026, 7, 20, 1, 0, tzinfo=UTC),
     )
@@ -167,7 +205,7 @@ async def test_batch_boundaries_converge_and_ambiguous_signal_stays_unassigned(d
 
     batch_three_signals, batch_three_embedding = await _build_scenario(
         db_session,
-        source,
+        source_ref,
         name="batch-three",
         base_time=datetime(2026, 7, 24, 1, 0, tzinfo=UTC),
     )
