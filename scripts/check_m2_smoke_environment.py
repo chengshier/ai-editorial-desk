@@ -5,9 +5,11 @@ import asyncio
 import json
 import socket
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
@@ -28,6 +30,7 @@ from packages.connectors.mediacrawler_adapter.smoke import (
     validate_smoke_request,
 )
 from packages.database.models import (
+    CollectionBudgetUsage,
     ConnectorDefinition,
     ConnectorInstance,
     ConnectorValidationRecord,
@@ -132,6 +135,29 @@ def _budget_allows_request(
     )
 
 
+def _budget_usage_projection_allows(
+    budget: Any,
+    usage: Any | None,
+    *,
+    requested_limit: int,
+    comment_limit: int,
+) -> bool:
+    runs_reserved = int(usage.runs_reserved) if usage is not None else 0
+    items_used = int(usage.items_used) if usage is not None else 0
+    items_reserved = int(usage.items_reserved) if usage is not None else 0
+    comments_used = int(usage.comments_used) if usage is not None else 0
+    comments_reserved = int(usage.comments_reserved) if usage is not None else 0
+    active_runs = int(usage.active_runs) if usage is not None else 0
+    return (
+        runs_reserved + 1 <= int(budget.max_runs_per_day)
+        and items_used + items_reserved + requested_limit
+        <= int(budget.max_items_per_day)
+        and comments_used + comments_reserved + comment_limit
+        <= int(budget.max_comments_per_day)
+        and active_runs + 1 <= int(budget.max_concurrency)
+    )
+
+
 def _latest_validation_status(
     record: ConnectorValidationRecord | None,
     *,
@@ -148,7 +174,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Read-only M2-D smoke environment preflight. It never logs in, opens a platform, "
-            "runs CollectorRuntime, or inspects credential contents."
+            "starts collection runtime execution, or inspects credential contents."
         )
     )
     parser.add_argument("--platform", choices=M2D_TARGET_PLATFORMS, required=True)
@@ -401,6 +427,30 @@ async def _database_checks(
             platform_account_id=account.id,
             source_id=source.id,
         )
+        budget_usage_ready = bool(budgets)
+        if budgets:
+            now = datetime.now(UTC)
+            for budget in budgets:
+                try:
+                    usage_date = now.astimezone(ZoneInfo(budget.timezone)).date()
+                except ZoneInfoNotFoundError:
+                    budget_usage_ready = False
+                    break
+                usage = await session.scalar(
+                    select(CollectionBudgetUsage).where(
+                        CollectionBudgetUsage.budget_id == budget.id,
+                        CollectionBudgetUsage.usage_date == usage_date,
+                    )
+                )
+                if not _budget_usage_projection_allows(
+                    budget,
+                    usage,
+                    requested_limit=requested_limit,
+                    comment_limit=comment_limit,
+                ):
+                    budget_usage_ready = False
+                    break
+
         if not budgets:
             checks.append(
                 _blocked(
@@ -429,11 +479,18 @@ async def _database_checks(
                     "no applicable budget is constrained to the M2-D low-volume safety caps",
                 )
             )
+        elif not budget_usage_ready:
+            checks.append(
+                _blocked(
+                    "budget",
+                    "current daily budget usage would reject the requested low-volume run",
+                )
+            )
         else:
             checks.append(
                 _ready(
                     "budget",
-                    "an explicit budget enforces the M2-D low-volume safety caps",
+                    "configured caps and current daily usage allow this low-volume run",
                 )
             )
 
