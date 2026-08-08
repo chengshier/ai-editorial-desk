@@ -272,12 +272,14 @@ async def test_attach_rejects_missing_event_and_missing_raw_signal(db_session) -
         collected_at=datetime(2026, 8, 7, 10, 0, tzinfo=UTC),
     )
     event = await _event(db_session)
+    signal_id = signal.id
+    event_id = event.id
     service = EventService(db_session)
 
     with pytest.raises(ResourceNotFoundError):
         await service.attach_signal(
-            event_id=signal.id,
-            signal_id=signal.id,
+            event_id=signal_id,
+            signal_id=signal_id,
             relation=EventSignalRelation.REPORT,
             confidence=1.0,
             attached_by=EventSignalAttachedBy.HUMAN,
@@ -285,8 +287,8 @@ async def test_attach_rejects_missing_event_and_missing_raw_signal(db_session) -
         )
     with pytest.raises(ResourceNotFoundError):
         await service.attach_signal(
-            event_id=event.id,
-            signal_id=event.id,
+            event_id=event_id,
+            signal_id=event_id,
             relation=EventSignalRelation.REPORT,
             confidence=1.0,
             attached_by=EventSignalAttachedBy.HUMAN,
@@ -421,19 +423,20 @@ async def test_failed_event_operation_does_not_pollute_raw_signal(db_session) ->
         published_at=None,
         collected_at=datetime(2026, 8, 7, 13, 0, tzinfo=UTC),
     )
+    signal_id = signal.id
     before_payload = dict(signal.raw_payload)
 
     with pytest.raises(ResourceNotFoundError):
         await EventService(db_session).attach_signal(
-            event_id=signal.id,
-            signal_id=signal.id,
+            event_id=signal_id,
+            signal_id=signal_id,
             relation=EventSignalRelation.REPORT,
             confidence=1.0,
             attached_by=EventSignalAttachedBy.HUMAN,
             actor="editor",
         )
 
-    stored = await db_session.get(RawSignalRecord, signal.id)
+    stored = await db_session.get(RawSignalRecord, signal_id)
     assert stored is not None
     assert stored.raw_payload == before_payload
     assert (
@@ -441,7 +444,7 @@ async def test_failed_event_operation_does_not_pollute_raw_signal(db_session) ->
             await db_session.scalar(
                 select(func.count())
                 .select_from(EventSignalRecord)
-                .where(EventSignalRecord.signal_id == signal.id)
+                .where(EventSignalRecord.signal_id == signal_id)
             )
             or 0
         )
