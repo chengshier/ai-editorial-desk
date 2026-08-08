@@ -53,7 +53,7 @@ jobs:
         run: timeout 90s pytest -q -s tests/test_clustering_reprocess_concurrency_m3d.py
 
       - name: Pytest
-        run: pytest
+        run: timeout 180s pytest -vv
 
       - name: M3 offline engineering evaluation
         run: python -m scripts.evaluate_m3_clustering --format text
