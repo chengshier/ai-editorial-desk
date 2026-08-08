@@ -32,6 +32,7 @@ from packages.clustering.evaluation import (
     threshold_sweep,
 )
 from packages.clustering.policy import DEFAULT_CLUSTER_POLICY
+from packages.clustering.provenance import ClusteringProcessingRunRepository
 from packages.clustering.reprocessing import ClusteringReprocessService, ReprocessSummary
 from packages.clustering.services import (
     ClusteringBatchProcessor,
@@ -39,6 +40,7 @@ from packages.clustering.services import (
     SignalMatchService,
 )
 from packages.connector_management.exceptions import BusinessValidationError
+from packages.database.models import ClusteringProcessingMode, ClusteringProcessingStatus
 from packages.database.session import get_database_session
 
 router = APIRouter(
@@ -176,6 +178,7 @@ async def cluster_batch(
 @router.post("/evaluate", response_model=ClusteringEvaluationResponse)
 async def evaluate_clustering(
     payload: ClusteringEvaluationRequest,
+    session: Session,
 ) -> ClusteringEvaluationResponse:
     if payload.algorithm_version != DEFAULT_CLUSTER_POLICY.algorithm_version:
         raise BusinessValidationError("algorithm_version 未注册")
@@ -185,13 +188,39 @@ async def evaluate_clustering(
     signals = load_evaluation_dataset(dataset)
     result = ClusteringEvaluationService().evaluate(signals)
     sweep = threshold_sweep(signals) if payload.threshold_sweep else ()
+    pair_metrics = asdict(result.pair_metrics)
+    cluster_metrics = asdict(result.cluster_metrics)
+    async with session.begin():
+        runs = ClusteringProcessingRunRepository(session)
+        run = await runs.create(
+            mode=ClusteringProcessingMode.EVALUATE,
+            algorithm_version=result.algorithm_version,
+            dataset_version=result.dataset_version,
+            actor=None,
+            requested_count=len(signals),
+            config_snapshot={
+                "threshold_sweep": payload.threshold_sweep,
+                "threshold_sweep_read_only": True,
+                "production_policy_modified": False,
+            },
+        )
+        await runs.finish(
+            run,
+            status=ClusteringProcessingStatus.SUCCEEDED,
+            processed_count=len(signals),
+            counters={
+                "pair_metrics": pair_metrics,
+                "cluster_metrics": cluster_metrics,
+                "human_override_respect_rate": result.human_override_respect_rate,
+            },
+        )
     return ClusteringEvaluationResponse(
         evaluation_kind="OFFLINE ENGINEERING EVALUATION",
         dataset_version=result.dataset_version,
         algorithm_version=result.algorithm_version,
         fingerprint_version=result.fingerprint_version,
-        pair_metrics=asdict(result.pair_metrics),
-        cluster_metrics=asdict(result.cluster_metrics),
+        pair_metrics=pair_metrics,
+        cluster_metrics=cluster_metrics,
         human_override_respected_count=result.human_override_respected_count,
         human_override_total=result.human_override_total,
         human_override_respect_rate=result.human_override_respect_rate,
