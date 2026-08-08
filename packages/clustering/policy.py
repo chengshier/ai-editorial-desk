@@ -14,7 +14,7 @@ class ClusterPolicy:
 
     algorithm_version: str = MATCHING_ALGORITHM_VERSION
     fingerprint_version: str = SIGNAL_FINGERPRINT_VERSION
-    simhash_duplicate_max_distance: int = 4
+    simhash_duplicate_max_distance: int = 6
     simhash_candidate_max_distance: int = 18
     embedding_same_event_threshold: float = 0.90
     embedding_distinct_threshold: float = 0.55
