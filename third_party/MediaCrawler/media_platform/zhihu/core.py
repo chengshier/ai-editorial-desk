@@ -49,6 +49,27 @@ from .help import ZhihuExtractor, judge_zhihu_url
 from .login import ZhiHuLogin
 
 
+ZHIHU_SEARCH_MAX_PAGE_SIZE = 20
+
+
+def _build_zhihu_search_pagination(requested_limit: int) -> Tuple[int, int]:
+    """Return one stable API page size and a finite page count for normal search."""
+    if requested_limit <= 0:
+        return 0, 0
+    page_size = min(ZHIHU_SEARCH_MAX_PAGE_SIZE, requested_limit)
+    page_count = (requested_limit + page_size - 1) // page_size
+    return page_size, page_count
+
+
+def _zhihu_search_page_item_limit(
+    requested_limit: int,
+    page_size: int,
+    page_offset: int,
+) -> int:
+    remaining = requested_limit - page_offset * page_size
+    return max(0, min(page_size, remaining))
+
+
 class ZhihuCrawler(AbstractCrawler):
     context_page: Page
     zhihu_client: ZhiHuClient
@@ -150,50 +171,54 @@ class ZhihuCrawler(AbstractCrawler):
     async def search(self) -> None:
         """Search for notes and retrieve their comment information."""
         utils.logger.info("[ZhihuCrawler.search] Begin search zhihu keywords")
-        zhihu_limit_count = 20  # zhihu limit page fixed value
-        if config.CRAWLER_MAX_NOTES_COUNT < zhihu_limit_count:
-            config.CRAWLER_MAX_NOTES_COUNT = zhihu_limit_count
+        requested_limit = config.CRAWLER_MAX_NOTES_COUNT
+        zhihu_page_size, page_count = _build_zhihu_search_pagination(requested_limit)
+        if page_count == 0:
+            utils.logger.info("[ZhihuCrawler.search] CRAWLER_MAX_NOTES_COUNT is zero, skip search")
+            return
         start_page = config.START_PAGE
         for keyword in config.KEYWORDS.split(","):
             source_keyword_var.set(keyword)
             utils.logger.info(
                 f"[ZhihuCrawler.search] Current search keyword: {keyword}"
             )
-            page = 1
-            while (
-                page - start_page + 1
-            ) * zhihu_limit_count <= config.CRAWLER_MAX_NOTES_COUNT:
-                if page < start_page:
-                    utils.logger.info(f"[ZhihuCrawler.search] Skip page {page}")
-                    page += 1
-                    continue
-
+            for page_offset in range(page_count):
+                page = start_page + page_offset
                 try:
                     utils.logger.info(
                         f"[ZhihuCrawler.search] search zhihu keyword: {keyword}, page: {page}"
                     )
-                    content_list: List[ZhihuContent] = (
+                    raw_content_list: List[ZhihuContent] = (
                         await self.zhihu_client.get_note_by_keyword(
                             keyword=keyword,
                             page=page,
+                            page_size=zhihu_page_size,
                         )
                     )
                     utils.logger.info(
-                        f"[ZhihuCrawler.search] Search contents :{content_list}"
+                        f"[ZhihuCrawler.search] Search contents :{raw_content_list}"
                     )
-                    if not content_list:
+                    if not raw_content_list:
                         utils.logger.info("No more content!")
                         break
 
+                    page_item_limit = _zhihu_search_page_item_limit(
+                        requested_limit,
+                        zhihu_page_size,
+                        page_offset,
+                    )
+                    content_list = raw_content_list[:page_item_limit]
+
                     # Sleep after page navigation
                     await asyncio.sleep(config.CRAWLER_MAX_SLEEP_SEC)
-                    utils.logger.info(f"[ZhihuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page-1}")
+                    utils.logger.info(f"[ZhihuCrawler.search] Sleeping for {config.CRAWLER_MAX_SLEEP_SEC} seconds after page {page}")
 
-                    page += 1
                     for content in content_list:
                         await zhihu_store.update_zhihu_content(content)
 
                     await self.batch_get_content_comments(content_list)
+                    if len(raw_content_list) < zhihu_page_size:
+                        break
                 except DataFetchError:
                     utils.logger.error("[ZhihuCrawler.search] Search content error")
                     return
