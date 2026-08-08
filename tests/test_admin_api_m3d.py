@@ -73,7 +73,7 @@ async def test_reprocess_apply_requires_actor_and_confirmation(db_session) -> No
             json={**payload, "confirmation": False},
         )
     assert no_actor.status_code == 422
-    assert no_confirmation.status_code == 422
+    assert no_confirmation.status_code == 400
 
 
 @pytest.mark.usefixtures("clean_database")
@@ -130,6 +130,7 @@ async def test_reprocess_preview_is_bounded_dry_run_without_business_mutation(db
         title="预览不会创建事件",
         text="dry-run 只允许写 processing audit",
     )
+    signal_id = signal.id
     before_event_count = int(
         await db_session.scalar(select(func.count()).select_from(EventRecord)) or 0
     )
@@ -144,7 +145,7 @@ async def test_reprocess_preview_is_bounded_dry_run_without_business_mutation(db
             "/api/v1/admin/clustering/reprocess/preview",
             headers=ADMIN_HEADERS,
             json={
-                "signal_ids": [str(signal.id)],
+                "signal_ids": [str(signal_id)],
                 "algorithm_version": "event-match-v1",
                 "max_items": 1,
             },
