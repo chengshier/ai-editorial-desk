@@ -6,6 +6,7 @@ from apps.api.routers.admin.collector_runtime import router as runtime_router
 from apps.api.routers.admin.connector_definitions import router as definitions_router
 from apps.api.routers.admin.connector_instances import router as instances_router
 from apps.api.routers.admin.connector_runs import router as runs_router
+from apps.api.routers.admin.events import router as events_router
 from apps.api.routers.admin.platform_accounts import router as accounts_router
 from apps.api.routers.admin.platform_risk_events import router as risk_events_router
 from apps.api.routers.admin.raw_signals import router as raw_signals_router
@@ -20,6 +21,7 @@ router.include_router(instances_router)
 router.include_router(accounts_router)
 router.include_router(sources_router)
 router.include_router(raw_signals_router)
+router.include_router(events_router)
 router.include_router(budgets_router)
 router.include_router(runtime_router)
 router.include_router(runs_router)

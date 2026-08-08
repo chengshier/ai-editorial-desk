@@ -6,6 +6,13 @@ from packages.database.models.connectors import (
     ConnectorInstance,
     PlatformAccount,
 )
+from packages.database.models.events import (
+    EventRecord,
+    EventSignalAttachedBy,
+    EventSignalRecord,
+    EventSignalRelation,
+    EventStatus,
+)
 from packages.database.models.risk import PlatformRiskEvent
 from packages.database.models.runs import (
     ConnectorCheckpoint,
@@ -44,6 +51,11 @@ __all__ = [
     "ConnectorRunTriggerType",
     "ConnectorValidationRecord",
     "ConnectorValidationStatus",
+    "EventRecord",
+    "EventSignalAttachedBy",
+    "EventSignalRecord",
+    "EventSignalRelation",
+    "EventStatus",
     "PlatformAccount",
     "PlatformRiskEvent",
     "RawSignalCommentRecord",

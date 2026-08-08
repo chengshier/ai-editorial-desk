@@ -1,5 +1,27 @@
 # 文档与架构变更记录
 
+## 2026-08-08 — M3-A Event / EventSignal Foundation
+
+- 基于 PR #10 合并后的最新 `main` `f36d8f26dd0b282c2465bf09bd9fdadc0081d2ae` 创建独立分支 `feature/m3a-event-foundation`，未从 M2 feature 分支继续派生；
+- 新增正式 `events` / `event_signals` PostgreSQL 模型与 `20260808_0006_m3a_event_foundation.py` migration，不修改 M1/M2 历史 migration；
+- Event 建立 `emerging / growing / stable / declining / resolved` 合法状态结构，M3-A 仅保守默认 `emerging`，不实现 Trend Engine 自动状态转换；
+- Event 的 `summary / category / primary_language` 允许为空，`entities / keywords` 默认空结构；title 由人工填写，不调用 AI 伪造摘要或分类；
+- EventSignal 建立 `origin / report / repost / reaction / official_response / correction` relation 与 `rule / embedding / llm / human` attached_by 数据结构，但本阶段 Admin 写入只允许当前真实存在的 `human`；
+- EventSignal 使用 PostgreSQL `UNIQUE(event_id, signal_id)`、`INSERT ... ON CONFLICT DO NOTHING` 与 Event 行级 `FOR UPDATE` 共同保证重复/并发 attach 幂等；没有对 `signal_id` 单独加 UNIQUE，同一 RawSignal 可关联多个 Event；
+- `confidence` 在 API / Service 拒绝 NaN、Infinity 与越界值，并由 PostgreSQL CHECK 保证 `0 <= confidence <= 1`；
+- `source_count = COUNT(DISTINCT RawSignal.source_id)`，`platform_count = COUNT(DISTINCT RawSignal.platform)`，attach / detach 后从真实关系重算，不信任客户端计数；
+- `first_seen_at = MIN(COALESCE(RawSignal.published_at, RawSignal.collected_at))`，空 Event 为 NULL；detach 后按剩余来源重算，不用当前时间伪装历史首次出现时间；
+- `last_updated_at` 表示 Event 处理层最后一次有效业务变更：manual create、首次有效 attach、有效 detach 推进；重复 attach 与 no-op detach 不推进；
+- 新增 `packages/events/` Repository / Service，继续复用现有 AsyncSession、AuditLog、Admin Token 与 `X-Actor-ID`，不建立第二套数据库生命周期；
+- 新增最小 Admin API：create/get/list Event、list/attach/detach EventSignal；EventSignal 响应不暴露 RawSignal `raw_payload`；不开发 M5 Event Workbench；
+- Event 层保持 RawSignal 采集事实不可变：attach/detach/失败事务不修改 `original_url/canonical_url/external_id/collected_at/raw_payload/platform/source_id`，detach 不删除 RawSignal；
+- Connector / CollectorRuntime 热路径未接入 Event，采集成功后不要求同步创建 Event，M3 Processing 与采集层继续解耦；
+- PostgreSQL 测试覆盖 Event CRUD、并发重复 attach、FK/UNIQUE/CHECK/INDEX、聚合计数、时间语义、同一 RawSignal 多 Event、RawSignal 不可变与 Admin API；
+- 业务实现 HEAD `c9db09bce9c7c41229594bb7d346b47899dc8291` 对应 GitHub Actions **CI #183**（run id `31247490678`）completed / success：Ruff success；mypy **134 source files**；pytest **263 passed / 1 warning**；Alembic `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 全部 success；Definition 第二次同步 `created=0 / updated=0 / unchanged=11 / failed=0`；Web lint/typecheck/test/build 全部 success；
+- 新增 `docs/M3_ACCEPTANCE_REPORT.md`，正式记录 `M3-A COMPLETE`；`M3-B / M3-C / M3-D NOT STARTED`，不表述为 `M3 COMPLETE`；
+- 本批未调用 OpenAI、云/本地 Embedding、Ollama、vector similarity、HNSW/IVFFlat、SimHash/MinHash、semantic similarity、自动事件匹配、Dedup/Clustering、Merge/Split 或 AI Editorial Scoring；
+- M2 状态继续保持 `M2 Engineering Complete`、`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`、`M2 Real-world Validation = NOT COMPLETE`，进入 M3 Engineering 不会把任何真实平台 Validation 改写为 PASSED。
+
 ## 2026-08-08 — M2-D Engineering Closure / Real Smoke Deferred
 
 - 正式采用阶段语义：`M2 Engineering Complete`；`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；不表述为 `M2 Real-world Validation Complete`；
