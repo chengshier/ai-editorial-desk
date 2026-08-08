@@ -13,8 +13,8 @@ from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from packages.clustering.fingerprints import FingerprintInputBuilder, hamming_distance
-from packages.clustering.policy import ClusterPolicy, DEFAULT_CLUSTER_POLICY
-from packages.database.models import MatchDecisionType, RawSignalRecord
+from packages.clustering.policy import DEFAULT_CLUSTER_POLICY, ClusterPolicy
+from packages.database.models import RawSignalRecord
 
 M3_EVALUATION_DATASET_VERSION = "m3-clustering-eval-v1"
 
@@ -173,7 +173,7 @@ def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
 
 
 def _pair_key(left: str, right: str) -> tuple[str, str]:
-    return tuple(sorted((left, right)))  # type: ignore[return-value]
+    return (left, right) if left <= right else (right, left)
 
 
 def _explicit_pair_label(
@@ -244,7 +244,9 @@ def load_evaluation_dataset(path: Path) -> tuple[EvaluationSignal, ...]:
         if not fixture_id or fixture_id in seen:
             raise ValueError(f"line {line_number}: duplicate or empty fixture_id")
         seen.add(fixture_id)
-        published_at = datetime.fromisoformat(str(payload["published_at"]).replace("Z", "+00:00"))
+        published_at = datetime.fromisoformat(
+            str(payload["published_at"]).replace("Z", "+00:00")
+        )
         if published_at.tzinfo is None or published_at.utcoffset() is None:
             raise ValueError(f"line {line_number}: published_at must be timezone-aware")
         embedding_payload = payload.get("embedding")
@@ -353,7 +355,11 @@ class ClusteringEvaluationService:
         override: EvaluationPairLabel | None,
     ) -> tuple[EvaluationPairLabel, float, str]:
         if override is not None:
-            return override, 1.0 if override is EvaluationPairLabel.SAME_EVENT else 0.0, "human"
+            return (
+                override,
+                1.0 if override is EvaluationPairLabel.SAME_EVENT else 0.0,
+                "human",
+            )
         exact_method = self._exact_method(left, right)
         if exact_method is not None:
             return EvaluationPairLabel.SAME_EVENT, 1.0, exact_method
@@ -396,8 +402,15 @@ class ClusteringEvaluationService:
             min(1.0, 1.0 - time_gap / self.policy.max_time_gap.total_seconds()),
         )
         if embedding_similarity is not None:
-            embedding_component = max(0.0, min(1.0, (embedding_similarity + 1.0) / 2.0))
-            score = 0.75 * embedding_component + 0.15 * simhash_component + 0.10 * time_component
+            embedding_component = max(
+                0.0,
+                min(1.0, (embedding_similarity + 1.0) / 2.0),
+            )
+            score = (
+                0.75 * embedding_component
+                + 0.15 * simhash_component
+                + 0.10 * time_component
+            )
             method = "combined"
         else:
             score = 0.70 * simhash_component + 0.30 * time_component
@@ -558,8 +571,7 @@ class ClusteringEvaluationService:
             cluster
             for cluster in partition
             if any(
-                by_id[fixture_id].expected_outcome
-                is EvaluationExpectedOutcome.CLUSTERED
+                by_id[fixture_id].expected_outcome is EvaluationExpectedOutcome.CLUSTERED
                 for fixture_id in cluster
             )
         ]
