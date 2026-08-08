@@ -133,6 +133,7 @@ async def test_merge_rejects_self_and_flattens_existing_merge_chain(db_session) 
     await db_session.refresh(event_b)
     assert event_a.merged_into_event_id == event_c.id
     assert event_b.merged_into_event_id == event_c.id
+    await db_session.commit()
     with pytest.raises(BusinessValidationError):
         await service.merge(
             target_event_id=event_a.id,
@@ -194,6 +195,7 @@ async def test_manual_split_moves_subset_recalculates_and_persists_distinct_over
     suppressions = SignalEventSuppressionRepository(db_session)
     assert await suppressions.is_active(signals[2].id, event.id)
     assert await suppressions.is_active(signals[0].id, new_event.id)
+    await db_session.commit()
 
     preview = await SignalMatchService(db_session).preview(signal_id=signals[2].id)
     decisions = {item.candidate_signal_id: item for item in preview.decisions}
@@ -216,19 +218,23 @@ async def test_split_rejects_missing_signal_and_all_signal_split(db_session) -> 
     event = await _human_event(db_session, title="Boundary")
     await _human_attach(db_session, event.id, first.id)
     await _human_attach(db_session, event.id, second.id)
+    event_id = event.id
+    first_id = first.id
+    second_id = second.id
+    outside_id = outside.id
     service = EventClusterMaintenanceService(db_session)
     with pytest.raises(BusinessValidationError):
         await service.split(
-            event_id=event.id,
-            signal_ids=[outside.id],
+            event_id=event_id,
+            signal_ids=[outside_id],
             title="invalid",
             reason="missing",
             actor="editor",
         )
     with pytest.raises(BusinessValidationError):
         await service.split(
-            event_id=event.id,
-            signal_ids=[first.id, second.id],
+            event_id=event_id,
+            signal_ids=[first_id, second_id],
             title="invalid",
             reason="all",
             actor="editor",
@@ -266,6 +272,7 @@ async def test_manual_detach_suppression_prevents_automatic_reattach(db_session)
     assert await SignalEventSuppressionRepository(db_session).is_active(
         second.id, first_outcome.event_id
     )
+    await db_session.commit()
 
     rerun = await auto_cluster(db_session, second.id)
     assert rerun.status is ClusterOutcomeStatus.AMBIGUOUS
