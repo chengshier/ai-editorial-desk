@@ -8,10 +8,22 @@ from pathlib import Path
 
 from packages.common.config import get_settings
 from packages.connectors.mediacrawler_adapter.runner import SAFE_ENV_NAMES
-from packages.connectors.mediacrawler_adapter.smoke import LOGIN_STATE_MARKERS, M2D_TARGET_PLATFORMS
+from packages.connectors.mediacrawler_adapter.smoke import (
+    LOGIN_STATE_MARKERS,
+    M2D_TARGET_PLATFORMS,
+)
 from packages.database.session import dispose_database
 from scripts import check_m2_smoke_environment as environment_preflight
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LOGIN_HELPER_ENTRYPOINT = (
+    REPO_ROOT
+    / "packages"
+    / "connectors"
+    / "mediacrawler_adapter"
+    / "login_preflight_entry"
+    / "main.py"
+)
 _CONFIRMATION = "M2D_LOGIN_PREFLIGHT"
 _PLATFORM_ORIGINS = {
     "bilibili": "https://www.bilibili.com",
@@ -49,7 +61,11 @@ def _safe_subprocess_environment() -> dict[str, str]:
 
 def _human_gate(actor: str, confirmation: str) -> str | None:
     settings = get_settings()
-    if os.environ.get("CI") or settings.app_env.strip().casefold() in {"ci", "mock", "test"}:
+    if os.environ.get("CI") or settings.app_env.strip().casefold() in {
+        "ci",
+        "mock",
+        "test",
+    }:
         return "login-only preflight is forbidden in CI/Mock/Test environments"
     normalized_actor = actor.strip()
     if not normalized_actor or normalized_actor.casefold() in {"ci", "mock", "automation"}:
@@ -61,17 +77,9 @@ def _human_gate(actor: str, confirmation: str) -> str | None:
 
 async def _local_login_marker_check(platform: str) -> dict[str, str]:
     settings = get_settings()
-    entrypoint = (
-        Path(__file__).resolve().parents[1]
-        / "packages"
-        / "connectors"
-        / "mediacrawler_adapter"
-        / "login_preflight_entry"
-        / "main.py"
-    )
     command = [
         settings.mediacrawler_python,
-        str(entrypoint),
+        str(LOGIN_HELPER_ENTRYPOINT),
         "--origin",
         _PLATFORM_ORIGINS[platform],
         "--port",
@@ -82,7 +90,7 @@ async def _local_login_marker_check(platform: str) -> dict[str, str]:
     try:
         process = await asyncio.create_subprocess_exec(
             *command,
-            cwd=str(Path(__file__).resolve().parents[1]),
+            cwd=str(REPO_ROOT),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=_safe_subprocess_environment(),
@@ -111,7 +119,11 @@ async def _local_login_marker_check(platform: str) -> dict[str, str]:
     status = payload.get("status")
     login_state = payload.get("login_state")
     reason = payload.get("reason")
-    if status not in {"READY", "BLOCKED"} or not isinstance(login_state, str) or not isinstance(reason, str):
+    if (
+        status not in {"READY", "BLOCKED"}
+        or not isinstance(login_state, str)
+        or not isinstance(reason, str)
+    ):
         return {
             "status": "BLOCKED",
             "login_state": "unknown",
