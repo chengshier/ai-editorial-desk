@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -29,10 +30,13 @@ class EventRepository:
         page: int,
         page_size: int,
         status: str | None = None,
+        include_merged: bool = False,
     ) -> Page[EventRecord]:
         filters = []
         if status is not None:
             filters.append(EventRecord.status == status)
+        if not include_merged:
+            filters.append(EventRecord.merged_into_event_id.is_(None))
         total = int(
             await self.session.scalar(
                 select(func.count()).select_from(EventRecord).where(*filters)
@@ -52,6 +56,14 @@ class EventRepository:
         )
         items = list((await self.session.scalars(statement)).all())
         return Page(items=items, page=page, page_size=page_size, total=total)
+
+    async def merged_children(self, event_id: UUID) -> Sequence[EventRecord]:
+        statement = (
+            select(EventRecord)
+            .where(EventRecord.merged_into_event_id == event_id)
+            .order_by(EventRecord.id.asc())
+        )
+        return list((await self.session.scalars(statement)).all())
 
     def add(self, event: EventRecord) -> None:
         self.session.add(event)
@@ -92,6 +104,14 @@ class EventSignalRepository:
         )
         items = list((await self.session.scalars(statement)).all())
         return Page(items=items, page=page, page_size=page_size, total=total)
+
+    async def list_all(self, event_id: UUID) -> Sequence[EventSignalRecord]:
+        statement = (
+            select(EventSignalRecord)
+            .where(EventSignalRecord.event_id == event_id)
+            .order_by(EventSignalRecord.signal_id.asc(), EventSignalRecord.id.asc())
+        )
+        return list((await self.session.scalars(statement)).all())
 
     async def attach(
         self,

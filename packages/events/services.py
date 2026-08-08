@@ -6,6 +6,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from packages.clustering.repositories import SignalEventSuppressionRepository
 from packages.connector_management.exceptions import (
     BusinessValidationError,
     ResourceNotFoundError,
@@ -36,6 +37,9 @@ def _event_snapshot(event: EventRecord) -> dict[str, Any]:
         "keywords": event.keywords,
         "source_count": event.source_count,
         "platform_count": event.platform_count,
+        "merged_into_event_id": (
+            str(event.merged_into_event_id) if event.merged_into_event_id else None
+        ),
     }
 
 
@@ -54,6 +58,7 @@ class EventService:
         self.events = EventRepository(session)
         self.event_signals = EventSignalRepository(session)
         self.raw_signals = RawSignalRepository(session)
+        self.suppressions = SignalEventSuppressionRepository(session)
         self.audit = AuditLogRepository(session)
 
     async def create(
@@ -112,8 +117,14 @@ class EventService:
         page: int,
         page_size: int,
         status: str | None,
+        include_merged: bool = False,
     ) -> Page[EventRecord]:
-        return await self.events.list(page=page, page_size=page_size, status=status)
+        return await self.events.list(
+            page=page,
+            page_size=page_size,
+            status=status,
+            include_merged=include_merged,
+        )
 
     async def list_signals(
         self,
@@ -145,6 +156,8 @@ class EventService:
             event = await self.events.get_for_update(event_id)
             if event is None:
                 raise ResourceNotFoundError("事件不存在")
+            if event.merged_into_event_id is not None:
+                raise BusinessValidationError("已合并事件不能继续挂接 Signal")
             if await self.raw_signals.get(signal_id) is None:
                 raise ResourceNotFoundError("原始信号不存在")
 
@@ -156,16 +169,31 @@ class EventService:
                 confidence=confidence,
                 attached_by=attached_by,
             )
-            if not created:
+            changed = created
+            if (
+                not created
+                and attached_by is EventSignalAttachedBy.HUMAN
+                and association.attached_by is not EventSignalAttachedBy.HUMAN
+            ):
+                association.relation = relation
+                association.confidence = confidence
+                association.attached_by = EventSignalAttachedBy.HUMAN
+                changed = True
+
+            if attached_by is EventSignalAttachedBy.HUMAN:
+                await self.suppressions.deactivate(signal_id, event_id)
+
+            if not changed:
                 return association, False
 
-            await self._recalculate_aggregates(event)
+            if created:
+                await self.recalculate_aggregates(event)
             event.last_updated_at = utc_now()
             await self.session.flush()
             self.audit.add(
                 entity_type="event",
                 entity_id=event.id,
-                action="attach_signal",
+                action="attach_signal" if created else "human_override_signal",
                 actor=actor,
                 before_data={"event": before},
                 after_data={
@@ -173,7 +201,7 @@ class EventService:
                     "association": _association_snapshot(association),
                 },
             )
-            return association, True
+            return association, created
 
     async def detach_signal(
         self,
@@ -186,6 +214,8 @@ class EventService:
             event = await self.events.get_for_update(event_id)
             if event is None:
                 raise ResourceNotFoundError("事件不存在")
+            if event.merged_into_event_id is not None:
+                raise BusinessValidationError("已合并事件不能修改 Signal 关系")
             association = await self.event_signals.get(event_id, signal_id)
             if association is None:
                 return False
@@ -194,7 +224,13 @@ class EventService:
             before_association = _association_snapshot(association)
             await self.event_signals.delete(association)
             await self.session.flush()
-            await self._recalculate_aggregates(event)
+            await self.suppressions.upsert_active(
+                signal_id=signal_id,
+                event_id=event_id,
+                reason="manual_detach",
+                actor=actor,
+            )
+            await self.recalculate_aggregates(event)
             event.last_updated_at = utc_now()
             await self.session.flush()
             self.audit.add(
@@ -206,11 +242,14 @@ class EventService:
                     "event": before_event,
                     "association": before_association,
                 },
-                after_data={"event": _event_snapshot(event)},
+                after_data={
+                    "event": _event_snapshot(event),
+                    "automatic_reattach_suppressed": True,
+                },
             )
             return True
 
-    async def _recalculate_aggregates(self, event: EventRecord) -> None:
+    async def recalculate_aggregates(self, event: EventRecord) -> None:
         source_count, platform_count, first_seen_at = (
             await self.event_signals.aggregate_stats(event.id)
         )

@@ -13,6 +13,8 @@ from apps.api.schemas.m3a import (
     EventSignalPage,
     EventSignalResponse,
 )
+from apps.api.schemas.m3c import EventMergeRequest, EventSplitRequest
+from packages.clustering.services import EventClusterMaintenanceService
 from packages.database.models import EventStatus
 from packages.database.session import get_database_session
 from packages.events.services import EventService
@@ -51,11 +53,13 @@ async def list_events(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     status: EventStatus | None = None,
+    include_merged: bool = False,
 ) -> EventPage:
     result = await EventService(session).list(
         page=page,
         page_size=page_size,
         status=status.value if status is not None else None,
+        include_merged=include_merged,
     )
     return EventPage(
         items=[EventResponse.model_validate(item) for item in result.items],
@@ -123,3 +127,36 @@ async def detach_event_signal(
         actor=actor,
     )
     return Response(status_code=204)
+
+
+@router.post("/{target_event_id}/merge", response_model=EventResponse)
+async def merge_event(
+    target_event_id: UUID,
+    payload: EventMergeRequest,
+    session: Session,
+    actor: Actor,
+) -> EventResponse:
+    event = await EventClusterMaintenanceService(session).merge(
+        target_event_id=target_event_id,
+        source_event_id=payload.source_event_id,
+        reason=payload.reason,
+        actor=actor,
+    )
+    return EventResponse.model_validate(event)
+
+
+@router.post("/{event_id}/split", response_model=EventResponse, status_code=201)
+async def split_event(
+    event_id: UUID,
+    payload: EventSplitRequest,
+    session: Session,
+    actor: Actor,
+) -> EventResponse:
+    event = await EventClusterMaintenanceService(session).split(
+        event_id=event_id,
+        signal_ids=payload.signal_ids,
+        title=payload.title,
+        reason=payload.reason,
+        actor=actor,
+    )
+    return EventResponse.model_validate(event)

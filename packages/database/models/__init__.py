@@ -1,6 +1,15 @@
 """Import all ORM models so Base.metadata and Alembic see a complete schema."""
 
 from packages.database.models.audit import ConfigurationChangeLog
+from packages.database.models.clustering import (
+    MatchDecisionType,
+    MatchOverrideDecision,
+    MatchPrimaryMethod,
+    SignalEventSuppressionRecord,
+    SignalFingerprintRecord,
+    SignalMatchDecisionRecord,
+    SignalMatchOverrideRecord,
+)
 from packages.database.models.connectors import (
     ConnectorDefinition,
     ConnectorInstance,
@@ -57,6 +66,9 @@ __all__ = [
     "EventSignalRecord",
     "EventSignalRelation",
     "EventStatus",
+    "MatchDecisionType",
+    "MatchOverrideDecision",
+    "MatchPrimaryMethod",
     "PlatformAccount",
     "PlatformRiskEvent",
     "RawSignalCommentRecord",
@@ -65,5 +77,9 @@ __all__ = [
     "SchedulerInstance",
     "ScheduleType",
     "SignalEmbeddingRecord",
+    "SignalEventSuppressionRecord",
+    "SignalFingerprintRecord",
+    "SignalMatchDecisionRecord",
+    "SignalMatchOverrideRecord",
     "Source",
 ]

@@ -38,6 +38,7 @@ class EventResponse(BaseModel):
     keywords: list[str]
     source_count: int
     platform_count: int
+    merged_into_event_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -59,7 +60,7 @@ class EventSignalAttach(BaseModel):
     @model_validator(mode="after")
     def require_current_attachment_method(self) -> EventSignalAttach:
         if self.attached_by is not EventSignalAttachedBy.HUMAN:
-            raise ValueError("M3-A Admin API 仅允许 attached_by=human")
+            raise ValueError("Admin Event API 仅允许人工 attached_by=human")
         return self
 
 

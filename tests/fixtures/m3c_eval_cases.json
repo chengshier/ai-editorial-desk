@@ -1,0 +1,14 @@
+[
+  {"id":"exact-content-zh","label":"exact_duplicate","title":"暴雨导致地铁临时停运","text":"官方称三号线将在晚间恢复运营","group":"metro-rain"},
+  {"id":"near-rewrite-zh","label":"near_duplicate","title":"暴雨导致地铁临时停运","text":"官方称三号线将在晚间恢复运营。最新","group":"metro-rain"},
+  {"id":"same-event-media-zh","label":"same_event","title":"三号线暴雨停运引发通勤延误","text":"当地媒体报道车站正在组织乘客疏散","group":"metro-rain"},
+  {"id":"official-response-zh","label":"same_event","title":"地铁公司回应三号线停运","text":"运营方表示受暴雨影响并公布恢复时间","group":"metro-rain"},
+  {"id":"same-topic-other-city-zh","label":"distinct","title":"另一城市地铁二号线临时停运","text":"当地因设备检修暂停部分区段运营","group":"other-city-metro"},
+  {"id":"food-other-city-zh","label":"distinct","title":"某市通报食品安全抽检","text":"监管部门发现餐饮门店问题并要求整改","group":"food-safety"},
+  {"id":"far-time-same-keyword-zh","label":"ambiguous","title":"三号线暴雨停运旧闻","text":"三年前同线路也曾因暴雨暂停运营","group":"historic-metro"},
+  {"id":"unrelated-zh","label":"distinct","title":"本地球队夺得联赛冠军","text":"球迷在主场庆祝赛季冠军","group":"sports"},
+  {"id":"same-event-en","label":"same_event","title":"Metro line closes after flash flooding","text":"Transit agency says service will resume tonight","group":"metro-rain"},
+  {"id":"near-en","label":"near_duplicate","title":"Metro line closes after flash flooding","text":"Transit agency says service will resume tonight!","group":"metro-rain"},
+  {"id":"cross-platform-zh","label":"same_event","title":"网友拍到三号线站外积水","text":"视频显示乘客在暴雨中等待恢复运营","group":"metro-rain"},
+  {"id":"short-empty-edge","label":"edge","title":"   ","text":"","group":"none"}
+]
