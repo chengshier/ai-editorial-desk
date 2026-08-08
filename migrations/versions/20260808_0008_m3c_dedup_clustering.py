@@ -39,7 +39,7 @@ def upgrade() -> None:
     op.create_index("ix_events_merged_into_event_id", "events", ["merged_into_event_id"])
 
     op.drop_constraint(
-        "ck_event_signals_event_signal_relation",
+        op.f("ck_event_signals_event_signal_relation"),
         "event_signals",
         type_="check",
     )
@@ -258,7 +258,7 @@ def downgrade() -> None:
     op.drop_table("signal_fingerprints")
 
     op.drop_constraint(
-        "ck_event_signals_event_signal_relation",
+        op.f("ck_event_signals_event_signal_relation"),
         "event_signals",
         type_="check",
     )
@@ -269,6 +269,6 @@ def downgrade() -> None:
     )
 
     op.drop_index("ix_events_merged_into_event_id", table_name="events")
-    op.drop_constraint("ck_events_event_not_merged_into_self", "events", type_="check")
+    op.drop_constraint(op.f("ck_events_event_not_merged_into_self"), "events", type_="check")
     op.drop_constraint("fk_events_merged_into_event_id", "events", type_="foreignkey")
     op.drop_column("events", "merged_into_event_id")
