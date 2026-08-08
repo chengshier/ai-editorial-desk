@@ -189,3 +189,18 @@ M2 Real-world Validation NOT COMPLETE
 - 403 / 406 / 429 / CAPTCHA / automation detected / login expired / account restricted / blocked / abnormal 等信号出现时立即停止，不重试、不切换账号/Profile/代理。
 
 因此，**允许 M3 Engineering 开始不代表 M2 Real Smoke VERIFIED，也不代表 M2 Real-world Validation Complete**。
+
+## D-021 M3-B Embedding artifact 与 exact recall
+
+Embedding 在 M3-B 中正式定义为 RawSignal 之上的**可重建派生数据**：
+
+- 使用独立 `signal_embeddings`，不在 `raw_signals` 直接放单版本 vector；
+- Embedding artifact 按 `UNIQUE(signal_id, embedding_version)` 版本化，同一 Signal 的历史版本可以并存，模型升级不得覆盖旧向量；
+- `embedding_version` 表达 input schema、preprocessing、provider/model 配置与 dimensions 的稳定组合语义，不等同于 `model_name`；同 version 下输入或配置语义变化必须报冲突并要求升级 version；
+- 当前 `input_schema_version = signal-text-v1`，只使用规范化后的 RawSignal `title + text`，最终实际 Provider 输入计算 SHA-256 保存 `input_hash`；
+- Python 正式使用 `pgvector` ORM integration，向量列采用 dimensionless `VECTOR()`，每条 artifact 单独保存 `dimensions`；Recall 只能比较相同 `embedding_version + dimensions`；
+- Alembic 从 M3-B 起使用 `CREATE EXTENSION IF NOT EXISTS vector` 保证数据库能力可用；downgrade 不 `DROP EXTENSION vector`，因为 extension 是共享数据库能力；
+- M3-B 使用 PostgreSQL **exact cosine recall**，统一 `similarity = 1 - cosine_distance`，similarity 越大表示越相似；
+- M3-B 不建立 HNSW / IVFFlat。ANN 只有在真实数据规模证明 exact search 不可接受时，才进入后续性能阶段设计与调优；
+- Recall 只返回相似候选，不执行 Dedup / Clustering、不自动创建或合并 Event、不自动写 `EventSignal attached_by=embedding`；M3-C 才消费这些候选形成聚类判断；
+- M3-B 只建立 Embedding 专用 Provider Protocol，不实现通用 AI Gateway；生产代码不注册 Fake Provider，测试 Provider 仅存在于 tests；通用 Provider/Model Routing、Chat Completion、Prompt Registry 等仍属于 M4。
