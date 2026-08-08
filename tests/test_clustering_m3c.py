@@ -60,6 +60,7 @@ async def test_clustering_create_attach_distinct_and_ambiguous_flow(db_session) 
     assert event_one.source_count == 1
     assert event_one.platform_count == 2
     assert event_one.first_seen_at == base_time
+    await db_session.commit()
 
     signal_c = await create_m3c_signal(
         db_session,
