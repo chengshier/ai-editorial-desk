@@ -45,6 +45,7 @@ def _summary(result: object) -> str:
         f"pair_precision: {pair.precision:.4f}",
         f"pair_recall: {pair.recall:.4f}",
         f"pair_f1: {pair.f1:.4f}",
+        f"ambiguous_count: {pair.ambiguous_count}",
         f"coverage: {pair.coverage:.4f}",
         f"abstention_rate: {pair.abstention_rate:.4f}",
         f"cluster_pairwise_precision: {cluster.pairwise_precision:.4f}",
@@ -55,7 +56,10 @@ def _summary(result: object) -> str:
         "human_override_respect_rate: "
         f"{evaluation.human_override_respect_rate:.4f}",  # type: ignore[attr-defined]
         f"dataset_size: {performance.dataset_size}",
+        f"candidate_top_k: {performance.candidate_top_k}",
         f"pair_query_count: {performance.pair_query_count}",
+        f"recall_query_count: {performance.recall_query_count}",
+        f"clustering_processed_count: {performance.clustering_processed_count}",
         f"embedding_dimensions: {performance.embedding_dimensions}",
         f"elapsed_ms: {performance.elapsed_ms:.3f}",
     ]
