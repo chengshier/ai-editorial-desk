@@ -1,3 +1,4 @@
+from pgvector.sqlalchemy import VECTOR
 from sqlalchemy.dialects.postgresql import JSONB
 
 from packages.database.base import Base
@@ -6,6 +7,7 @@ from packages.database.models import (
     ConnectorRun,
     RawSignalCommentRecord,
     RawSignalRecord,
+    SignalEmbeddingRecord,
 )
 from packages.database.types import SanitizedJSONB
 
@@ -22,6 +24,7 @@ EXPECTED_TABLES = {
     "raw_signal_comments",
     "events",
     "event_signals",
+    "signal_embeddings",
     "collection_budgets",
     "collection_budget_usage",
     "collection_schedules",
@@ -57,3 +60,9 @@ def test_raw_signal_comment_payload_uses_sanitized_jsonb() -> None:
         RawSignalCommentRecord.__table__.c.raw_payload.type,
         SanitizedJSONB,
     )
+
+
+def test_signal_embedding_uses_dimensionless_pgvector_type() -> None:
+    column_type = SignalEmbeddingRecord.__table__.c.embedding.type
+    assert isinstance(column_type, VECTOR)
+    assert column_type.dim is None
