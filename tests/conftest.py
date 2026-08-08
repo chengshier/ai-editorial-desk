@@ -28,6 +28,10 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "signal_match_decisions",
+    "signal_match_overrides",
+    "signal_event_suppressions",
+    "signal_fingerprints",
     "signal_embeddings",
     "event_signals",
     "events",
