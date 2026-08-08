@@ -3,8 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from typing import Any
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright  # type: ignore[import-not-found]
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -17,7 +18,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _connect_existing(port: int):  # type: ignore[no-untyped-def]
+async def _connect_existing(port: int) -> tuple[Any, Any]:
     playwright = await async_playwright().start()
     direct = f"ws://127.0.0.1:{port}/devtools/browser"
     try:
@@ -30,7 +31,7 @@ async def _connect_existing(port: int):  # type: ignore[no-untyped-def]
 
 
 async def _run(args: argparse.Namespace) -> dict[str, object]:
-    playwright = None
+    playwright: Any | None = None
     try:
         playwright, browser = await _connect_existing(args.port)
         contexts = browser.contexts
