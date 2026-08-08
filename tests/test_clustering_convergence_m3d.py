@@ -5,8 +5,8 @@ from sqlalchemy import select
 
 from packages.clustering.evaluation import normalized_cluster_partition
 from packages.clustering.services import (
-    ClusterOutcomeStatus,
     ClusteringBatchProcessor,
+    ClusterOutcomeStatus,
     EventClusteringService,
 )
 from packages.database.models import EventSignalRecord
