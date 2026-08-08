@@ -88,7 +88,23 @@ PR 保持 Open，不自行合并；M3 未开始。
 - `python -m scripts.check_m2_smoke_environment`：零平台请求、只读本地环境 preflight；
 - `python -m scripts.check_m2_smoke_login`：未来人工登录后使用的 login-only preflight；先过 environment gate，再只连接 localhost CDP 并检查登录标记是否存在，不导航页面、不执行内容采集、不写 Validation。
 
-Environment preflight 不读取 Cookie，不运行 CollectorRuntime，不创建 Run，不自动创建 Budget，不自动修复账号状态；只输出 READY/BLOCKED 与安全原因。
+Environment preflight 不读取 Cookie，不运行 CollectorRuntime，不创建 Run，不自动创建或 reserve Budget，不自动修复账号状态；它只读检查显式 Budget 的静态低量上限与当前 `CollectionBudgetUsage` 当日剩余额度，并输出 READY/BLOCKED 与安全原因。
+
+### 5.2 当前离线 CI 基线
+
+M2-D 本轮 offline readiness 代码基线：
+
+- HEAD：`06007c7807bb8413046734dbaf85ff9eafe36475`；
+- GitHub Actions：CI #175，run id `31242105740`，completed / success；
+- `ruff check .`：success；
+- `mypy apps packages`：success，128 source files；
+- `pytest`：**240 passed / 1 warning**；
+- Alembic：`upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 全部 success；
+- Definition sync 第一次：`created=11 / updated=0 / unchanged=0 / failed=0`；
+- Definition sync 第二次：`created=0 / updated=0 / unchanged=11 / failed=0`；
+- Web：lint / typecheck / unit tests / production build 全部 success。
+
+该 CI 只证明离线工程状态，不产生真实平台访问、真实 Run 或 PASSED Validation。
 
 ---
 
@@ -215,7 +231,7 @@ M2 完成
 
 剩余条件至少包括：
 
-1. 当前离线 readiness batch 完整 CI 通过；
+1. 当前离线 readiness batch 的最终 PR HEAD 继续保持完整 CI 全绿；
 2. B站真实低量 Detail / Search / Comments / Resume 按 Gate 验证并形成真实 Run evidence；
 3. 知乎真实低量验证；
 4. 微博在 Search Gate 仍 BLOCKED 的前提下确定最终 M2 验收策略，或未来由有证据的 upstream 能力解除该 Gate；
