@@ -8,9 +8,9 @@ from apps.api.auth import require_actor_id, require_admin_token
 from apps.api.schemas.m3c import (
     ClusterBatchRequest,
     ClusterBatchResponse,
-    ClusterOutcomeResponse,
     ClusteringPreviewRequest,
     ClusteringPreviewResponse,
+    ClusterOutcomeResponse,
     ClusterSignalRequest,
     FingerprintPreviewResponse,
     MatchDecisionResponse,
