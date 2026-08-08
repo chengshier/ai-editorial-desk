@@ -77,9 +77,12 @@ async def test_concurrent_reprocess_apply_converges_without_duplicate_move(db_se
                 confirmed=True,
             )
 
-    left, right = await asyncio.gather(
-        apply_once("m3d-concurrent-left"),
-        apply_once("m3d-concurrent-right"),
+    left, right = await asyncio.wait_for(
+        asyncio.gather(
+            apply_once("m3d-concurrent-left"),
+            apply_once("m3d-concurrent-right"),
+        ),
+        timeout=30.0,
     )
     assert left.scanned == right.scanned == 2
     memberships = list(
