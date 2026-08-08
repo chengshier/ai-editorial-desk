@@ -30,7 +30,13 @@ class ClusterPolicy:
     def __post_init__(self) -> None:
         if not self.algorithm_version.strip() or not self.fingerprint_version.strip():
             raise ValueError("algorithm/fingerprint version must be non-empty")
-        if not 0 <= self.simhash_duplicate_max_distance <= self.simhash_candidate_max_distance <= 64:
+        valid_simhash_distances = (
+            0
+            <= self.simhash_duplicate_max_distance
+            <= self.simhash_candidate_max_distance
+            <= 64
+        )
+        if not valid_simhash_distances:
             raise ValueError("invalid SimHash distance policy")
         for value in (
             self.embedding_same_event_threshold,
