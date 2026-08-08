@@ -55,7 +55,10 @@ class SignalFingerprintRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "fingerprint_version",
             name="uq_signal_fingerprints_signal_version",
         ),
-        CheckConstraint("char_length(fingerprint_version) > 0", name="fingerprint_version_nonempty"),
+        CheckConstraint(
+            "char_length(fingerprint_version) > 0",
+            name="fingerprint_version_nonempty",
+        ),
         CheckConstraint("char_length(input_hash) = 64", name="fingerprint_input_hash_sha256"),
         CheckConstraint("simhash ~ '^[0-9a-f]{16}$'", name="simhash_hex64"),
         CheckConstraint("token_count > 0", name="fingerprint_token_count_positive"),
@@ -84,7 +87,10 @@ class SignalMatchDecisionRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         ),
         CheckConstraint("left_signal_id < right_signal_id", name="match_pair_canonical_order"),
         CheckConstraint("score >= 0 AND score <= 1", name="match_score_range"),
-        CheckConstraint("char_length(algorithm_version) > 0", name="match_algorithm_version_nonempty"),
+        CheckConstraint(
+            "char_length(algorithm_version) > 0",
+            name="match_algorithm_version_nonempty",
+        ),
         Index("ix_signal_match_decisions_left", "left_signal_id"),
         Index("ix_signal_match_decisions_right", "right_signal_id"),
         Index("ix_signal_match_decisions_algorithm", "algorithm_version"),
