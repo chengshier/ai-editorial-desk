@@ -49,6 +49,9 @@ jobs:
       - name: Mypy
         run: mypy apps packages
 
+      - name: M3 concurrent reprocess targeted
+        run: timeout 90s pytest -q -s tests/test_clustering_reprocess_concurrency_m3d.py
+
       - name: Pytest
         run: pytest
 
