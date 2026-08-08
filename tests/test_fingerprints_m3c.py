@@ -7,6 +7,7 @@ from packages.clustering.fingerprints import (
     FingerprintInputBuilder,
     hamming_distance,
 )
+from packages.clustering.policy import DEFAULT_CLUSTER_POLICY
 from packages.database.models import RawSignalRecord
 
 
@@ -43,8 +44,14 @@ def test_chinese_light_rewrite_has_small_distance() -> None:
         _signal("本地球队夺得联赛冠军", "球迷在主场庆祝赛季冠军")
     )
     assert left is not None and right is not None and unrelated is not None
-    assert hamming_distance(left.simhash, right.simhash) <= 4
-    assert hamming_distance(left.simhash, unrelated.simhash) > 4
+    assert (
+        hamming_distance(left.simhash, right.simhash)
+        <= DEFAULT_CLUSTER_POLICY.simhash_duplicate_max_distance
+    )
+    assert (
+        hamming_distance(left.simhash, unrelated.simhash)
+        > DEFAULT_CLUSTER_POLICY.simhash_duplicate_max_distance
+    )
 
 
 def test_english_is_not_dependent_on_case_or_spacing() -> None:
