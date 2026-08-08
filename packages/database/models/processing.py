@@ -8,9 +8,9 @@ from uuid import UUID
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from packages.database.base import CreatedAtMixin, UUIDPrimaryKeyMixin, Base
-from packages.database.types import SanitizedJSONB, UTCDateTime, string_enum, utc_now
+from packages.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
 from packages.database.models.events import EventSignalAttachedBy
+from packages.database.types import SanitizedJSONB, UTCDateTime, string_enum, utc_now
 
 
 class ClusteringProcessingMode(StrEnum):
@@ -41,11 +41,18 @@ class ClusteringProcessingRunRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "clustering_processing_runs"
     __table_args__ = (
-        CheckConstraint("char_length(algorithm_version) > 0", name="processing_algorithm_version_nonempty"),
+        CheckConstraint(
+            "char_length(algorithm_version) > 0",
+            name="processing_algorithm_version_nonempty",
+        ),
         CheckConstraint("requested_count >= 0", name="processing_requested_count_nonnegative"),
         CheckConstraint("processed_count >= 0", name="processing_processed_count_nonnegative"),
         Index("ix_clustering_processing_runs_status_started", "status", "started_at"),
-        Index("ix_clustering_processing_runs_algorithm_started", "algorithm_version", "started_at"),
+        Index(
+            "ix_clustering_processing_runs_algorithm_started",
+            "algorithm_version",
+            "started_at",
+        ),
     )
 
     mode: Mapped[ClusteringProcessingMode] = mapped_column(
@@ -62,11 +69,24 @@ class ClusteringProcessingRunRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     dataset_version: Mapped[str | None] = mapped_column(String(100))
     actor: Mapped[str | None] = mapped_column(String(255))
     started_at: Mapped[datetime] = mapped_column(
-        UTCDateTime(), nullable=False, default=utc_now, server_default=text("CURRENT_TIMESTAMP")
+        UTCDateTime(),
+        nullable=False,
+        default=utc_now,
+        server_default=text("CURRENT_TIMESTAMP"),
     )
     finished_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
-    requested_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
-    processed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    requested_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    processed_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
     counters: Mapped[dict[str, Any]] = mapped_column(
         SanitizedJSONB(), nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
@@ -81,11 +101,22 @@ class EventAssignmentRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "event_assignment_records"
     __table_args__ = (
-        CheckConstraint("char_length(algorithm_version) > 0", name="assignment_algorithm_version_nonempty"),
+        CheckConstraint(
+            "char_length(algorithm_version) > 0",
+            name="assignment_algorithm_version_nonempty",
+        ),
         Index("ix_event_assignment_records_signal_created", "signal_id", "created_at"),
         Index("ix_event_assignment_records_event_created", "event_id", "created_at"),
-        Index("ix_event_assignment_records_algorithm_created", "algorithm_version", "created_at"),
-        Index("ix_event_assignment_records_run_created", "processing_run_id", "created_at"),
+        Index(
+            "ix_event_assignment_records_algorithm_created",
+            "algorithm_version",
+            "created_at",
+        ),
+        Index(
+            "ix_event_assignment_records_run_created",
+            "processing_run_id",
+            "created_at",
+        ),
     )
 
     signal_id: Mapped[UUID] = mapped_column(
