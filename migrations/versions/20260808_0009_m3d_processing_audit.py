@@ -24,7 +24,7 @@ JSONB = postgresql.JSONB(astext_type=sa.Text())
 def upgrade() -> None:
     op.create_table(
         "clustering_processing_runs",
-        sa.Column("mode", sa.String(length=7), nullable=False),
+        sa.Column("mode", sa.String(length=8), nullable=False),
         sa.Column("status", sa.String(length=9), server_default=sa.text("'pending'"), nullable=False),
         sa.Column("algorithm_version", sa.String(length=100), nullable=False),
         sa.Column("dataset_version", sa.String(length=100), nullable=True),
