@@ -170,16 +170,15 @@ class EventService:
                 attached_by=attached_by,
             )
             changed = created
-            if not created and attached_by is EventSignalAttachedBy.HUMAN:
-                changed = (
-                    association.attached_by is not EventSignalAttachedBy.HUMAN
-                    or association.relation is not relation
-                    or association.confidence != confidence
-                )
-                if changed:
-                    association.relation = relation
-                    association.confidence = confidence
-                    association.attached_by = EventSignalAttachedBy.HUMAN
+            if (
+                not created
+                and attached_by is EventSignalAttachedBy.HUMAN
+                and association.attached_by is not EventSignalAttachedBy.HUMAN
+            ):
+                association.relation = relation
+                association.confidence = confidence
+                association.attached_by = EventSignalAttachedBy.HUMAN
+                changed = True
 
             if attached_by is EventSignalAttachedBy.HUMAN:
                 await self.suppressions.deactivate(signal_id, event_id)
