@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, update
@@ -25,7 +25,8 @@ from packages.database.models import (
 def canonical_signal_pair(left_signal_id: UUID, right_signal_id: UUID) -> tuple[UUID, UUID]:
     if left_signal_id == right_signal_id:
         raise ValueError("signal pair must contain two different signals")
-    return tuple(sorted((left_signal_id, right_signal_id), key=lambda value: value.int))  # type: ignore[return-value]
+    ordered = sorted((left_signal_id, right_signal_id), key=lambda value: value.int)
+    return ordered[0], ordered[1]
 
 
 class FingerprintRepository:
@@ -278,7 +279,9 @@ class ClusteringQueryRepository:
         )
         return (await self.session.execute(statement)).scalar_one_or_none()
 
-    async def exact_candidates(self, target: RawSignalRecord) -> list[RawSignalRecord]:
+    async def exact_candidates(
+        self, target: RawSignalRecord, *, limit: int
+    ) -> list[RawSignalRecord]:
         nonempty_text = or_(
             func.length(func.trim(func.coalesce(RawSignalRecord.title, ""))) > 0,
             func.length(func.trim(func.coalesce(RawSignalRecord.text, ""))) > 0,
@@ -297,6 +300,7 @@ class ClusteringQueryRepository:
             select(RawSignalRecord)
             .where(RawSignalRecord.id != target.id, or_(*rules))
             .order_by(RawSignalRecord.id.asc())
+            .limit(limit)
         )
         return list((await self.session.scalars(statement)).all())
 
