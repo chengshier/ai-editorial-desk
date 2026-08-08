@@ -29,6 +29,7 @@ apps/web/node_modules/
 apps/web/dist/
 
 # Runtime data
+.runtime/
 logs/
 data/
 cache/

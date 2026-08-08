@@ -118,6 +118,8 @@ async def _setup(
         )
     )
     assert definition is not None
+    if not definition.is_enabled:
+        definition.is_enabled = True
     definition_id = definition.id
     await db_session.commit()
     instance = await ConnectorInstanceService(db_session).create(

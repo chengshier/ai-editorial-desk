@@ -2,36 +2,45 @@
 
 ## 当前阶段
 
-- **M1-A：已完成并合并**；
-- **M1-B：已完成并合并**；
-- **M1-C：已完成并合并**；
-- **M1-D：已完成并通过 CI，PR #6 已合并**；
-- **M1：已形成当前 `main` 完整基线**；
+- **M1：已完成并合并**；
 - **M2-A：已完成并合并**；
-- **M2-B：已完成开发与 CI 验收，等待 PR #8 合并**；
-- **M2-C：未开始**；
-- **M2-D：未开始**；
-- **M2 整体：尚未完成**。
+- **M2-B：已完成并合并**；
+- **M2-C：已完成并合并**；
+- **M2-D Engineering：已完成，等待 PR #10 合并**；
+- **M2 Real Smoke Validation：DEFERRED / NOT_TESTED**；
+- **M2 Engineering：COMPLETE**；
+- **M2 Real-world Validation：NOT COMPLETE**；
+- **M3：未开始，但 PR #10 合并后允许进入**。
 
-当前 M2-B 分支：
+当前 M2-D 分支：
 
 ```text
-feature/m2b-platform-mappers
+feature/m2d-first-platform-validation
 ```
 
-下一步必须在 PR #8 合并后，从最新 `main` 独立创建 M2-C 分支；不要从 M2-B feature 分支继续派生，也不要提前进入 M2-C / M2-D。
+当前 PR：
+
+```text
+#10 feat: 完成 M2-D 离线验证准备与工程收口
+```
+
+PR #10 合并后，必须从**最新 `main`** 独立创建 M3-A 分支并开启独立 M3 窗口；**不要从 `feature/m2d-first-platform-validation` 继续派生 M3**。
+
+Real Smoke 延后只表示当前本地真实联调条件未就绪，不允许把 NOT_TESTED 改写为 PASSED，也不代表 M2 Real-world Validation 已完成。
 
 ## 必读文档顺序
 
 1. `DECISIONS.md`
-2. `M1_ACCEPTANCE_REPORT.md`
-3. `AI编辑部_综合开发实施规划_V1.2.md`
-4. `AI编辑部_技术开发文档_V1.2.md`
-5. `AI编辑部_PRD_V1.2.md`
-6. `CHANGELOG.md`
-7. `MEDIACRAWLER_LOCAL_CHANGES.md`
-8. `../third_party/MEDIACRAWLER_UPSTREAM.md`
-9. `../third_party/README.md`
+2. `M2_ACCEPTANCE_REPORT.md`
+3. `M2_REAL_SMOKE_SETUP.md`
+4. `M1_ACCEPTANCE_REPORT.md`
+5. `AI编辑部_综合开发实施规划_V1.2.md`
+6. `AI编辑部_技术开发文档_V1.2.md`
+7. `AI编辑部_PRD_V1.2.md`
+8. `CHANGELOG.md`
+9. `MEDIACRAWLER_LOCAL_CHANGES.md`
+10. `../third_party/MEDIACRAWLER_UPSTREAM.md`
+11. `../third_party/README.md`
 
 冲突优先级：DECISIONS → 综合开发实施规划 → 技术开发文档 → PRD。
 
@@ -86,66 +95,34 @@ third_party/MediaCrawler/
 
 许可证：`NON-COMMERCIAL LEARNING LICENSE 1.1`。
 
-M2-A / M2-B 均不更新上游版本，通过 Wrapper / Adapter / Mapper 完成主系统集成，**不修改 vendored MediaCrawler 业务源码**。上游来源、LICENSE 与 third-party 记录必须保留。
-
-## M2-A Versioned Protocol
-
-### Invocation
-
-`MediaCrawlerInvocation` 当前版本：
+M2-A / M2-B / M2-C 均保持主系统职责在 Wrapper / Adapter / Mapper / Runtime；M2-D 仅对以下两个 vendored core 做经过明确授权的最小低量 search compatibility patch：
 
 ```text
-1.0
+third_party/MediaCrawler/media_platform/bilibili/core.py
+third_party/MediaCrawler/media_platform/zhihu/core.py
 ```
 
-包含：
+两处都不修改登录、Cookie、CDP、Signature、Risk Guard、proxy、stealth、CAPTCHA 或账号逻辑。微博及其他平台没有新增 vendored patch。上游来源、LICENSE 与 third-party 记录必须保留。
 
-- protocol_version
-- run_id
-- platform
-- mode
-- source_id
-- keyword
-- creator_id
-- content_ids
-- requested_limit
-- comment_limit
-- include_comments
-- include_subcomments
-- checkpoint
-- account_ref
-- browser_profile_ref
-- timeout_seconds
+## 当前 Versioned Protocol
 
-Invocation 使用 Pydantic v2，必须可 JSON 序列化；不传 ORM、Session、DATABASE_URL、Admin Token、明文 Cookie/Token/Authorization。
+`MediaCrawlerInvocation` / `MediaCrawlerResultEnvelope` 当前主系统协议版本：
 
-### Result
+```text
+1.1
+```
 
-`MediaCrawlerResultEnvelope` 包含：
+Invocation 只传可 JSON 序列化的 Domain Model，不传 ORM、Session、DATABASE_URL、Admin Token、明文 Cookie/Token/Authorization。
 
-- protocol_version
-- run_id
-- platform
-- status
-- items
-- comments
-- checkpoint
-- counters
-- warnings
-- risk_events
-- errors
-- started_at
-- finished_at
-
-stdout/stderr 只作为受限诊断，不作为业务数据协议。
+Result Envelope 继续携带 run/platform/status/items/comments/checkpoint/counters/warnings/risk_events/errors/timestamps 等标准字段；stdout/stderr 只作为受限诊断，不作为业务数据协议。
 
 ## Safe Subprocess
 
-M2-A runner：
+当前 runner：
 
 - 每个 Run 创建独立安全临时目录；
 - `--save_data_path` 由主系统决定；
-- 使用 JSONL 作为 vendored 输出边界，并由主系统生成/校验 Result Envelope；
+- 使用 JSONL / Result Envelope 作为 vendored 输出边界；
 - 限制 JSONL、Envelope 和 stdout/stderr 大小；
 - 拒绝结果 symlink / 路径逃逸；
 - malformed JSON、missing result、version mismatch 明确失败；
@@ -195,16 +172,17 @@ Adapter 只报告标准错误；现有 Risk Guard 决定处置。以下风险候
 
 - `MediaCrawlerConnector` 继续使用现有 `ConnectorRegistry`；
 - 七个平台继续共享 `connector_type=mediacrawler`，platform 由 Definition 决定；
-- CollectorRuntime 继续在调用 Connector 前做 Preflight、Budget 和 Run 领取；
+- CollectorRuntime 调用 Connector 前继续做 Preflight、Budget 和 Run 领取；
 - Connector 不写 ORM、不持有 Session、不自行 commit；
 - 主系统 `connector_checkpoints` 始终权威；
-- Invocation 可携带 checkpoint，Result 可返回 candidate；
+- Invocation 携带 checkpoint，Result 返回 candidate；
 - 只有 RawSignal 成功提交后 Runtime 才推进 Checkpoint；
-- M2-A / M2-B 不依赖 MediaCrawler 内部数据库。
+- Incremental / Resume 由 M2-C 工程基线正式接通；
+- 主系统不依赖 MediaCrawler 内部数据库。
 
 ## M2-B 七平台 Mapper 与配置能力
 
-M2-B 在 M2-A Result Envelope 之后新增显式平台映射层：
+M2-B 在 M2-A Result Envelope 之后建立显式平台映射层：
 
 ```text
 MediaCrawlerResultEnvelope
@@ -229,107 +207,138 @@ MediaCrawlerResultEnvelope
 
 `*` 小红书当前只开放 `search` 运行模式，可在 search 中显式附带 comments；detail/creator 不开放。
 
-关键保守边界：
+M2-B 完成七平台 Mapper、capabilities/config_schema/ui_schema、`CollectedComment`、`raw_signal_comments`、评论幂等/Budget 与 Web 动态 SchemaForm。M2-B 当时的 `implementation_version` 为 `mediacrawler-m2b-v1`；M2-C 后当前版本已演进为 `mediacrawler-m2c-v1`。
 
-- 微博 / B站 / 抖音 / 快手 / 百度贴吧：开放 search/detail/creator/comments；
-- 知乎：vendored core 存在 creator 逻辑，但 pinned CLI 未正确把 `creator_id` 接入 `ZHIHU_CREATOR_URL_LIST`，因此当前 creator 有效能力为 false；
-- 小红书：detail/creator 依赖带 `xsec_token` 的 URL，普通 config 不允许保存这类敏感值，因此当前仅开放 search，并允许 search 附带 comments；
-- 七平台：homefeed / hotlist 均未开放，不提前进入 M2-C。
+## M2-C 已完成边界
 
-M2-B 同时完成：
+M2-C 已完成并合并，核心工程边界包括：
 
-- 七平台独立 Mapper 与显式 Mapper Registry；
-- 七平台 `capabilities` / `config_schema` / `ui_schema`；
-- `implementation_version=mediacrawler-m2b-v1`；
-- `CollectedComment` Domain Model；
-- PostgreSQL `raw_signal_comments`；
-- 评论统一幂等与数据库并发唯一保护；
-- 评论 Budget 预留/结算；
-- Web 动态 SchemaForm 条件显示增强。
+- Protocol 1.1；
+- Checkpoint / Resume；
+- Incremental；
+- Account / Browser Profile abstraction；
+- SignatureProvider；
+- PlatformRiskSignal；
+- 风险信号不进入普通 retry；
+- stable Browser Profile 与受控本地 runtime 边界；
+- M2-C 最终 CI #131 success，合并后 main CI #132 success。
 
-## Definition 状态语义
+M2-C 没有通过 CI 伪造任何真实平台 PASSED Validation。
+
+## M2-D Engineering 已完成边界
+
+M2-D 当前只完成**离线工程与真实验证准备**，不声称已完成真实平台验证。
+
+已完成：
+
+- 专用低量 Smoke Harness；
+- B站低量 normal search compatibility：`requested_limit=1/3/5` → client `page_size=1/3/5`；
+- 知乎低量 normal search compatibility：复用 pinned client 已有 `page_size → offset/limit`，`requested_limit=1/3/5` → client `page_size=1/3/5`；
+- 微博源码审计：没有已证实的 `page_size/count/limit`，`WEIBO_LOW_VOLUME_SEARCH = BLOCKED`；
+- `docs/M2_REAL_SMOKE_SETUP.md`；
+- `python -m scripts.check_m2_smoke_environment` 零平台请求环境 preflight；
+- `python -m scripts.check_m2_smoke_login` 未来人工登录后的 login-only preflight；
+- Account / Profile / Budget / Risk / Validation 的真实 Smoke Gate 说明；
+- B站 / 知乎 / 微博平台 Validation 事实记录。
+
+当前 M2-D 工程 Gate：
+
+| 平台 | Detail Engineering | Low-volume Search | Real Smoke | Validation |
+|---|---|---|---|---|
+| B站 | READY | READY | NOT_TESTED | NOT_TESTED |
+| 知乎 | READY | READY | NOT_TESTED | NOT_TESTED |
+| 微博 | READY（入口存在） | BLOCKED / Accepted Known Limitation | NOT_TESTED | NOT_TESTED |
+
+微博 Search BLOCKED 已正式作为 **Accepted Known Limitation** 接受，不继续阻塞 M3 Engineering。只有 upstream 明确提供低量参数、新 pinned version 有可验证实现，或正规源码证据证明现有接口支持低量请求时，才重新打开该 Gate。
+
+## Definition / Validation 状态语义
 
 连接器状态必须继续区分：
 
 ```text
-registered != implemented != validated
+registered != implemented != enabled != validated
 ```
 
 - `registered`：Definition 已注册；
 - `implemented`：主系统已有可调用实现；
+- `enabled`：当前运营配置允许调用；
 - `validated`：真实人工低量验证状态。
 
-**Fixture / Mock CI 不得自动生成 PASSED validation。** M2-B 没有任何真实平台被 CI 自动标记 PASSED。
+**Fixture / Mock / CI 不得自动生成 PASSED validation。** Real Smoke Deferred 也绝不能转换为 PASSED。
 
-## M2-A / M2-B 测试边界
+## M2 最终工程 CI
 
-全部离线：
+M2-D 最终工程 HEAD：
 
-- Invocation 序列化/平台/mode/limit/protocol；
-- Result 正常/malformed/version mismatch/missing fields/oversized；
-- subprocess success/timeout/cancel/nonzero/no result/malformed/partial；
-- 403/406/429/CAPTCHA/login expired/permission/automation/account restricted/network timeout/browser disconnect；
-- Fake MediaCrawler Runtime：Run 状态、RawSignal 入库、幂等、Checkpoint、Risk、Budget；
-- 七平台真实 JSONL 结构 Fixture Mapper；
-- 评论 Domain / FK / 幂等 / 并发唯一 / parent / CASCADE / raw_payload 脱敏；
-- capability / allowed_modes 在 subprocess 前拒绝；
-- Web mode 与评论字段条件展示。
+```text
+54149c4fa83922a270a8fe10eaed4499945ca0e6
+```
 
-不连接真实平台，不登录，不扫码，不使用真实 Cookie。
+对应 GitHub Actions：
 
-## CI
+```text
+CI #177
+run id 31242273861
+completed / success
+```
 
-M2-B 继续执行现有完整 CI：
+Python / PostgreSQL：
 
-```bash
-ruff check .
-mypy apps packages
-pytest
-alembic upgrade head
-alembic downgrade -1
-alembic upgrade head
-alembic downgrade base
-alembic upgrade head
-python -m scripts.sync_connector_definitions
-python -m scripts.sync_connector_definitions
+```text
+ruff check .                    success
+mypy apps packages              128 source files / success
+pytest                          240 passed / 1 warning
+Alembic full round trip         success
+Definition sync #2              created=0 / updated=0 / unchanged=11 / failed=0
 ```
 
 Web：
 
-```bash
-npm run lint
-npm run typecheck
-npm test -- --run
-npm run build
+```text
+lint / typecheck / test / build success
 ```
 
-`third_party/MediaCrawler` 不纳入根 Ruff。
+该 CI 没有真实平台访问、登录、扫码、Cookie 注入或真实 PASSED Validation。
 
-## 当前未开始范围
+## Real Smoke 延后策略
 
-M2-C / M2-D 仍未开始，当前不做：
+正式阶段语义：
 
-- 真实登录 / Cookie / 扫码；
-- 真实平台联网或真实 Smoke；
-- vendored Checkpoint / Incremental 增强；
-- Account/Profile vendored 增强；
-- SignatureProvider；
-- HomeFeed / Hotlist 真实发现；
-- 微博 / B站 / 知乎 / 抖音 / 小红书 / 快手 / 贴吧真实低量验证；
-- Event / EventSignal；
-- Embedding；
-- 去重 / 聚类；
-- AI。
+```text
+M2 Engineering Complete
+M2 Real Smoke Validation Deferred / NOT_TESTED
+M2 Real-world Validation NOT COMPLETE
+```
 
-PR #8 合并后才进入 M2-C；M2-D 继续等待后续阶段。
+当前用户暂时无法配置本地真实联调环境，因此真实 Smoke 可以 Deferred，而 M3/M4/M5 Engineering 不再被该环境条件无限阻塞。
+
+未来真实 Smoke 仍必须遵守：dedicated low-value Account、stable Browser Profile、visible existing CDP、极低 Budget、concurrency=1、proxy=false、Risk Guard、403/406/429/CAPTCHA/automation/login/account 异常立即停止、不重试、不换号、不换 Profile、不做 proxy rotation。
+
+在 M5 宣布“真实世界 / Production Validation 完成”之前，必须至少补一次真实端到端平台 Smoke；优先从 B站或知乎开始。
+
+## PR #10 合并后的 M3 入口
+
+PR #10 合并后：
+
+1. 切回并同步最新 `main`；
+2. 确认 PR #10 的 merge 后 main CI 正常；
+3. 开启独立 M3 窗口；
+4. 从最新 `main` 创建独立 M3-A 分支；
+5. 不从 M2-D feature branch 派生。
+
+M3 next：Event / EventSignal、Embedding、Dedup、Clustering。
+
+**当前 M3 尚未开始。**
 
 ## 开发原则
 
 - 一个子阶段一个独立分支、独立 PR；
-- 前一个 PR 合并后才进入下一个；
+- 前一个 PR 合并后才进入下一个工程阶段；
 - 不从 feature 分支继续派生下一阶段；
 - Commit / PR 使用中文；
 - PR 不自行合并；
+- Engineering Complete 与 Real-world Validation Complete 必须分离表达；
+- Deferred / NOT_TESTED 不得伪造 PASSED；
 - 风险错误不普通重试；
 - 不自动换号、不代理轮换、不处理/破解验证码、不伪造指纹、不绕过平台限制；
 - 第三方源码不承载主系统业务职责。

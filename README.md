@@ -2,7 +2,7 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**M1 已完成；M2-A 已完成并已合并；M2-B 已完成开发与 CI 验收，当前等待 PR #8 合并；M2-C / M2-D 未开始，M2 整体尚未完成。** 开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M1 验收证据见 [`docs/M1_ACCEPTANCE_REPORT.md`](docs/M1_ACCEPTANCE_REPORT.md)，MediaCrawler 本地边界见 [`docs/MEDIACRAWLER_LOCAL_CHANGES.md`](docs/MEDIACRAWLER_LOCAL_CHANGES.md)。
+**M1 已完成；M2 Engineering Complete；M2 Real Smoke Validation = DEFERRED / NOT_TESTED。** M2 工程完成不等于真实平台验证完成。PR #10 合并后允许从最新 `main` 独立进入 M3 Engineering；当前 M3 尚未开始。开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M2 验收状态见 [`docs/M2_ACCEPTANCE_REPORT.md`](docs/M2_ACCEPTANCE_REPORT.md)，真实 Smoke 环境指南见 [`docs/M2_REAL_SMOKE_SETUP.md`](docs/M2_REAL_SMOKE_SETUP.md)。
 
 ## 当前采集闭环
 
@@ -16,53 +16,30 @@ AI 编辑部系统：面向短视频创作者的多来源信息发现、资料�
 → RSS / Manual URL / 百度实时热榜 / MediaCrawler Adapter
 → Platform Mapper
 → RawSignal / CollectedComment 标准化与 PostgreSQL 幂等写入
-→ Checkpoint
+→ Checkpoint / Incremental / Resume
 → Run 日志 / stale 检查 / 人工 retry
 → Validation 人工真实验收记录
 ```
 
-M2-A 为 MediaCrawler 七个平台建立了共同的 **implementation adapter available** 基础状态；M2-B 在此基础上补齐七平台独立 Mapper、真实 capabilities/config_schema/ui_schema、统一评论模型与 `raw_signal_comments` 幂等持久化。评论继续受现有 Budget 控制。Fixture / Mock CI 只证明工程实现，不会把任何平台自动标记为真实 validated PASSED。
+M2-A 建立 MediaCrawler 主系统 Adapter / Runtime 集成；M2-B 补齐七平台独立 Mapper、真实 capabilities/config_schema/ui_schema、统一评论模型与 `raw_signal_comments` 幂等持久化；M2-C 补齐 Checkpoint / Incremental / Resume、Account / Browser Profile、SignatureProvider 与风险信号边界；M2-D 完成离线 Smoke Harness、B站/知乎低量请求 compatibility、环境 preflight、login-only preflight 与真实 Smoke 操作指南。
 
-## M2-A MediaCrawler 集成
+Fixture / Mock / CI 只证明工程实现，**不会把任何平台自动标记为真实 validated PASSED**。
 
-```text
-CollectionTask
-→ CollectorRuntime
-→ MediaCrawlerConnector
-→ MediaCrawlerAdapter
-→ MediaCrawlerSubprocessRunner
-→ third_party/MediaCrawler
-→ 受控 JSONL / Result Envelope
-→ CollectionResult / RawSignal
-```
+## M2-D 最终工程状态
 
-主要规则：
+| 项目 | 状态 |
+|---|---|
+| B站 low-volume Detail/Search engineering | READY |
+| 知乎 low-volume Detail/Search engineering | READY |
+| 微博 Detail engineering entry | READY（未实跑） |
+| 微博 low-volume Search | BLOCKED / Accepted Known Limitation |
+| B站 Real Smoke / Validation | NOT_TESTED |
+| 知乎 Real Smoke / Validation | NOT_TESTED |
+| 微博 Real Smoke / Validation | NOT_TESTED |
+| M2 Engineering | COMPLETE |
+| M2 Real-world Validation | NOT COMPLETE |
 
-- 继续使用现有 `CollectorRuntime`、Run、Budget、Risk Guard、Checkpoint 和 RawSignal；
-- `MediaCrawlerConnector` 注册到现有 Implementation Registry，不建立第二套 Registry；
-- `MediaCrawlerInvocation` / `MediaCrawlerResultEnvelope` 使用版本化 Pydantic 协议；
-- stdout/stderr 只作为有大小限制的诊断，不作为业务数据协议；
-- 每个 Run 使用主系统创建的独立临时目录，限制结果大小并校验 JSON、协议版本、Run/Platform 身份；
-- Adapter 不持有 ORM / AsyncSession，不自行提交数据库事务；
-- `connector_checkpoints` 仍是权威，Result 只能返回 checkpoint candidate，最终由 Runtime 在成功入库后推进；
-- 403 / 406 / 429 / CAPTCHA / 登录失效 / 账号受限或异常 / 自动化检测等风险候选进入现有 Risk Guard，不走普通 retry；
-- subprocess 不继承 `DATABASE_URL`、Admin Token 或凭据环境；
-- M2-A 显式关闭 MediaCrawler 代理开关，不实现代理轮换、验证码破解、指纹伪造、自动换号或绕过平台限制；
-- M2-A 全部测试使用 Fixture / Fake subprocess / Mock，不连接真实平台、不登录、不扫码、不使用真实 Cookie。
-
-## M2-B 七平台映射与评论标准化
-
-M2-B 当前已完成开发与 CI 验收，等待 PR #8 合并。主要新增：
-
-- MediaCrawler 七平台独立 Mapper 与显式 Platform Mapper Registry；
-- 七平台真实能力对应的 `capabilities`、`config_schema`、`ui_schema`；
-- 统一 `CollectedComment` Domain Model；
-- PostgreSQL `raw_signal_comments` 与数据库唯一幂等约束；
-- 评论幂等规则与评论 Budget 预留/结算；
-- Result Envelope → Platform Mapper → RawSignal / CollectedComment 正式转换链；
-- Web 继续使用现有动态 SchemaForm，不为七个平台手写独立页面。
-
-当前能力声明保持保守：微博、B站、抖音、快手、贴吧开放 search/detail/creator/comments；知乎开放 search/detail/comments，creator 当前有效能力为 false；小红书当前仅开放 search，并允许 search 附带 comments；七平台 homefeed/hotlist 均未开放。
+微博 pinned client 当前没有已经证实的 `page_size` / `count` / `limit` 能力，因此不猜 API 参数、不逆向接口、不扩展 Signature；该限制不再阻塞 M3 Engineering。未来只有 upstream 明确提供低量参数、新 pinned version 出现可验证实现，或有正规源码证据证明现有接口支持低量请求时，才重新打开微博 Search Gate。
 
 ## MediaCrawler 第三方边界
 
@@ -80,7 +57,14 @@ third_party/MediaCrawler/
 
 许可证：`NON-COMMERCIAL LEARNING LICENSE 1.1`。
 
-**M2-A / M2-B 均未更新上游版本，也未修改 vendored MediaCrawler 业务源码。** 主系统集成逻辑全部放在 `packages/connectors/mediacrawler_adapter/` 等主系统目录。详细记录见 `docs/MEDIACRAWLER_LOCAL_CHANGES.md`。
+M2-D 仅保留两处经过审计的最小 compatibility patch：
+
+```text
+third_party/MediaCrawler/media_platform/bilibili/core.py
+third_party/MediaCrawler/media_platform/zhihu/core.py
+```
+
+两处都只降低 normal search 的真实 page-size/request-volume，不修改登录、Cookie、CDP、Signature、Risk Guard、代理、stealth、CAPTCHA 或账号逻辑。微博和其他平台没有新增 vendored patch。详细记录见 `docs/MEDIACRAWLER_LOCAL_CHANGES.md`。
 
 ## 主要结构
 
@@ -90,7 +74,7 @@ apps/scheduler/                        asyncio + PostgreSQL 持久化 Scheduler
 apps/web/                              React + Vite + TypeScript 内部连接器工作台
 packages/connectors/                   Connector SDK 与现有真实实现
 packages/connectors/mediacrawler_adapter/
-                                      MediaCrawler 协议、Adapter、Runner、Connector、七平台 Mapper
+                                      MediaCrawler 协议、Adapter、Runner、Connector、七平台 Mapper、Smoke readiness
 packages/connector_management/         Definition、Instance、Account、Run、Checkpoint、审计
 packages/collector_runtime/            预检、Budget、Run、Risk 与受控 Runtime
 packages/scheduling/                   Schedule、Lease、stale/retry、Checkpoint 调试、Validation
@@ -134,6 +118,8 @@ npm install
 npm run dev
 ```
 
+真实平台 Smoke 的双 venv、Chrome/Edge CDP 9222、Browser Profile、低价值测试 Account、极低 Budget 与 Validation 操作必须按 `docs/M2_REAL_SMOKE_SETUP.md` 执行；当前 Real Smoke 已正式 Deferred，不要求为进入 M3 Engineering 立即配置。
+
 ## CI 验收命令
 
 Python / PostgreSQL：
@@ -164,16 +150,19 @@ npm run build
 
 ## 当前阶段边界
 
-M2-B 已完成开发与 CI 验收，但 PR #8 尚未合并；**M2 整体尚未完成**。下一步必须在 PR #8 合并后才进入 M2-C。
+M2 最终工程基线已通过 CI #177：Ruff success、mypy 128 source files、pytest 240 passed / 1 warning、Alembic 完整往返、Definition 第二次同步 `unchanged=11 / failed=0`，Web lint/typecheck/test/build 全部 success。
 
-当前仍未实现或未开始：
+当前正式状态：
 
-- vendored Checkpoint / Incremental / Account Profile / SignatureProvider 增强；
-- HomeFeed / 热榜真实发现；
-- 微博、B站、知乎、抖音、小红书、快手、贴吧真实低量验证；
-- Event / EventSignal；
-- Embedding；
-- 去重 / 聚类；
-- AI Gateway / AI Provider / AI 评分 / 稿件生成。
+```text
+M2 Engineering Complete
+Real Smoke Validation Deferred / NOT_TESTED
+M2 Real-world Validation NOT COMPLETE
+M3 Engineering allowed after PR #10 merge
+```
 
-这些属于 M2-C / M2-D 或后续阶段；PR #8 合并前不进入下一子阶段。
+PR #10 合并后，下一步从**最新 `main`** 创建独立 M3-A 分支，不从 M2-D feature branch 继续派生。
+
+M3 next：**Event / EventSignal → Embedding → Dedup → Clustering**。M4/M5 Engineering 后续也可以继续推进，但在 M5 宣布真实世界 / Production Validation 完成之前，必须至少补一次受控的真实端到端平台 Smoke；优先从 B站或知乎开始。
+
+当前 M3 尚未开始，也没有任何真实平台 PASSED Validation。
