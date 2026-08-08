@@ -38,6 +38,7 @@ class EventSignalRelation(StrEnum):
     REACTION = "reaction"
     OFFICIAL_RESPONSE = "official_response"
     CORRECTION = "correction"
+    RELATED = "related"
 
 
 class EventSignalAttachedBy(StrEnum):
@@ -54,9 +55,14 @@ class EventRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("source_count >= 0", name="source_count_nonnegative"),
         CheckConstraint("platform_count >= 0", name="platform_count_nonnegative"),
+        CheckConstraint(
+            "merged_into_event_id IS NULL OR merged_into_event_id <> id",
+            name="event_not_merged_into_self",
+        ),
         Index("ix_events_status", "status"),
         Index("ix_events_first_seen_at", "first_seen_at"),
         Index("ix_events_last_updated_at", "last_updated_at"),
+        Index("ix_events_merged_into_event_id", "merged_into_event_id"),
     )
 
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -93,6 +99,9 @@ class EventRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     platform_count: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
+    )
+    merged_into_event_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("events.id", ondelete="RESTRICT")
     )
 
 
