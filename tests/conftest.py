@@ -28,6 +28,11 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "draft_claim_references",
+    "editorial_drafts",
+    "draft_generation_runs",
+    "editorial_packs",
+    "event_cards",
     "editorial_score_overrides",
     "editorial_scores",
     "editorial_scoring_runs",
