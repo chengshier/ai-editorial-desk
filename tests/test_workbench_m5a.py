@@ -100,15 +100,19 @@ async def test_workbench_api_filters_effective_override_merged_and_safe_projecti
             f"/api/v1/admin/workbench/events/{target.event.id}", headers=ADMIN_HEADERS
         )
         assert detail.status_code == 200
-        assert detail.json()["signal_summary"]["total"] > 0
-        assert detail.json()["draft_summary"]["chain_count"] == 1
+        detail_payload = detail.json()
+        signal_summary = detail_payload["signal_summary"]
+        assert signal_summary["total"] > 0
+        assert signal_summary["total"] == sum(signal_summary["by_relation"].values())
+        assert detail_payload["event"]["source_count"] != signal_summary["total"]
+        assert detail_payload["draft_summary"]["chain_count"] == 1
 
         signals = await client.get(
             f"/api/v1/admin/workbench/events/{target.event.id}/signals",
             headers=ADMIN_HEADERS,
         )
         assert signals.status_code == 200
-        assert signals.json()["total"] == detail.json()["signal_summary"]["total"]
+        assert signals.json()["total"] == signal_summary["total"]
         signal_body = signals.text.casefold()
         assert "raw_payload" not in signal_body
         assert "credential" not in signal_body
