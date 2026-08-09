@@ -1,5 +1,31 @@
 # 文档与架构变更记录
 
+## 2026-08-09 — M4-B Evidence / Claim / Unknowns / Source Provenance
+
+- 确认 PR #15 已合并到 `main`，从 merge 后最新 `main` `feadc610cfc13b9af2240f1ab96385538be28367` 独立创建 `feature/m4b-evidence-claims`，未从 M4-A feature branch 继续派生；
+- 新增 `20260809_0011_m4b_evidence_claims.py` migration 与 `evidence_extraction_runs`、`evidence_claims`、`evidence_claim_sources`、`event_unknowns`，未修改 0010 及更早 migration；
+- EvidenceClaim 正式支持 `fact / allegation / opinion / forecast` 与 `confirmed / investigating / single_source / disputed / false`，并以 `UNIQUE(event_id, claim_fingerprint)` 保证 Event 内幂等；
+- Claim fingerprint 使用 claim type + NFKC/whitespace/casefold 规范化文本的 SHA-256；Unknown 同样使用稳定文本 fingerprint 与 Event 内唯一约束；
+- Evidence source 使用真实 FK 关联表而非裸 UUID 数组，`UNIQUE(claim_id, signal_id)` 保证单一 role；RawSignal FK 使用 `ON DELETE RESTRICT`，避免历史 Evidence 因源数据清理静默消失；
+- AI 与 Human source 都必须通过 EventSignal 验证属于目标 Event；merged source Event 禁止新增/修改 Evidence，明确返回 `EVENT_MERGED + target_event_id`；
+- 新增 `EvidenceInputBuilder`，只读取 signal ID、title/text、author/platform、published/collected time 与 URL metadata；明确排除 raw_payload、credential、Cookie、Authorization、connector config、完整 comments 与 embedding vector；
+- Evidence 输入按 effective time + signal ID 稳定排序，并由 `max_signals`、`max_chars_per_signal`、`max_total_chars` 约束；截断显式记录 signal IDs 与 `truncated=true`；
+- 冻结 `evidence-extraction-v1` Prompt、`evidence-schema-v1` Schema 与 `evidence-service-v1` extraction version；RawSignal 正文明确标记为 UNTRUSTED CONTENT，Prompt + Service 两层防御 prompt injection；
+- AI extraction 严格复用 M4-A `AIGateway.generate_structured(task=evidence_extraction)`，继续经过 Route、Budget、Retry/Fallback、Schema validation、Invocation/Attempt、usage/cost，不建立第二套 Provider/JSON repair；
+- Invocation 固定 `subject_type=event`、`subject_id=event.id` 并保存 prompt/schema version；`EvidenceExtractionRun` 只表达业务执行，不重复保存 Provider token/cost；
+- Provider 网络调用放在数据库事务之外；apply 前重新检查 Event 未 merged 与 Signal membership，不持有 Event 行锁等待模型；
+- AI structured result 只作为候选；Service 无条件忽略模型自行声称的 `confirmed / false`，初始状态只根据实际 supporting/contradicting link 推导；extraction confidence 不等于事实真实性；
+- 新增 Human Claim、source attach/remove、verification、editor note 与 Unknown lifecycle；所有写操作要求 Admin Token + Actor + AuditLog；confirmed 至少一个 support，false 至少一个 contradiction；
+- confirmed Claim 禁止删除最后一个 supporting source，false Claim 禁止删除最后一个 contradicting source；本批不暴露 Claim hard-delete API；
+- Human verification/editor note 与 resolved/dismissed Unknown 不会被后续 AI rerun 覆盖或自动 reopen；
+- Preview 允许经过真实 Gateway 并产生 Invocation/cost，但不写 Claim/Unknown；Apply 对局部无效结果采用 PARTIAL，合法项保存，invalid count/code 写入 ExtractionRun/API/Audit；无来源 Claim 使用 `UNSUPPORTED_CLAIM`，不作为事实落库；
+- route disabled、credential missing、budget exceeded、provider unavailable、malformed/schema-invalid structured output 均明确失败，不 fallback 到 Fake；人工 Claim/Verification 在 Production Provider 未配置时仍可使用；
+- 新增 Evidence Admin API，覆盖 event evidence view、extract、Claim CRUD-lite/source/verify/note 与 Unknown create/update；safe view 不返回 RawSignal full text、raw_payload、API Key、Authorization、完整 Prompt 或 vector；
+- 新增 PostgreSQL/MockTransport 测试，覆盖 Claim/Unknown fingerprint、Source FK/unique/RESTRICT、confidence/Invocation FK、wrong-event source、merged Event、AI confirmed/false 越权、prompt injection、preview/PARTIAL、route/budget/provider failure、Human verification、并发同结果 apply 与 Human-vs-AI 优先级；
+- `Production AI Provider Validation` 继续保持 `NOT_TESTED`；CI Mock/Fake 不改写为 PASSED/VERIFIED；
+- M1/M2/M3/M4-A 状态不回归；本批不实现 Source Credibility、Trend、Editorial Score、Event Card、Draft、Script 或 M5；
+- PR #16 `feat: 完成 M4-B Evidence与Claim证据链基础` 保持 Open，不自行合并。
+
 ## 2026-08-09 — M4-A AI Gateway / Provider / Routing / Cost Governance
 
 - 确认 PR #14 已合并到 `main`，从 merge 后最新 `main` `e87d89a0f2861fe5f7f62010ada3f8e249ac18ef` 独立创建 `feature/m4a-ai-gateway`，未从 M3-D feature branch 继续派生；
