@@ -323,9 +323,12 @@ class EditorialWorkbenchQueryService:
                     .group_by(EventSignalRecord.relation)
                 )
             ).all()
+            by_relation = {
+                relation.value: int(count) for relation, count in relation_rows
+            }
             summary["signal_summary"] = {
-                "total": event.source_count,
-                "by_relation": {relation.value: int(count) for relation, count in relation_rows},
+                "total": sum(by_relation.values()),
+                "by_relation": by_relation,
             }
             latest_pack = (
                 await session.scalars(
