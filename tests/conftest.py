@@ -96,3 +96,15 @@ async def db_session(clean_database: None) -> AsyncIterator[AsyncSession]:
     async with session_factory() as session:
         yield session
         await session.rollback()
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if not report.failed:
+        return
+    message = f"{report.nodeid}\n{report.longrepr}"
+    escaped = (
+        message.replace("%", "%25")
+        .replace("\r", "%0D")
+        .replace("\n", "%0A")
+    )
+    print(f"::error title=pytest first failure::{escaped[:12000]}")
