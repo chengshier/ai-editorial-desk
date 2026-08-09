@@ -29,6 +29,8 @@ EXPECTED_TABLES = {
     "signal_match_decisions",
     "signal_match_overrides",
     "signal_event_suppressions",
+    "clustering_processing_runs",
+    "event_assignment_records",
     "collection_budgets",
     "collection_budget_usage",
     "collection_schedules",

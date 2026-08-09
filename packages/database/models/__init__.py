@@ -23,6 +23,13 @@ from packages.database.models.events import (
     EventSignalRelation,
     EventStatus,
 )
+from packages.database.models.processing import (
+    ClusteringProcessingMode,
+    ClusteringProcessingRunRecord,
+    ClusteringProcessingStatus,
+    EventAssignmentAction,
+    EventAssignmentRecord,
+)
 from packages.database.models.risk import PlatformRiskEvent
 from packages.database.models.runs import (
     ConnectorCheckpoint,
@@ -48,6 +55,9 @@ from packages.database.models.signals import (
 )
 
 __all__ = [
+    "ClusteringProcessingMode",
+    "ClusteringProcessingRunRecord",
+    "ClusteringProcessingStatus",
     "CollectionBudget",
     "CollectionBudgetUsage",
     "CollectionSchedule",
@@ -61,6 +71,8 @@ __all__ = [
     "ConnectorRunTriggerType",
     "ConnectorValidationRecord",
     "ConnectorValidationStatus",
+    "EventAssignmentAction",
+    "EventAssignmentRecord",
     "EventRecord",
     "EventSignalAttachedBy",
     "EventSignalRecord",

@@ -1,5 +1,42 @@
 # 文档与架构变更记录
 
+## 2026-08-09 — M3-D Evaluation / Reprocessing / Engineering Closure
+
+- M3-C PR #13 已人工合并后，从最新 `main` 独立进入 `feature/m3d-evaluation-closure`，未从 M3-C feature 分支继续派生；
+- 新增 `m3-clustering-eval-v1` synthetic/manual 固定工程评测集，显式覆盖 same event、distinct、ambiguous、expected cluster、unassigned 与 human override；
+- 新增 deterministic pair precision/recall/F1、coverage/abstention、cluster pairwise precision/recall/F1、overmerge、fragmentation 等评测指标；
+- 新增 bounded read-only threshold sweep，不自动修改 `DEFAULT_CLUSTER_POLICY`；
+- 新增 migration `20260808_0009_m3d_processing_audit.py`、`clustering_processing_runs` 与 append-only `event_assignment_records`；
+- 新增 bounded、dry-run-first reprocessing：必须显式 signal IDs 或完整 time range，受 max_items 约束，apply 必须 actor + confirmation；
+- reprocess 保留 human membership、distinct override 与 event suppression，不提供 automatic detach，不把人工边界静默反转；
+- 新增 processing-order / batch-boundary convergence、replay、provenance、versioning、human-boundary 与 concurrent reprocess PostgreSQL 回归；
+- 新增 exact recall + clustering engineering performance baseline，不把共享 CI Runner 的绝对毫秒数定义为生产 SLA；
+- 新增 Admin evaluate / reprocess preview / confirmed apply API 与 evaluate/reprocess CLI；
+- 修复 M3-D Admin API 测试错误的 422 期望，使已进入业务层的未知 dataset/policy 与既有 `BusinessValidationError -> 400` 语义一致；
+- 修复性能基线在 exact recall read autobegin 后直接进入 clustering 显式事务导致的 Session 冲突；只修测试事务边界，不放宽生产 Service 事务所有权；
+- 为定位失败临时加入的 pytest diagnostic artifact 已在最终收口前移除；
+- README、START_HERE、M3_ACCEPTANCE_REPORT 与 DECISIONS 已同步到 `M3 Overall Engineering COMPLETE`；
+- 生产云 Embedding Provider、Provider UI、通用模型路由、成本中心与 LLM event judge 按架构决策进入 M4，不在 M3-D 提前实现；
+- M2 状态继续保持 `M2 Engineering COMPLETE`、`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`、`M2 Real-world Validation = NOT COMPLETE`；
+- PR #14 保持 Open，不自行合并；M4 尚未开始，后续只能在 PR #14 人工合并后从最新 `main` 独立创建分支。
+
+## 2026-08-08 — M3-C Dedup / Event Clustering
+
+- PR #12 已合并后从最新 `main` 创建 `feature/m3c-dedup-clustering`，PR #13 最终已人工合并；
+- 新增版本化 `signal_fingerprints`，使用 `fingerprint-text-v1 + simhash64-v1`；
+- 新增不可变 `signal_match_decisions`，canonical signal pair + algorithm version 唯一；
+- 新增人工 `signal_match_overrides` 与 `signal_event_suppressions`；
+- exact duplicate 复用 RawSignal canonical URL / content hash / platform + external ID 语义，不删除 RawSignal；
+- near duplicate 使用 deterministic 64-bit SimHash；MinHash 未实现；
+- semantic candidate 严格复用 M3-B `SignalSimilarityService` exact cosine recall，不建立第二套 vector recall 或 ANN；
+- `event-match-v1` 集中保存 SimHash、Embedding、时间窗和 conservative decision policy；
+- EventSignal 新增中性 `related`；自动聚类不伪造 origin/report/reaction；
+- Event 新增 `merged_into_event_id`；人工 Merge 保留 source Event；Split 写 distinct override + event suppression；
+- 同 Signal 两 worker 使用 RawSignal `FOR UPDATE` + write-time membership recheck 保证 assignment 收敛；
+- Preview side-effect free；Batch 仅接受显式 bounded signal IDs；CollectorRuntime 继续与 Processing 解耦；
+- M3-C 最终 feature HEAD `2aa8e1907d4fc1b4e6be04cb8312a5f2b431cfe1` 的 exact-head CI completed/success，pytest **338 passed / 1 warning**，Alembic 完整往返、Definition 双同步、Web lint/typecheck/test/build 全部 success；
+- M3-C 未实现 LLM event judge、ANN、Event centroid、MinHash、M4 Evidence / Editorial Scoring。
+
 ## 2026-08-08 — M3-B Embedding / Vector Recall Foundation
 
 - PR #11 已合并，基于最新 `main` `1aa6d87350f8902fec6fffeb55cee3a7905385cc` 创建独立分支 `feature/m3b-embedding-recall`，未从 `feature/m3a-event-foundation` 继续派生；
