@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-08-09 - M5-A Editorial Workbench Engineering
+
+### Added
+
+- 新增只读 `EditorialWorkbenchQueryService` 与 `/api/v1/admin/workbench/overview`、`/events`、`/events/{event_id}`、`/events/{event_id}/signals`；
+- Event Explorer 增加分页、lifecycle/category/merged/risk/evidence/score/draft/time/text 筛选，以及 last updated / first seen / Effective Score 普通排序；
+- 新增 Editorial Overview 与 Event Workbench：Overview、Evidence、Sources & Timeline、Trend & Score、Card & Pack、Drafts；
+- 接入既有 Merge/Split、Evidence verification/Unknown、Trend calculate、AI/manual Score、Human override、Card/Pack、AI Draft、Human Draft/Revision、Markdown Export；
+- 新增 Original AI Score / Effective Score / Human Override 可追溯展示、Risk Gate/stale UX、Unavailable != 0、merged Event 只读保护；
+- 新增安全 Source URL helper，仅允许 http/https；
+- Web 导航按 Editorial / Collection / Configuration / AI 轻量分组，保留全部 M1～M4 管理页；
+- 新增 Workbench PostgreSQL 聚合/N+1/敏感字段测试与 Web Mock API 测试。
+
+### Decisions / Boundaries
+
+- Workbench Query API 只读，不复制业务 Write API，也不调用 AI；
+- Event lifecycle 与未来 M5-B Editorial Decision 分离；
+- M5-A 不自动调用 AI，不自动创建 Artifact，不自动发布；
+- unavailable feature 明确显示 reason，不能伪装为数值 0；
+- M5-A 不持久化 DailyCandidate/TOP rank/adopt/watch/drop；
+- **NO NEW MIGRATION**，Alembic head 保持 `20260809_0013_m4d_editorial_pack_drafts`；
+- Production AI Provider Validation 继续 `NOT_TESTED`；
+- M2 Real Smoke Validation 继续 `DEFERRED / NOT_TESTED`，M2 Real-world Validation 继续 `NOT COMPLETE`；
+- M5-B / M5-C / M5-D 继续 `NOT STARTED`，M5 Overall `NOT COMPLETE`。
+
 ## 2026-08-09 - M4-D Event Card / Draft Engineering Closure
 
 ### Added
@@ -27,7 +52,7 @@
 - `Production AI Provider Validation = NOT_TESTED`；
 - `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；
 - `M2 Real-world Validation = NOT COMPLETE`；
-- `M5 = NOT STARTED`。
+- `M5 = NOT STARTED`（该历史状态随后由上方 M5-A 记录推进）。
 
 ## 2026-08-09 - M4-C Trend / Editorial Score Engineering
 
@@ -64,8 +89,7 @@
 - `Production AI Provider Validation = NOT_TESTED`；
 - `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；
 - `M2 Real-world Validation = NOT COMPLETE`；
-- `M3 Overall Engineering = COMPLETE`；
-- M4-D 在当时尚未开始；其完成记录见本文件上方 M4-D Engineering Closure。
+- `M3 Overall Engineering = COMPLETE`。
 
 ## 2026-08-09 - M4-B Evidence / Claim Engineering
 
