@@ -20,6 +20,7 @@ from apps.api.routers.admin.scheduler_status import router as scheduler_status_r
 from apps.api.routers.admin.schedules import router as schedules_router
 from apps.api.routers.admin.sources import router as sources_router
 from apps.api.routers.admin.validations import router as validations_router
+from apps.api.routers.admin.workbench import router as workbench_router
 
 router = APIRouter(prefix="/api/v1/admin")
 router.include_router(definitions_router)
@@ -31,6 +32,7 @@ router.include_router(events_router)
 router.include_router(evidence_router)
 router.include_router(editorial_router)
 router.include_router(drafts_router)
+router.include_router(workbench_router)
 router.include_router(embeddings_router)
 router.include_router(clustering_router)
 router.include_router(ai_gateway_router)
