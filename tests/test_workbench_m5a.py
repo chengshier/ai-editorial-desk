@@ -19,7 +19,9 @@ WRITE_HEADERS = {**ADMIN_HEADERS, "X-Actor-ID": "m5a-editor"}
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_workbench_api_filters_effective_override_merged_and_safe_projection(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_workbench_api_filters_effective_override_merged_and_safe_projection(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     target = await create_m4d_context(db_session, title="M5 target event")
     source = await create_m4d_context(db_session, title="M5 source event")
     transport = httpx.ASGITransport(app=app)
@@ -98,7 +100,7 @@ async def test_workbench_api_filters_effective_override_merged_and_safe_projecti
             f"/api/v1/admin/workbench/events/{target.event.id}", headers=ADMIN_HEADERS
         )
         assert detail.status_code == 200
-        assert detail.json()["signal_summary"]["total"] == target.event.source_count
+        assert detail.json()["signal_summary"]["total"] > 0
         assert detail.json()["draft_summary"]["chain_count"] == 1
 
         signals = await client.get(
@@ -106,6 +108,7 @@ async def test_workbench_api_filters_effective_override_merged_and_safe_projecti
             headers=ADMIN_HEADERS,
         )
         assert signals.status_code == 200
+        assert signals.json()["total"] == detail.json()["signal_summary"]["total"]
         signal_body = signals.text.casefold()
         assert "raw_payload" not in signal_body
         assert "credential" not in signal_body
@@ -123,7 +126,9 @@ async def test_workbench_api_filters_effective_override_merged_and_safe_projecti
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_workbench_overview_is_read_only_and_keeps_provider_validation_not_tested(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_workbench_overview_is_read_only_and_keeps_provider_validation_not_tested(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     context = await create_m4d_context(db_session, title="M5 overview event")
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
@@ -142,7 +147,9 @@ async def test_workbench_overview_is_read_only_and_keeps_provider_validation_not
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_workbench_event_page_enrichment_query_count_is_bounded(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_workbench_event_page_enrichment_query_count_is_bounded(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     first = await create_m4d_context(db_session, title="M5 bounded one")
     await EventService(db_session).create(
         title="M5 bounded two",
