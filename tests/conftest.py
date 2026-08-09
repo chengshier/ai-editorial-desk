@@ -92,15 +92,3 @@ async def db_session(clean_database: None) -> AsyncIterator[AsyncSession]:
     async with session_factory() as session:
         yield session
         await session.rollback()
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):  # type: ignore[no-untyped-def]
-    del item, call
-    outcome = yield
-    report = outcome.get_result()
-    if not report.failed:
-        return
-    message = str(report.longrepr)
-    message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
-    print(f"::error title=pytest {report.when} failure::{message[:6000]}")
