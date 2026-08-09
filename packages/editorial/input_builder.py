@@ -32,7 +32,10 @@ from packages.editorial.domain import (
     EvidenceStateSummary,
     stable_hash,
 )
-from packages.editorial.errors import EditorialEventMergedError, EditorialValidationError
+from packages.editorial.errors import (
+    EditorialEventMergedError,
+    EditorialValidationError,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,7 +68,7 @@ class EditorialScoringSnapshot:
 
 
 class EditorialScoringInputBuilder:
-    """Build a bounded semantic scoring snapshot without RawSignal bodies or vectors."""
+    """Build a bounded scoring snapshot without RawSignal bodies or vectors."""
 
     def __init__(
         self,
@@ -93,15 +96,19 @@ class EditorialScoringInputBuilder:
             claim_statement = (
                 select(EvidenceClaimRecord)
                 .where(EvidenceClaimRecord.event_id == event_id)
-                .order_by(EvidenceClaimRecord.created_at.asc(), EvidenceClaimRecord.id.asc())
+                .order_by(
+                    EvidenceClaimRecord.created_at.asc(),
+                    EvidenceClaimRecord.id.asc(),
+                )
             )
             all_claims = list((await session.scalars(claim_statement)).all())
             selected_claims = all_claims[-MAX_SCORING_CLAIMS:]
 
             source_counts: dict[UUID, int] = {}
             if selected_claims:
+                selected_ids = [item.id for item in selected_claims]
                 source_statement = select(EvidenceClaimSourceRecord).where(
-                    EvidenceClaimSourceRecord.claim_id.in_([item.id for item in selected_claims])
+                    EvidenceClaimSourceRecord.claim_id.in_(selected_ids)
                 )
                 for link in (await session.scalars(source_statement)).all():
                     source_counts[link.claim_id] = source_counts.get(link.claim_id, 0) + 1
@@ -109,7 +116,10 @@ class EditorialScoringInputBuilder:
             unknown_statement = (
                 select(EventUnknownRecord)
                 .where(EventUnknownRecord.event_id == event_id)
-                .order_by(EventUnknownRecord.created_at.asc(), EventUnknownRecord.id.asc())
+                .order_by(
+                    EventUnknownRecord.created_at.asc(),
+                    EventUnknownRecord.id.asc(),
+                )
             )
             all_unknowns = list((await session.scalars(unknown_statement)).all())
             selected_unknowns = all_unknowns[-MAX_SCORING_UNKNOWNS:]
@@ -131,6 +141,9 @@ class EditorialScoringInputBuilder:
                 open_unknown_count=open_unknown_count,
             )
 
+            first_seen_at = (
+                event.first_seen_at.isoformat() if event.first_seen_at else None
+            )
             payload: dict[str, Any] = {
                 "contract": {
                     "prompt_version": EDITORIAL_PROMPT_VERSION,
@@ -144,7 +157,7 @@ class EditorialScoringInputBuilder:
                     "title": event.title,
                     "category": event.category,
                     "status": event.status.value,
-                    "first_seen_at": event.first_seen_at.isoformat() if event.first_seen_at else None,
+                    "first_seen_at": first_seen_at,
                     "last_updated_at": event.last_updated_at.isoformat(),
                     "source_count": event.source_count,
                     "platform_count": event.platform_count,
