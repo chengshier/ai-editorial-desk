@@ -12,6 +12,7 @@ from packages.database.models import (
     EditorialScoreRecord,
     EditorialScoreSourceType,
     EventRecord,
+    EventStatus,
 )
 from packages.database.session import get_async_sessionmaker
 from packages.editorial.domain import EDITORIAL_SCORE_TEMPLATE_VERSION
