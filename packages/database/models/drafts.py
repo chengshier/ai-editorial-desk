@@ -10,8 +10,8 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from packages.database.base import Base, CreatedAtMixin, UUIDPrimaryKeyMixin
-from packages.database.types import UTCDateTime, string_enum
 from packages.database.models.editorial import EditorialRecommendedFormat, EditorialRiskLevel
+from packages.database.types import UTCDateTime, string_enum
 
 
 class DraftType(StrEnum):
@@ -55,7 +55,10 @@ class EventCardRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "event_cards"
     __table_args__ = (
-        CheckConstraint("char_length(evidence_snapshot_hash) = 64", name="event_card_evidence_hash_sha256"),
+        CheckConstraint(
+            "char_length(evidence_snapshot_hash) = 64",
+            name="event_card_evidence_hash_sha256",
+        ),
         CheckConstraint("char_length(input_hash) = 64", name="event_card_input_hash_sha256"),
         Index(
             "uq_event_cards_idempotency",
@@ -80,23 +83,46 @@ class EventCardRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     concise_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    timeline: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    confirmed_claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    investigating_claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    single_source_claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    disputed_claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    false_claim_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    timeline: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    confirmed_claim_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    investigating_claim_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    single_source_claim_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    disputed_claim_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    false_claim_ids: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     unknown_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    source_summary: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    effective_assessment: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    source_summary: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    effective_assessment: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     risk_level: Mapped[EditorialRiskLevel] = mapped_column(
         string_enum(EditorialRiskLevel, name="event_card_risk_level"), nullable=False
     )
     recommended_format: Mapped[EditorialRecommendedFormat] = mapped_column(
-        string_enum(EditorialRecommendedFormat, name="event_card_recommended_format"), nullable=False
+        string_enum(
+            EditorialRecommendedFormat,
+            name="event_card_recommended_format",
+        ),
+        nullable=False,
     )
     generated_by: Mapped[str] = mapped_column(
-        String(32), nullable=False, default="deterministic", server_default=text("'deterministic'")
+        String(32),
+        nullable=False,
+        default="deterministic",
+        server_default=text("'deterministic'"),
     )
     ai_invocation_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True
@@ -129,16 +155,33 @@ class EditorialPackRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     pack_version: Mapped[str] = mapped_column(String(100), nullable=False)
     recommended_format: Mapped[EditorialRecommendedFormat] = mapped_column(
-        string_enum(EditorialRecommendedFormat, name="editorial_pack_recommended_format"),
+        string_enum(
+            EditorialRecommendedFormat,
+            name="editorial_pack_recommended_format",
+        ),
         nullable=False,
     )
-    suggested_angles: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    source_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    timeline_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    material_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    warnings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    unknown_items: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
-    claim_references: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    suggested_angles: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    source_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    timeline_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    material_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    warnings: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    unknown_items: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    claim_references: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     ai_invocation_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True
@@ -150,7 +193,10 @@ class DraftGenerationRunRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "draft_generation_runs"
     __table_args__ = (
-        CheckConstraint("char_length(input_hash) = 64", name="draft_generation_run_input_hash_sha256"),
+        CheckConstraint(
+            "char_length(input_hash) = 64",
+            name="draft_generation_run_input_hash_sha256",
+        ),
         Index("ix_draft_generation_runs_event_created", "event_id", "created_at"),
         Index("ix_draft_generation_runs_invocation", "ai_invocation_id"),
         Index(
@@ -208,13 +254,18 @@ class EditorialDraftRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             name="editorial_draft_duration_allowed",
         ),
         CheckConstraint("char_length(btrim(body)) > 0", name="editorial_draft_body_nonempty"),
-        CheckConstraint("char_length(input_hash) = 64", name="editorial_draft_input_hash_sha256"),
         CheckConstraint(
-            "(source_type = 'ai' AND ai_invocation_id IS NOT NULL AND generation_run_id IS NOT NULL "
-            "AND prompt_version IS NOT NULL AND schema_version IS NOT NULL) OR "
-            "(source_type = 'human' AND ai_invocation_id IS NULL AND generation_run_id IS NULL "
-            "AND created_by_actor IS NOT NULL AND char_length(btrim(created_by_actor)) > 0 "
-            "AND change_note IS NOT NULL AND char_length(btrim(change_note)) > 0)",
+            "char_length(input_hash) = 64",
+            name="editorial_draft_input_hash_sha256",
+        ),
+        CheckConstraint(
+            "(source_type = 'ai' AND ai_invocation_id IS NOT NULL "
+            "AND generation_run_id IS NOT NULL AND prompt_version IS NOT NULL "
+            "AND schema_version IS NOT NULL) OR "
+            "(source_type = 'human' AND ai_invocation_id IS NULL "
+            "AND generation_run_id IS NULL AND created_by_actor IS NOT NULL "
+            "AND char_length(btrim(created_by_actor)) > 0 AND change_note IS NOT NULL "
+            "AND char_length(btrim(change_note)) > 0)",
             name="editorial_draft_source_provenance",
         ),
         Index(
@@ -252,7 +303,11 @@ class EditorialDraftRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         string_enum(DraftType, name="editorial_draft_type"), nullable=False
     )
     format_key: Mapped[EditorialRecommendedFormat] = mapped_column(
-        string_enum(EditorialRecommendedFormat, name="editorial_draft_format"), nullable=False
+        string_enum(
+            EditorialRecommendedFormat,
+            name="editorial_draft_format",
+        ),
+        nullable=False,
     )
     duration_target_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
     language: Mapped[str] = mapped_column(String(32), nullable=False, default="zh-CN")
@@ -267,11 +322,19 @@ class EditorialDraftRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         string_enum(DraftStatus, name="editorial_draft_status"), nullable=False
     )
     title: Mapped[str | None] = mapped_column(String(500))
-    title_candidates: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    title_candidates: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     hook: Mapped[str | None] = mapped_column(Text)
-    hook_candidates: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    cover_text_candidates: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    sections: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
+    hook_candidates: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    cover_text_candidates: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
+    sections: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     ending: Mapped[str | None] = mapped_column(Text)
     interaction_question: Mapped[str | None] = mapped_column(Text)
@@ -281,7 +344,9 @@ class EditorialDraftRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True
     )
     generation_run_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("draft_generation_runs.id", ondelete="RESTRICT"), unique=True, index=True
+        ForeignKey("draft_generation_runs.id", ondelete="RESTRICT"),
+        unique=True,
+        index=True,
     )
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     created_by_actor: Mapped[str | None] = mapped_column(String(255))
