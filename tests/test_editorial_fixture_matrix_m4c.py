@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from packages.database.models import EventUnknownStatus
+from packages.database.models import (
+    EventUnknownStatus,
+    EvidenceClaimType,
+    EvidenceSourceRole,
+    EvidenceVerificationState,
+)
 from packages.editorial.errors import EditorialRiskConflictError
 from packages.editorial.services import EditorialScoringService
 from packages.evidence.services import EventEvidenceService
@@ -26,7 +31,11 @@ from tests.m4c_helpers import (
         ),
         (
             "high_trend_high_risk",
-            {"discussion": 95, "risk_level": "R4", "recommended_format": "fact_check"},
+            {
+                "discussion": 95,
+                "risk_level": "R4",
+                "recommended_format": "fact_check",
+            },
         ),
         (
             "high_information_gap_low_trend",
@@ -71,23 +80,37 @@ async def test_editorial_offline_fixture_matrix_keeps_trend_and_ai_dimensions_se
         apply=True,
     )
     assert outcome.score is not None
-    latest_trend = await EditorialScoringService().input_builder.build(
+    input_snapshot = await EditorialScoringService().input_builder.build(
         event_id=event.id,
         trend_snapshot_id=trend.id,
     )
-    assert latest_trend.payload["trend"]["signal_count"] == before["signal_count"]
-    assert latest_trend.payload["trend"]["signal_velocity"] == before["signal_velocity"]
-    assert latest_trend.payload["trend"]["interaction_velocity"] is None
-    assert latest_trend.payload["trend"]["id"] == str(trend.id)
+    assert input_snapshot.payload["trend"]["signal_count"] == before["signal_count"]
+    assert input_snapshot.payload["trend"]["signal_velocity"] == before["signal_velocity"]
+    assert input_snapshot.payload["trend"]["interaction_velocity"] is None
+    assert input_snapshot.payload["trend"]["id"] == str(trend.id)
 
 
 @pytest.mark.usefixtures("clean_database")
 async def test_open_unknown_blocks_ai_r0_until_human_resolves_it(db_session) -> None:  # type: ignore[no-untyped-def]
-    event, _signals = await create_trend_context(
+    event, signals = await create_trend_context(
         db_session,
         specs=[TrendSignalSpec(text="unknown", published_at=BASE_TIME)],
     )
     trend = await create_trend_snapshot(event.id)
+    claim = await EventEvidenceService().create_human_claim(
+        event_id=event.id,
+        actor="reviewer",
+        claim_text="confirmed core fact",
+        claim_type=EvidenceClaimType.FACT,
+        sources=[(signals[0].id, EvidenceSourceRole.SUPPORTING)],
+    )
+    await EventEvidenceService().verify_claim(
+        event_id=event.id,
+        claim_id=claim.id,
+        verification_state=EvidenceVerificationState.CONFIRMED,
+        reason="confirmed by human",
+        actor="reviewer",
+    )
     unknown = await EventEvidenceService().create_unknown(
         event_id=event.id,
         unknown_text="core fact remains unresolved",
@@ -112,12 +135,11 @@ async def test_open_unknown_blocks_ai_r0_until_human_resolves_it(db_session) -> 
         actor="reviewer",
         resolution_note="resolved after manual review",
     )
-    # R0 still cannot pass because there is no confirmed Claim. This proves resolving
-    # Unknown does not fabricate positive Evidence.
-    with pytest.raises(EditorialRiskConflictError):
-        await service.score(
-            event_id=event.id,
-            trend_snapshot_id=trend.id,
-            actor="scorer",
-            apply=True,
-        )
+    accepted = await service.score(
+        event_id=event.id,
+        trend_snapshot_id=trend.id,
+        actor="scorer",
+        apply=True,
+    )
+    assert accepted.score is not None
+    assert accepted.score.risk_level.value == "R0"
