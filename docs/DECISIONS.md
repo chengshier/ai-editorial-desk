@@ -204,3 +204,38 @@ Embedding 在 M3-B 中正式定义为 RawSignal 之上的**可重建派生数据
 - M3-B 不建立 HNSW / IVFFlat。ANN 只有在真实数据规模证明 exact search 不可接受时，才进入后续性能阶段设计与调优；
 - Recall 只返回相似候选，不执行 Dedup / Clustering、不自动创建或合并 Event、不自动写 `EventSignal attached_by=embedding`；M3-C 才消费这些候选形成聚类判断；
 - M3-B 只建立 Embedding 专用 Provider Protocol，不实现通用 AI Gateway；生产代码不注册 Fake Provider，测试 Provider 仅存在于 tests；通用 Provider/Model Routing、Chat Completion、Prompt Registry 等仍属于 M4。
+
+## D-022 M3-C 使用确定性聚类并让人工边界拥有最高优先级
+
+M3-C 的自动聚类必须是可解释、可重放的确定性工程链，而不是把 LLM 作为默认事件裁判：
+
+- exact duplicate 复用 RawSignal 的 canonical URL、content hash、platform + external ID 等已有事实语义；
+- near duplicate 使用版本化 deterministic 64-bit SimHash，当前版本 `fingerprint-text-v1 + simhash64-v1`；
+- 语义候选严格复用 M3-B PostgreSQL exact cosine recall，不建立第二套 vector index 或 recall Service；
+- `signal_match_decisions` 按 canonical signal pair + `event-match-v1` 保存不可变判断与证据；
+- 自动 assignment 使用中性 `EventSignal.relation=related`，不通过算法猜测 origin/report/reaction；
+- human same/distinct override、event suppression、Merge / Split 的人工边界优先于自动重跑；
+- Split / detach 后写 suppression 或 distinct override，防止下一轮自动聚类立即把人工纠错反转；
+- 同 Signal 并发 assignment 通过 RawSignal `FOR UPDATE` 与 write-time membership recheck 收敛；
+- CollectorRuntime 继续停在 RawSignal 边界，不同步进入聚类热路径；
+- 当前不引入 MinHash、HNSW/IVFFlat、Event centroid 或 LLM event judge。
+
+## D-023 M3-D 采用离线评测、dry-run-first 重处理与工程完成口径
+
+M3-D 负责把 M3-C 从“有聚类实现”收口为“可评测、可重放、可安全重处理”的工程系统：
+
+- 固定 `m3-clustering-eval-v1` synthetic/manual 工程评测集，显式记录 same/distinct/ambiguous、cluster expectation 与 human override；
+- 评测输出 pair precision/recall/F1、coverage/abstention、cluster pairwise metrics、overmerge、fragmentation 等确定性指标；
+- threshold sweep 只做 bounded read-only 比较，不把当前小样本最优值自动写回生产 policy；
+- 新增 `clustering_processing_runs` 记录 evaluate/dry-run/apply 的版本、actor、范围、计数和配置快照；
+- 新增 append-only `event_assignment_records` 保存 assignment provenance；
+- reprocess 必须显式限定 signal IDs 或完整时间窗，并受 `max_items` 限制；默认 dry-run，apply 必须 actor + explicit confirmation；
+- reprocess 不提供 automatic detach policy，且 apply 前重新校验 human membership、distinct override、suppression、Event 与 membership 状态；
+- processing-order、batch-boundary、replay、concurrency 与 human-boundary 必须由 PostgreSQL 回归验证；
+- 性能阶段只记录 exact recall + clustering engineering baseline，不把共享 CI Runner 绝对毫秒数当作生产 SLA；没有数据规模证据前不引入 ANN。
+
+M3 的最终完成语义调整为 **M3 Overall Engineering COMPLETE**：Event、版本化 Embedding artifact/exact recall、确定性 Dedup/Clustering、人工边界、离线评测、安全重处理、provenance 与 convergence 已形成工程闭环。
+
+早期 V1.2 M3 中的生产云 Embedding Provider、Provider UI、通用模型路由、成本中心与 LLM event judge，不再为了 M3 阶段标签提前实现；这些能力与 AI Gateway 一并进入 M4。该调整不否认长期路线，只是明确当前模块边界与交付顺序。
+
+M3 Engineering COMPLETE 同样**不表示** M2 Real Smoke 已通过：M2 仍保持 `DEFERRED / NOT_TESTED` 与 `Real-world Validation NOT COMPLETE`。
