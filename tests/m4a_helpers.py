@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable
 from decimal import Decimal
 from typing import Any
 
@@ -111,12 +110,3 @@ async def create_ai_stack(
     session.add(route)
     await session.commit()
     return provider, primary, fallback, route
-
-
-def response_json(
-    status_code: int,
-    payload: dict[str, Any],
-    *,
-    headers: dict[str, str] | None = None,
-) -> httpx.Response:
-    return httpx.Response(status_code, json=payload, headers=headers)
