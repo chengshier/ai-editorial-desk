@@ -20,7 +20,9 @@ from apps.api.schemas.m4b import (
     EvidenceSourceResponse,
     HumanClaimCreate,
 )
+from packages.ai_gateway.errors import AIGatewayError
 from packages.connector_management.exceptions import ResourceNotFoundError
+from packages.evidence.errors import EvidenceAIError
 from packages.evidence.services import (
     ClaimEvidenceView,
     EventEvidenceService,
@@ -54,15 +56,18 @@ async def extract_event_evidence(
     payload: EvidenceExtractionRequest,
     actor: Actor,
 ) -> EvidenceExtractionResponse:
-    outcome = await EvidenceExtractionService().extract(
-        event_id=event_id,
-        actor=actor,
-        apply=payload.apply,
-        signal_ids=payload.signal_ids,
-        max_signals=payload.max_signals,
-        max_chars_per_signal=payload.max_chars_per_signal,
-        max_total_chars=payload.max_total_chars,
-    )
+    try:
+        outcome = await EvidenceExtractionService().extract(
+            event_id=event_id,
+            actor=actor,
+            apply=payload.apply,
+            signal_ids=payload.signal_ids,
+            max_signals=payload.max_signals,
+            max_chars_per_signal=payload.max_chars_per_signal,
+            max_total_chars=payload.max_total_chars,
+        )
+    except AIGatewayError as exc:
+        raise EvidenceAIError(exc.code.value, exc.message) from exc
     return EvidenceExtractionResponse(
         run_id=outcome.run_id,
         ai_invocation_id=outcome.ai_invocation_id,
