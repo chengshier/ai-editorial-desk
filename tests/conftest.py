@@ -70,6 +70,18 @@ TABLES_IN_DELETE_ORDER = (
     "connector_definitions",
 )
 
+_FIRST_FAILURE_CODE = 1
+_FAILURE_FILE_CODES = {
+    "tests/test_admin_api_m4c.py": 41,
+    "tests/test_editorial_concurrency_m4c.py": 42,
+    "tests/test_editorial_database_m4c.py": 43,
+    "tests/test_editorial_fixture_matrix_m4c.py": 44,
+    "tests/test_editorial_human_m4c.py": 45,
+    "tests/test_editorial_scoring_m4c.py": 46,
+    "tests/test_m4c_migration.py": 47,
+    "tests/test_trend_m4c.py": 48,
+}
+
 
 @pytest.fixture(scope="session", autouse=True)
 def migrated_database() -> Iterator[None]:
@@ -99,18 +111,14 @@ async def db_session(clean_database: None) -> AsyncIterator[AsyncSession]:
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    global _FIRST_FAILURE_CODE
     if not report.failed:
         return
-    message = f"{report.nodeid}\n{report.longrepr}"
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary_path:
-        with open(summary_path, "a", encoding="utf-8") as summary:
-            summary.write("### pytest first failure\n\n```text\n")
-            summary.write(message[:12000])
-            summary.write("\n```\n")
-    escaped = (
-        message.replace("%", "%25")
-        .replace("\r", "%0D")
-        .replace("\n", "%0A")
-    )
-    print(f"::error title=pytest first failure::{escaped[:12000]}")
+    path = report.nodeid.split("::", 1)[0]
+    _FIRST_FAILURE_CODE = _FAILURE_FILE_CODES.get(path, 99)
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    del exitstatus
+    if session.testsfailed:
+        session.exitstatus = _FIRST_FAILURE_CODE
