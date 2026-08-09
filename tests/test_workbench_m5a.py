@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -9,6 +8,7 @@ from sqlalchemy import event as sa_event
 
 from apps.api.main import app
 from packages.common.config import get_settings
+from packages.database.models import EventStatus
 from packages.database.session import get_async_engine
 from packages.events.services import EventService
 from packages.workbench.services import EditorialWorkbenchQueryService
@@ -148,16 +148,15 @@ async def test_workbench_event_page_enrichment_query_count_is_bounded(db_session
         title="M5 bounded two",
         summary="plain event",
         category="technology",
+        status=EventStatus.EMERGING,
+        primary_language="zh",
+        entities=[],
+        keywords=[],
         actor="m5a-test",
     )
     await db_session.commit()
     service = EditorialWorkbenchQueryService()
     engine = get_async_engine().sync_engine
-
-    def count_queries(fn: Callable[[], Any]) -> tuple[Any, int]:
-        del fn
-        raise AssertionError("sync helper must not be called")
-
     counts: list[int] = []
     current = 0
 
