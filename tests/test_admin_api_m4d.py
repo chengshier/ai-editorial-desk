@@ -4,9 +4,10 @@ import httpx
 import pytest
 
 from apps.api.main import app
+from packages.common.config import get_settings
 from tests.m4d_helpers import create_m4d_context
 
-ADMIN_HEADERS = {"Authorization": "Bearer test-admin-token-at-least-24-characters"}
+ADMIN_HEADERS = {"X-Admin-Token": get_settings().admin_token_value}
 WRITE_HEADERS = {**ADMIN_HEADERS, "X-Actor-ID": "m4d-api-editor"}
 
 
