@@ -52,6 +52,11 @@ EXPECTED_TABLES = {
     "editorial_scoring_runs",
     "editorial_scores",
     "editorial_score_overrides",
+    "event_cards",
+    "editorial_packs",
+    "draft_generation_runs",
+    "editorial_drafts",
+    "draft_claim_references",
 }
 
 
