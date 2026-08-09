@@ -9,12 +9,12 @@ from sqlalchemy import func, select
 
 from packages.ai_gateway.gateway import AIGateway
 from packages.database.models import (
+    EventUnknownRecord,
     EvidenceClaimRecord,
     EvidenceClaimSourceRecord,
     EvidenceClaimType,
     EvidenceSourceRole,
     EvidenceVerificationState,
-    EventUnknownRecord,
 )
 from packages.database.session import get_async_sessionmaker
 from packages.evidence.services import EventEvidenceService, EvidenceExtractionService
@@ -33,7 +33,9 @@ def _response(payload: dict[str, object]) -> httpx.Response:
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_two_workers_apply_same_result_without_duplicate_business_rows(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_two_workers_apply_same_result_without_duplicate_business_rows(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["同一来源"])
     await create_ai_stack(
         db_session,
@@ -80,7 +82,9 @@ async def test_two_workers_apply_same_result_without_duplicate_business_rows(db_
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_human_verify_and_ai_apply_converge_to_human_confirmed(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_human_verify_and_ai_apply_converge_to_human_confirmed(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["人工支持来源"])
     await create_ai_stack(
         db_session,
