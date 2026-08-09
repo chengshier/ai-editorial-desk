@@ -20,7 +20,11 @@ from apps.api.schemas.m4c import (
 )
 from packages.ai_gateway.errors import AIGatewayError
 from packages.editorial.errors import EditorialAIError
-from packages.editorial.services import EditorialScoringOutcome, EditorialScoringService, TrendService
+from packages.editorial.services import (
+    EditorialScoringOutcome,
+    EditorialScoringService,
+    TrendService,
+)
 
 router = APIRouter(
     prefix="/events",
@@ -102,7 +106,12 @@ async def preview_editorial_score(
     payload: EditorialScoreRequest,
     actor: Actor,
 ) -> EditorialScoreRunResponse:
-    return await _run_ai_score(event_id, payload.trend_snapshot_id, actor, apply=False)
+    return await _run_ai_score(
+        event_id,
+        payload.trend_snapshot_id,
+        actor,
+        apply=False,
+    )
 
 
 @router.post(
@@ -114,7 +123,12 @@ async def apply_editorial_score(
     payload: EditorialScoreRequest,
     actor: Actor,
 ) -> EditorialScoreRunResponse:
-    return await _run_ai_score(event_id, payload.trend_snapshot_id, actor, apply=True)
+    return await _run_ai_score(
+        event_id,
+        payload.trend_snapshot_id,
+        actor,
+        apply=True,
+    )
 
 
 @router.post(
