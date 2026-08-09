@@ -28,6 +28,7 @@ async def test_exact_recall_and_clustering_engineering_performance_baseline(db_s
         )
         signals.append(signal)
         embedding_vectors[signal.id] = vectors[group]
+    signal_ids = [signal.id for signal in signals]
     embedding_version = "m3d-performance-fixed-4d-v1"
     await add_test_embeddings(
         db_session,
@@ -40,18 +41,23 @@ async def test_exact_recall_and_clustering_engineering_performance_baseline(db_s
     recall_started = time.perf_counter()
     recall_counts = []
     recall_service = SignalSimilarityService(db_session)
-    for signal in signals[:recall_query_count]:
+    for signal_id in signal_ids[:recall_query_count]:
         candidates = await recall_service.recall(
-            signal_id=signal.id,
+            signal_id=signal_id,
             embedding_version=embedding_version,
             top_k=candidate_top_k,
         )
         recall_counts.append(len(candidates))
     recall_elapsed_ms = (time.perf_counter() - recall_started) * 1000
 
+    # Exact recall performs read queries on the shared test session and therefore
+    # starts SQLAlchemy's autobegin transaction. Clustering owns explicit transaction
+    # boundaries, so end the read-only transaction before invoking the batch processor.
+    await db_session.rollback()
+
     clustering_started = time.perf_counter()
     summary = await ClusteringBatchProcessor(db_session).process(
-        signal_ids=[signal.id for signal in signals],
+        signal_ids=signal_ids,
         embedding_version=embedding_version,
         actor="m3d-performance",
         batch_size=5,
