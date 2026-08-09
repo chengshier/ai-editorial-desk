@@ -62,12 +62,14 @@ async def list_workbench_events(
         sort_by=sort_by,
         sort_direction=sort_direction,
     )
-    return WorkbenchEventPageResponse(
-        items=[item for item in result.items],
-        page=result.page,
-        page_size=result.page_size,
-        total=result.total,
-        has_next=result.has_next,
+    return WorkbenchEventPageResponse.model_validate(
+        {
+            "items": list(result.items),
+            "page": result.page,
+            "page_size": result.page_size,
+            "total": result.total,
+            "has_next": result.has_next,
+        }
     )
 
 
@@ -88,10 +90,12 @@ async def list_workbench_event_signals(
         page=page,
         page_size=page_size,
     )
-    return WorkbenchSignalPageResponse(
-        items=[item for item in result.items],
-        page=result.page,
-        page_size=result.page_size,
-        total=result.total,
-        has_next=result.has_next,
+    return WorkbenchSignalPageResponse.model_validate(
+        {
+            "items": list(result.items),
+            "page": result.page,
+            "page_size": result.page_size,
+            "total": result.total,
+            "has_next": result.has_next,
+        }
     )
