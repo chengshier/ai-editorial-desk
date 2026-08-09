@@ -34,7 +34,7 @@ async def test_evidence_admin_api_auth_actor_and_safe_source_view(db_session) ->
                 "sources": [{"signal_id": str(signals[0].id), "role": "supporting"}],
             },
         )
-        assert missing_actor.status_code == 400
+        assert missing_actor.status_code == 422
 
         created = await client.post(
             f"/api/v1/admin/events/{event.id}/claims",
