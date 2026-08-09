@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from packages.connector_management.exceptions import ResourceNotFoundError
 from packages.database.models import (
     EditorialPackRecord,
-    EditorialRecommendedFormat,
     EventCardRecord,
     EventRecord,
     EventTrendSnapshotRecord,
