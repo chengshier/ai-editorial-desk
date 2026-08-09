@@ -73,7 +73,7 @@ async def test_provider_config_rejects_inline_api_key() -> None:
                 "config": {"api_key": "must-not-store"},
             },
         )
-    assert response.status_code == 422
+    assert response.status_code == 400
     assert "must-not-store" not in response.text
 
 
