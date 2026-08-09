@@ -5,7 +5,17 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,14 +66,27 @@ class EventTrendSnapshotRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("new_signal_count >= 0", name="trend_new_signal_count_nonnegative"),
         CheckConstraint("source_count >= 0", name="trend_source_count_nonnegative"),
         CheckConstraint("platform_count >= 0", name="trend_platform_count_nonnegative"),
-        CheckConstraint("signal_velocity IS NULL OR signal_velocity >= 0", name="trend_signal_velocity_nonnegative"),
-        CheckConstraint("interaction_velocity IS NULL OR interaction_velocity >= 0", name="trend_interaction_velocity_nonnegative"),
         CheckConstraint(
-            "semantic_novelty IS NULL OR (semantic_novelty >= 0 AND semantic_novelty <= 1)",
+            "signal_velocity IS NULL OR signal_velocity >= 0",
+            name="trend_signal_velocity_nonnegative",
+        ),
+        CheckConstraint(
+            "interaction_velocity IS NULL OR interaction_velocity >= 0",
+            name="trend_interaction_velocity_nonnegative",
+        ),
+        CheckConstraint(
+            "semantic_novelty IS NULL OR "
+            "(semantic_novelty >= 0 AND semantic_novelty <= 1)",
             name="trend_semantic_novelty_range",
         ),
-        CheckConstraint("cn_gap IS NULL OR (cn_gap >= -1 AND cn_gap <= 1)", name="trend_cn_gap_range"),
-        CheckConstraint("update_value IS NULL OR (update_value >= 0 AND update_value <= 100)", name="trend_update_value_range"),
+        CheckConstraint(
+            "cn_gap IS NULL OR (cn_gap >= -1 AND cn_gap <= 1)",
+            name="trend_cn_gap_range",
+        ),
+        CheckConstraint(
+            "update_value IS NULL OR (update_value >= 0 AND update_value <= 100)",
+            name="trend_update_value_range",
+        ),
         CheckConstraint("char_length(input_hash) = 64", name="trend_input_hash_sha256"),
         Index(
             "uq_event_trend_snapshots_idempotency",
@@ -78,7 +101,9 @@ class EventTrendSnapshotRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         Index("ix_event_trend_snapshots_event_window", "event_id", "window_end_at"),
     )
 
-    event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True)
+    event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     calculation_version: Mapped[str] = mapped_column(String(100), nullable=False)
     window_start_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
     window_end_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
@@ -93,8 +118,12 @@ class EventTrendSnapshotRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     semantic_novelty: Mapped[float | None] = mapped_column(Float)
     cn_gap: Mapped[float | None] = mapped_column(Float)
     update_value: Mapped[float | None] = mapped_column(Float)
-    feature_availability: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    component_metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    feature_availability: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    component_metrics: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
@@ -103,23 +132,33 @@ class EditorialScoringRunRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "editorial_scoring_runs"
     __table_args__ = (
-        CheckConstraint("char_length(input_hash) = 64", name="editorial_scoring_run_input_hash_sha256"),
+        CheckConstraint(
+            "char_length(input_hash) = 64",
+            name="editorial_scoring_run_input_hash_sha256",
+        ),
         Index("ix_editorial_scoring_runs_event_created", "event_id", "created_at"),
         Index("ix_editorial_scoring_runs_invocation", "ai_invocation_id"),
     )
 
-    event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True)
-    trend_snapshot_id: Mapped[UUID] = mapped_column(
-        ForeignKey("event_trend_snapshots.id", ondelete="RESTRICT"), nullable=False, index=True
+    event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    ai_invocation_id: Mapped[UUID | None] = mapped_column(ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True)
+    trend_snapshot_id: Mapped[UUID] = mapped_column(
+        ForeignKey("event_trend_snapshots.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    ai_invocation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True
+    )
     score_template: Mapped[str] = mapped_column(String(100), nullable=False)
     score_template_version: Mapped[str] = mapped_column(String(100), nullable=False)
     scoring_version: Mapped[str] = mapped_column(String(100), nullable=False)
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
     mode: Mapped[EditorialScoringMode] = mapped_column(
-        string_enum(EditorialScoringMode, name="editorial_scoring_mode"), nullable=False
+        string_enum(EditorialScoringMode, name="editorial_scoring_mode"),
+        nullable=False,
     )
     status: Mapped[EditorialScoringStatus] = mapped_column(
         string_enum(EditorialScoringStatus, name="editorial_scoring_status"),
@@ -138,19 +177,46 @@ class EditorialScoreRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "editorial_scores"
     __table_args__ = (
-        CheckConstraint("emotion >= 0 AND emotion <= 100", name="editorial_score_emotion_range"),
-        CheckConstraint("information_gap >= 0 AND information_gap <= 100", name="editorial_score_information_gap_range"),
-        CheckConstraint("visual_value >= 0 AND visual_value <= 100", name="editorial_score_visual_value_range"),
-        CheckConstraint("user_relevance >= 0 AND user_relevance <= 100", name="editorial_score_user_relevance_range"),
-        CheckConstraint("discussion >= 0 AND discussion <= 100", name="editorial_score_discussion_range"),
-        CheckConstraint("novelty >= 0 AND novelty <= 100", name="editorial_score_novelty_range"),
-        CheckConstraint("extendability >= 0 AND extendability <= 100", name="editorial_score_extendability_range"),
-        CheckConstraint("traffic_total >= 0 AND traffic_total <= 100", name="editorial_score_traffic_total_range"),
-        CheckConstraint("char_length(input_hash) = 64", name="editorial_score_input_hash_sha256"),
         CheckConstraint(
-            "(source_type = 'ai' AND ai_invocation_id IS NOT NULL AND scoring_run_id IS NOT NULL) OR "
-            "(source_type = 'human' AND ai_invocation_id IS NULL AND scoring_run_id IS NULL "
-            "AND source_reason IS NOT NULL AND char_length(btrim(source_reason)) > 0)",
+            "emotion >= 0 AND emotion <= 100", name="editorial_score_emotion_range"
+        ),
+        CheckConstraint(
+            "information_gap >= 0 AND information_gap <= 100",
+            name="editorial_score_information_gap_range",
+        ),
+        CheckConstraint(
+            "visual_value >= 0 AND visual_value <= 100",
+            name="editorial_score_visual_value_range",
+        ),
+        CheckConstraint(
+            "user_relevance >= 0 AND user_relevance <= 100",
+            name="editorial_score_user_relevance_range",
+        ),
+        CheckConstraint(
+            "discussion >= 0 AND discussion <= 100",
+            name="editorial_score_discussion_range",
+        ),
+        CheckConstraint(
+            "novelty >= 0 AND novelty <= 100",
+            name="editorial_score_novelty_range",
+        ),
+        CheckConstraint(
+            "extendability >= 0 AND extendability <= 100",
+            name="editorial_score_extendability_range",
+        ),
+        CheckConstraint(
+            "traffic_total >= 0 AND traffic_total <= 100",
+            name="editorial_score_traffic_total_range",
+        ),
+        CheckConstraint(
+            "char_length(input_hash) = 64", name="editorial_score_input_hash_sha256"
+        ),
+        CheckConstraint(
+            "(source_type = 'ai' AND ai_invocation_id IS NOT NULL "
+            "AND scoring_run_id IS NOT NULL) OR "
+            "(source_type = 'human' AND ai_invocation_id IS NULL "
+            "AND scoring_run_id IS NULL AND source_reason IS NOT NULL "
+            "AND char_length(btrim(source_reason)) > 0)",
             name="editorial_score_source_provenance",
         ),
         Index("ix_editorial_scores_event_created", "event_id", "created_at"),
@@ -168,7 +234,9 @@ class EditorialScoreRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         ),
     )
 
-    event_id: Mapped[UUID] = mapped_column(ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True)
+    event_id: Mapped[UUID] = mapped_column(
+        ForeignKey("events.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
     trend_snapshot_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("event_trend_snapshots.id", ondelete="RESTRICT"), index=True
     )
@@ -176,7 +244,8 @@ class EditorialScoreRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     score_template_version: Mapped[str] = mapped_column(String(100), nullable=False)
     scoring_version: Mapped[str] = mapped_column(String(100), nullable=False)
     source_type: Mapped[EditorialScoreSourceType] = mapped_column(
-        string_enum(EditorialScoreSourceType, name="editorial_score_source_type"), nullable=False
+        string_enum(EditorialScoreSourceType, name="editorial_score_source_type"),
+        nullable=False,
     )
     emotion: Mapped[int] = mapped_column(Integer, nullable=False)
     information_gap: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -190,7 +259,11 @@ class EditorialScoreRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         string_enum(EditorialRiskLevel, name="editorial_risk_level"), nullable=False
     )
     recommended_format: Mapped[EditorialRecommendedFormat] = mapped_column(
-        string_enum(EditorialRecommendedFormat, name="editorial_recommended_format"), nullable=False
+        string_enum(
+            EditorialRecommendedFormat,
+            name="editorial_recommended_format",
+        ),
+        nullable=False,
     )
     model_reason: Mapped[str | None] = mapped_column(Text)
     ai_invocation_id: Mapped[UUID | None] = mapped_column(
@@ -209,13 +282,25 @@ class EditorialScoreOverrideRecord(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
 
     __tablename__ = "editorial_score_overrides"
     __table_args__ = (
-        CheckConstraint("char_length(btrim(actor)) > 0", name="editorial_score_override_actor_nonempty"),
-        CheckConstraint("char_length(btrim(reason)) > 0", name="editorial_score_override_reason_nonempty"),
-        Index("ix_editorial_score_overrides_score_created", "editorial_score_id", "created_at"),
+        CheckConstraint(
+            "char_length(btrim(actor)) > 0",
+            name="editorial_score_override_actor_nonempty",
+        ),
+        CheckConstraint(
+            "char_length(btrim(reason)) > 0",
+            name="editorial_score_override_reason_nonempty",
+        ),
+        Index(
+            "ix_editorial_score_overrides_score_created",
+            "editorial_score_id",
+            "created_at",
+        ),
     )
 
     editorial_score_id: Mapped[UUID] = mapped_column(
-        ForeignKey("editorial_scores.id", ondelete="RESTRICT"), nullable=False, index=True
+        ForeignKey("editorial_scores.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     overridden_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
