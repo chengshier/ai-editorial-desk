@@ -28,6 +28,10 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "event_unknowns",
+    "evidence_claim_sources",
+    "evidence_claims",
+    "evidence_extraction_runs",
     "ai_invocation_attempts",
     "ai_invocations",
     "ai_budget_usages",

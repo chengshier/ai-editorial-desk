@@ -7,35 +7,31 @@ M1 COMPLETE / 已合并
 M2 Engineering COMPLETE / 已合并
 M2 Real Smoke Validation DEFERRED / NOT_TESTED
 M2 Real-world Validation NOT COMPLETE
-M3-A COMPLETE / 已合并
-M3-B COMPLETE / 已合并
-M3-C COMPLETE / 已合并
-M3-D Engineering COMPLETE / PR #14 已合并
-M3 Overall Engineering COMPLETE
-M4-A AI Gateway Engineering COMPLETE / PR #15 Open
+M3 Overall Engineering COMPLETE / 已合并
+M4-A AI Gateway COMPLETE / PR #15 已合并
+M4-B Evidence / Claim COMPLETE / PR #16 Open
 Production AI Provider Validation NOT_TESTED
-M4-B NOT STARTED
 M4-C NOT STARTED
 M4-D NOT STARTED
 M4 Overall NOT COMPLETE
 M5 NOT STARTED
 ```
 
-当前 M4-A 分支：
+当前分支：
 
 ```text
-feature/m4a-ai-gateway
+feature/m4b-evidence-claims
 ```
 
 当前 PR：
 
 ```text
-#15 feat: 完成 M4-A AI Gateway与模型路由基础
+#16 feat: 完成 M4-B Evidence与Claim证据链基础
 ```
 
-PR #15 保持 Open，不自行合并。M4-B 只有在 PR #15 人工合并后，才能从**最新 `main`**创建新的独立分支；不得从 M4-A feature branch 继续派生。
+PR #16 保持 Open，不自行合并。M4-C 只有在 PR #16 人工合并后，才能从最新 `main` 创建新的独立分支；不得从 `feature/m4b-evidence-claims` 继续派生。
 
-M2 Real Smoke Deferred 状态继续保留：进入 M4 Engineering 不等于微博/B站/知乎真实 Smoke 已验证，不得把 NOT_TESTED 改写为 PASSED。Production AI Provider Validation 同理：CI Fake/Mock 通过不等于生产 Provider 已真实验证。
+M2 Real Smoke Deferred 状态继续保留。进入 M4 Engineering 不等于微博/B站/知乎真实 Smoke 已验证。Production AI Provider Validation 同理：CI Fake/Mock 通过不等于生产 Provider 已真实验证。
 
 ## 必读文档顺序
 
@@ -52,8 +48,6 @@ M2 Real Smoke Deferred 状态继续保留：进入 M4 Engineering 不等于微�
 
 冲突优先级继续为：DECISIONS → 综合开发实施规划 → 技术开发文档 → PRD。阶段验收报告记录当前工程事实，但不得覆盖正式架构决策。
 
-> 基线说明：M4-A 开工清单要求读取 `docs/M3_EVALUATION_REPORT.md`，但 PR #14 合并后的最新 `main` 实际不存在该文件。M3-D 工程评测事实仍以 `M3_ACCEPTANCE_REPORT.md`、评测 fixture、评测脚本与测试为准；不得伪造历史文件存在。
-
 ## 当前正式处理链
 
 ```text
@@ -62,59 +56,39 @@ RawSignal
 → EmbeddingInput(signal-text-v1)
 → versioned signal_embeddings
 → pgvector exact cosine recall                         M3-B
-→ deterministic fingerprint
-→ exact / near duplicate
-→ event-match-v1
-→ automatic Event assignment + human Merge / Split    M3-C
-→ offline engineering evaluation
-→ convergence / replay / provenance
+→ deterministic fingerprint / exact-near duplicate
+→ event-match-v1 / Event assignment / Merge / Split    M3-C
+→ offline evaluation / convergence / provenance
 → bounded dry-run-first reprocessing                   M3-D
 
 Business Task
-→ AI Task Route
-→ immutable route version
+→ AI Task Route / immutable version
 → Provider / Model
 → AIGateway
 → Invocation / Attempt
 → Usage / Cost / Audit
 → AI Budget reserve / settle                           M4-A
+
+Event + EventSignal / RawSignal
+→ EvidenceInputBuilder
+→ AIGateway.generate_structured(task=evidence_extraction)
+→ Evidence business validation
+→ EvidenceClaim + supporting/contradicting Source FK
+→ EventUnknown
+→ Human verification                                   M4-B
 ```
 
-Connector / CollectorRuntime 仍停在 RawSignal 边界。M4-A 不修改 M3 clustering、evaluation ground truth 或 threshold，也不把 Provider 429 混入 MediaCrawler `PlatformRiskEvent`。
+Connector / CollectorRuntime 仍停在 RawSignal 边界。M4-A/M4-B 均不修改 M3 clustering、evaluation ground truth 或 threshold。
 
-## M3-B Embedding 与 M4-A 的边界
+## M4-A 基础
 
-M3-B 已有且继续保留：
-
-- `signal_embeddings` 版本化 artifact；
-- `signal-text-v1` input schema；
-- `EmbeddingProvider` contract；
-- `EmbeddingService` / `EmbeddingBatchProcessor`；
-- pgvector exact cosine recall；
-- embedding version + dimensions 隔离。
-
-M4-A 新增 `GatewayEmbeddingProvider` 作为生产桥接：
-
-```text
-EmbeddingService
-→ existing EmbeddingProvider Contract
-→ GatewayEmbeddingProvider
-→ task_key=embedding
-→ AIGateway
-→ OpenAI-compatible adapter
-```
-
-桥接只使用 route 的主模型快照，并要求模型显式声明与请求一致的 `embedding_version` 与 `dimensions`，避免 fallback 静默改变既有 M3-B artifact 语义。M4-A 没有创建第二套 SignalEmbedding、EmbeddingInputBuilder 或 Vector Recall，也没有默认全库 backfill。
-
-## M4-A 数据基础
-
-Migration head：
+Migration：
 
 ```text
 20260809_0010_m4a_ai_gateway
 ```
 
-新增正式表：
+正式基础表：
 
 ```text
 ai_providers
@@ -126,16 +100,20 @@ ai_budgets
 ai_budget_usages
 ```
 
-核心约束：
+核心原则：
 
-- `ai_providers.provider_key` unique；
-- `ai_models(provider_id, model_key)` unique；
-- `ai_task_routes(task_key, version)` unique；每个 task 只有一个 `is_active=true` 版本；
-- Invocation 使用稳定 UUID；Attempt `(invocation_id, attempt_no)` unique；
-- Budget `(scope_type, scope_key)` unique；
-- token / cost / retry / fallback / usage 不允许负数。
+- 业务只引用 `task_key`，不硬编码 Provider URL / provider_key / 商业模型名；
+- credential 只保存 opaque `credential_ref`；当前 resolver 使用受控 `env://NAME`；
+- `AIGateway.embed / generate_text / generate_structured` 是统一 AI 调用入口；
+- OpenAI-compatible adapter 配置化，支持显式 cloud/local compatible endpoint；
+- Route 每次变更创建新 version，历史 Invocation 不被当前配置覆盖；
+- bounded retry / explicit fallback 每个 Attempt 可审计；
+- pricing snapshot / estimated cost 固化到历史 Invocation；
+- AI Budget 与 CollectionBudget 分离，PostgreSQL 锁保护 reserve/settle；
+- M3-B `EmbeddingProvider` 通过 `GatewayEmbeddingProvider` 桥接，不重建 SignalEmbedding/InputBuilder/Vector Recall；
+- CI AI tests 只用 Fake/MockTransport。
 
-Migration 只注册以下 task route v1，默认全部 disabled，不调用 Provider：
+0010 已注册以下 route v1，默认全部 disabled：
 
 ```text
 embedding
@@ -146,120 +124,199 @@ draft_generation
 final_review
 ```
 
-其中 M4-A 只消费 `embedding` bridge；其余任务只建立可配置 route，不实现 Evidence、Editorial Score 或 Draft 业务。
+## M4-B Evidence 数据基础
 
-## Provider / Credential / Network
-
-- 业务代码只引用 `task_key`，不硬编码 Provider URL、provider_key 或商业模型名；
-- Provider 类型当前实现 `openai_compatible` / `local_openai_compatible`，两者复用同一协议 adapter；
-- `model_key` 是内部稳定引用，`model_name` 是供应商实际名称；
-- DB 只保存 opaque `credential_ref`；M4-A resolver 仅支持受控 `env://NAME`；
-- API/Web 不返回真实 credential ref 名称或明文 key，只返回 configured 状态和 `env://***`；
-- Credential UI 只有 replace，没有 read-back；
-- Provider config 中的 secret / api_key / authorization 等敏感键被拒绝；
-- base URL 只允许 HTTP/HTTPS；禁止 file://、userinfo、query/fragment；
-- HTTP 与私网/localhost 都必须显式管理员策略允许；连接测试不跟随 redirect；
-- 缺 credential 时先返回 `CREDENTIAL_NOT_CONFIGURED`，不会先做 DNS/网络调用，也不会 fallback 到 Fake/陌生 key。
-
-## Gateway / Retry / Fallback / Structured Output
-
-正式 Contract：
+Migration head：
 
 ```text
-AIGateway.embed(...)
-AIGateway.generate_text(...)
-AIGateway.generate_structured(...)
+20260809_0011_m4b_evidence_claims
 ```
 
-Provider Protocol：
+新增：
 
 ```text
-EmbeddingGenerationProvider
-TextGenerationProvider
-StructuredGenerationProvider
+evidence_extraction_runs
+evidence_claims
+evidence_claim_sources
+event_unknowns
 ```
 
-- Provider 输入/输出使用 Gateway 领域对象，不把第三方 SDK/HTTP 对象穿透业务层；
-- OpenAI-compatible adapter 解析 usage 与 provider request id；
-- error taxonomy 覆盖 AUTH_ERROR、RATE_LIMITED、TIMEOUT、NETWORK_ERROR、INVALID_REQUEST、MODEL_NOT_FOUND、CONTEXT_LENGTH_EXCEEDED、INVALID_RESPONSE、STRUCTURED_OUTPUT_INVALID、PROVIDER_UNAVAILABLE、BUDGET_EXCEEDED、UNKNOWN_PROVIDER_ERROR；
-- retry 上限为 route/provider 较小值并额外 hard cap 3；auth/invalid request/model not found 不无限重试；
-- Retry-After 只有在受控最大延迟内才等待；
-- fallback 只对明确允许的可恢复错误执行，并逐 Attempt 记录来源模型、目标模型、retry/fallback index 与错误码；
-- structured output 先验证 JSON Schema，再验证 Provider 返回；malformed/wrong type/missing field 都不能返回 success；repair/retry 有限，不无限请求。
+### EvidenceClaim
 
-## Invocation / Cost / Budget
-
-`ai_invocations` 保存逻辑调用摘要，`ai_invocation_attempts` 保存 retry/fallback 链。默认不保存完整 Prompt、Provider body、Authorization、API Key 或完整 Embedding vector。
-
-每次调用保存/可追溯：
-
-- task / route version；
-- provider/model；
-- SHA-256 `input_hash`；
-- prompt/schema version；
-- token usage；
-- pricing snapshot / estimated cost；
-- latency / retry / fallback；
-- provider request id；
-- error code；
-- 可选 `subject_type / subject_id`，不伪造不存在的 polymorphic FK。
-
-模型价格来自 Model 配置，不硬编码到业务代码；历史 Invocation 保存当时 pricing snapshot 和最终 estimated cost，后续价格变化不回写历史成本。Provider 没有 usage/cost 时保持 unknown，不伪造 0。
-
-AI Budget 与 CollectionBudget 分表，支持：
+Claim type：
 
 ```text
-global
-task
-provider
+fact
+allegation
+opinion
+forecast
 ```
 
-调用前 reserve，调用后 settle。PostgreSQL 对适用 Budget 行 `FOR UPDATE`，并在同一锁保护下计算 daily/monthly/token 用量，避免两个 Worker 同时透支。未知成本策略默认 `block`；可显式设 `allow_once`，但也只能通过原子 reservation 放行一次未知用量。
-
-## Admin API / Web
-
-Admin API 前缀：
+Verification state：
 
 ```text
-/api/v1/admin/ai
+confirmed
+investigating
+single_source
+disputed
+false
 ```
 
-已建立：
+AI 只可产生候选，并由 Service 推导 `single_source / investigating / disputed`。AI 无权自动写 `confirmed / false`；模型 confidence 只保存为 `extraction_confidence`，不等于事实真实性。
 
-- Provider list/get/create/update/enable/disable/test；
-- Model list/create/update/enable/disable；
-- Route list/get/version update；
-- Budget list/create/update；
-- Invocation list/detail，只读。
-
-继续复用现有 `APP_ADMIN_TOKEN` / `X-Admin-Token` 与 `X-Actor-ID`。Provider/Model/Route/Budget 配置写操作复用 `ConfigurationChangeLog`；Invocation/Attempt 负责 AI 调用级审计。
-
-Web 继续使用现有 React/Vite 工作台架构，新增：
+Claim 使用 stable fingerprint：
 
 ```text
-AI Providers
-AI Routes
-AI Budgets
-AI Invocations
+SHA-256(claim_type + normalized claim_text)
+UNIQUE(event_id, claim_fingerprint)
 ```
 
-不引入第二套前端路由框架，不展示完整敏感 Prompt。
+### Evidence Source
+
+Evidence source 使用真实 FK 关联表，而不是裸 UUID 数组：
+
+```text
+claim_id -> evidence_claims.id
+signal_id -> raw_signals.id
+role      -> supporting | contradicting
+```
+
+`UNIQUE(claim_id, signal_id)` 保证同一 Signal 不能同时扮演两个 role；Signal 必须通过 EventSignal 属于目标 Event。RawSignal FK 使用 `ON DELETE RESTRICT`，防止历史证据静默丢失。
+
+### Unknown
+
+Unknown 是一等业务对象，不伪装成 Claim：
+
+```text
+status      = open | resolved | dismissed
+source_type = ai | human
+```
+
+Unknown fingerprint 在 Event 内唯一；AI rerun 不自动重新打开已经 resolved/dismissed 的 Unknown。
+
+## Evidence Input / Prompt 安全
+
+`EvidenceInputBuilder` 默认只把以下安全字段送入 Provider：
+
+- signal ID；
+- title / text；
+- author name；
+- platform；
+- published / collected time；
+- original/canonical URL metadata。
+
+明确排除：
+
+- `raw_payload`；
+- credential / Cookie / Authorization；
+- connector/account config；
+-完整 comment dump；
+- Embedding vector。
+
+输入按 effective time + signal ID 稳定排序，并由 `max_signals / max_chars_per_signal / max_total_chars` 限制。截断会记录 `truncated` 与 signal IDs，不保存完整被截文本。
+
+Prompt / Schema：
+
+```text
+prompt_version = evidence-extraction-v1
+schema_version = evidence-schema-v1
+extraction_version = evidence-service-v1
+```
+
+Signal 文本被明确标记为 `UNTRUSTED CONTENT`。Prompt 告诉模型不得执行正文指令、不得编造 source ID、不得自行确认事实；Service 仍进行 Event/source/confidence/verification 权限二次校验。因此 prompt injection 防御不依赖模型自觉。
+
+## Evidence Extraction 调用链
+
+```text
+短事务读取 Event + safe Signal snapshot
+→ 关闭事务
+→ AIGateway.generate_structured(task=evidence_extraction)
+→ Route / Budget / Retry / Fallback / Schema / Invocation / Cost
+→ Evidence business validation
+→ 新短事务重新检查 Event 未 merged + signal membership
+→ apply Claim / Source / Unknown + Audit
+```
+
+Invocation 固定关联：
+
+```text
+task_key=evidence_extraction
+subject_type=event
+subject_id=<event UUID>
+prompt_version=evidence-extraction-v1
+schema_version=evidence-schema-v1
+```
+
+Provider 网络等待不持有 Event 长事务锁。
+
+## Preview / Partial
+
+Preview 会正常走 Gateway，因此未来真实 Provider 下可能产生费用；它会写 Invocation / ExtractionRun，但不写 Claim / Unknown 业务状态。
+
+Apply 的局部脏结果采用 `PARTIAL`：合法项保存，无来源 Claim 不落库并记录 `UNSUPPORTED_CLAIM`，不存在/不属于 Event 的 signal ID 记录 invalid item。ExtractionRun / API / Audit 保留 invalid count 和安全错误码，不把局部错误静默包装成 success。
+
+## Human Verification
+
+人工 Claim 不依赖 AI Provider：
+
+- Admin Token + `X-Actor-ID`；
+- claim text/type；
+- 至少一个真实 Event source；
+- AuditLog；
+- `ai_invocation_id = NULL`。
+
+人工 verification：
+
+- `confirmed` 至少一个 supporting source + reason；
+- `false` 至少一个 contradicting source + reason；
+- 两个来源不会自动等于 confirmed；
+- confirmed Claim 不能删除最后一个 supporting source；
+- false Claim 不能删除最后一个 contradicting source；
+- Human verification/editor note 不被 AI rerun 覆盖。
+
+如果 Event 已 merged：
+
+```text
+EVENT_MERGED
++ target_event_id
+```
+
+source Event 不允许新增/修改 Evidence。
+
+## Evidence Admin API
+
+路径沿用现有 `/api/v1/admin/events`：
+
+```text
+GET    /{event_id}/evidence
+POST   /{event_id}/evidence/extract
+POST   /{event_id}/claims
+GET    /{event_id}/claims
+GET    /{event_id}/claims/{claim_id}
+PATCH  /{event_id}/claims/{claim_id}
+POST   /{event_id}/claims/{claim_id}/sources
+DELETE /{event_id}/claims/{claim_id}/sources/{signal_id}
+POST   /{event_id}/claims/{claim_id}/verify
+GET    /{event_id}/unknowns
+POST   /{event_id}/unknowns
+PATCH  /{event_id}/unknowns/{unknown_id}
+```
+
+Safe Evidence view 不返回 RawSignal full text、raw_payload、API Key、Authorization、完整 Prompt 或 Embedding vector。
 
 ## Production Provider Validation
-
-当前状态：
 
 ```text
 Production AI Provider Validation = NOT_TESTED
 ```
 
-原因：M4-A CI 只允许离线 MockTransport/Fake；没有使用人工生产 credential 与真实 Provider 网络调用。Fixture/Mock 通过不得写成 `PASSED` 或 `VERIFIED`。
+M4-B 没有使用生产 API Key 或真实付费 Provider 网络调用。CI MockTransport/Fake 只能证明 Engineering Contract，不能替代生产 Validation。
 
-Connection Test 会建立 `test=true` Invocation 并计入 cost/budget；无 credential 返回 `CREDENTIAL_NOT_CONFIGURED` 并保持 Provider Validation `NOT_TESTED`。
+人工 Claim/Verification 流程在 Provider NOT_TESTED 时仍然可用。
 
-## 最终 CI Gate
+## CI Gate
 
-PR #15 只在**最新 exact-head**同时满足以下条件时具备人工合并资格：
+PR #16 只在最新 exact-head 同时满足以下条件时具备人工合并资格：
 
 ```bash
 ruff check .
@@ -283,19 +340,18 @@ npm test -- --run
 npm run build
 ```
 
-所有 AI 测试必须离线，不访问公网或真实付费 Provider。
+所有 AI tests 必须离线。
 
-## M4-A 完成语义
+## M4-B 完成语义
 
-`M4-A AI Gateway Engineering COMPLETE` 表示：Provider/Model/Route、opaque credential、Gateway contract、OpenAI-compatible adapter、M3-B Embedding bridge、bounded retry/fallback、Invocation/Attempt、pricing/cost snapshot、AI Budget 并发 gate、Admin API、Web 与离线工程回归已经形成基础闭环。
+`M4-B Evidence / Claim COMPLETE` 表示 Evidence Claim、真实 Signal provenance、Unknown、ExtractionRun/Invocation provenance、bounded input、Prompt/Schema version、AI/Human verification 权限边界、Preview/PARTIAL、Admin API 与 PostgreSQL/离线 AI 回归已经形成工程闭环。
 
-它**不表示**：
+它不表示：
 
-- M2 Real Smoke 已通过；
 - Production AI Provider 已真实验证；
-- LLM event judge 已接入 M3 clustering；
-- EvidenceClaim 已实现；
-- Editorial Score/Trend 已实现；
+- 系统已经具备“自动判断新闻真伪”的能力；
+- Source Credibility 评分已实现；
+- Trend / Editorial Score 已实现；
 - Event Card / Script / Draft 已实现；
 - M4 Overall 已完成；
 - M5 已开始。
