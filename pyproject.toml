@@ -37,7 +37,7 @@ dev = [
 packages = ["apps", "packages"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -x"
 asyncio_mode = "auto"
 pythonpath = ["."]
 testpaths = ["tests"]
