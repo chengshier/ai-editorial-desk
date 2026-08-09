@@ -111,7 +111,7 @@ class DraftService:
         gateway: StructuredGateway | None = None,
     ) -> None:
         self.session_factory = session_factory or get_async_sessionmaker()
-        self.gateway: StructuredGateway = gateway or AIGateway(
+        self.gateway = gateway or AIGateway(
             session_factory=self.session_factory
         )
         self.input_builder = DraftGenerationInputBuilder(self.session_factory)
