@@ -41,7 +41,9 @@ def _provider_response(data: dict[str, object]) -> httpx.Response:
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_apply_is_partial_traceable_and_prompt_injection_cannot_confirm(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_apply_is_partial_traceable_and_prompt_injection_cannot_confirm(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(
         db_session,
         texts=[
@@ -85,6 +87,7 @@ async def test_apply_is_partial_traceable_and_prompt_injection_cannot_confirm(db
                         "supporting_signal_ids": [str(signals[0].id)],
                         "contradicting_signal_ids": [str(signals[2].id)],
                         "confidence": 0.7,
+                        "verification_state": "false",
                     },
                     {
                         "text": "没有来源的模型补写",
@@ -141,6 +144,8 @@ async def test_apply_is_partial_traceable_and_prompt_injection_cannot_confirm(db
         states = {item.claim_text: item.verification_state for item in claims}
         assert states["公告 已经发布"] is EvidenceVerificationState.INVESTIGATING
         assert states["另一项说法存在明确冲突"] is EvidenceVerificationState.DISPUTED
+        assert EvidenceVerificationState.CONFIRMED not in states.values()
+        assert EvidenceVerificationState.FALSE not in states.values()
         assert all(item.created_by_type is EvidenceCreatedByType.AI for item in claims)
         assert all(item.ai_invocation_id == outcome.ai_invocation_id for item in claims)
         assert await session.scalar(
@@ -160,7 +165,9 @@ async def test_apply_is_partial_traceable_and_prompt_injection_cannot_confirm(db
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_rerun_is_idempotent_and_never_overwrites_human_verification(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_rerun_is_idempotent_and_never_overwrites_human_verification(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["来源一", "来源二"])
     await create_ai_stack(
         db_session,
@@ -234,7 +241,9 @@ async def test_rerun_is_idempotent_and_never_overwrites_human_verification(db_se
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_preview_creates_invocation_but_no_claim_or_unknown_business_state(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_preview_creates_invocation_but_no_business_state(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["来源"])
     await create_ai_stack(
         db_session,
@@ -339,7 +348,9 @@ async def test_provider_failures_leave_failed_run_and_no_business_state(
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_route_disabled_and_budget_exceeded_fail_before_provider_call(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_route_disabled_and_budget_exceeded_fail_before_provider_call(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, _signals = await create_event_context(db_session, texts=["来源"])
     _provider, _model, _fallback, route = await create_ai_stack(
         db_session,
