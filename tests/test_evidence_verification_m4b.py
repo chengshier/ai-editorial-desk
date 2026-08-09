@@ -15,7 +15,9 @@ from tests.m4b_helpers import create_event_context
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_human_confirmed_requires_support_and_protects_last_support(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_human_confirmed_requires_support_and_protects_last_support(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["支持", "反驳"])
     service = EventEvidenceService()
     claim = await service.create_human_claim(
@@ -47,7 +49,9 @@ async def test_human_confirmed_requires_support_and_protects_last_support(db_ses
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_human_false_requires_contradiction_and_protects_last_contradiction(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_human_false_requires_contradiction_and_protects_last_contradiction(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["支持", "反驳"])
     service = EventEvidenceService()
     claim = await service.create_human_claim(
@@ -93,7 +97,9 @@ async def test_human_false_requires_contradiction_and_protects_last_contradictio
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_confirmed_without_support_is_rejected(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_confirmed_without_support_is_rejected(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     event, signals = await create_event_context(db_session, texts=["反驳"])
     service = EventEvidenceService()
     claim = await service.create_human_claim(
@@ -115,7 +121,9 @@ async def test_confirmed_without_support_is_rejected(db_session) -> None:  # typ
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_merged_event_blocks_new_evidence_and_input_builder(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_merged_event_blocks_new_evidence_and_input_builder(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
     source_event, source_signals = await create_event_context(db_session, texts=["旧事件"])
     target_event, _ = await create_event_context(db_session, texts=["目标事件"])
     async with get_async_sessionmaker()() as session:
