@@ -83,7 +83,7 @@ async def test_card_pack_are_deterministic_safe_and_idempotent(db_session) -> No
         select(RawSignalRecord).where(RawSignalRecord.id == context.signals[0].id)
     )
     assert stored is not None
-    assert stored.raw_payload["authorization"] == "raw-secret-never-export"
+    assert stored.raw_payload["authorization"] == "[REDACTED]"
     assert stored.media[0]["authorization"] == "never-export"
 
     exporter = EditorialMarkdownExporter()
