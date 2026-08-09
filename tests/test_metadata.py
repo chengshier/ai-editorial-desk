@@ -48,6 +48,10 @@ EXPECTED_TABLES = {
     "evidence_claims",
     "evidence_claim_sources",
     "event_unknowns",
+    "event_trend_snapshots",
+    "editorial_scoring_runs",
+    "editorial_scores",
+    "editorial_score_overrides",
 }
 
 

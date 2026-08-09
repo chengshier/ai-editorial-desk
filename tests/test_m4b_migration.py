@@ -90,7 +90,7 @@ def test_m4b_migration_creates_evidence_provenance_schema() -> None:
 
 def test_m4b_downgrade_one_preserves_m4a_tables() -> None:
     config = Config("alembic.ini")
-    command.upgrade(config, "20260809_0011")
+    command.downgrade(config, "20260809_0011")
     try:
         command.downgrade(config, "-1")
 

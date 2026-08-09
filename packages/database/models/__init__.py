@@ -24,6 +24,17 @@ from packages.database.models.connectors import (
     ConnectorInstance,
     PlatformAccount,
 )
+from packages.database.models.editorial import (
+    EditorialRecommendedFormat,
+    EditorialRiskLevel,
+    EditorialScoreOverrideRecord,
+    EditorialScoreRecord,
+    EditorialScoreSourceType,
+    EditorialScoringMode,
+    EditorialScoringRunRecord,
+    EditorialScoringStatus,
+    EventTrendSnapshotRecord,
+)
 from packages.database.models.embeddings import SignalEmbeddingRecord
 from packages.database.models.events import (
     EventRecord,
@@ -101,6 +112,14 @@ __all__ = [
     "ConnectorRunTriggerType",
     "ConnectorValidationRecord",
     "ConnectorValidationStatus",
+    "EditorialRecommendedFormat",
+    "EditorialRiskLevel",
+    "EditorialScoreOverrideRecord",
+    "EditorialScoreRecord",
+    "EditorialScoreSourceType",
+    "EditorialScoringMode",
+    "EditorialScoringRunRecord",
+    "EditorialScoringStatus",
     "EventAssignmentAction",
     "EventAssignmentRecord",
     "EventRecord",
@@ -108,6 +127,7 @@ __all__ = [
     "EventSignalRecord",
     "EventSignalRelation",
     "EventStatus",
+    "EventTrendSnapshotRecord",
     "EventUnknownRecord",
     "EventUnknownSourceType",
     "EventUnknownStatus",

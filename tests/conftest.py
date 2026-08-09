@@ -28,6 +28,10 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "editorial_score_overrides",
+    "editorial_scores",
+    "editorial_scoring_runs",
+    "event_trend_snapshots",
     "event_unknowns",
     "evidence_claim_sources",
     "evidence_claims",

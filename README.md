@@ -2,260 +2,157 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**当前工程状态：M1 COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4-A AI Gateway COMPLETE；M4-B Evidence / Claim COMPLETE；M4 Overall NOT COMPLETE。**
+**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4-A AI Gateway COMPLETE；M4-B Evidence / Claim COMPLETE；M4-C Trend / Editorial Score COMPLETE；M4-D NOT STARTED；M4 Overall NOT COMPLETE。**
 
-> PR #15 已合并到 `main`。M4-B 当前位于 PR #16 `feature/m4b-evidence-claims`，PR 保持 Open，不自行合并。Production AI Provider Validation 继续 `NOT_TESTED`；CI Fake/Mock 不能替代真实 Provider Validation。
+> Production AI Provider Validation 继续 `NOT_TESTED`。CI Fake/Mock/MockTransport 只验证工程契约，不能替代真实生产 Provider Validation；M2 真实平台验证状态也不会因为 M3/M4 工程完成而自动升级。
 
-开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M4 工程验收见 [`docs/M4_ACCEPTANCE_REPORT.md`](docs/M4_ACCEPTANCE_REPORT.md)，M3 工程验收见 [`docs/M3_ACCEPTANCE_REPORT.md`](docs/M3_ACCEPTANCE_REPORT.md)，架构决定见 [`docs/DECISIONS.md`](docs/DECISIONS.md)。
+开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M4 工程验收见 [`docs/M4_ACCEPTANCE_REPORT.md`](docs/M4_ACCEPTANCE_REPORT.md)，架构决定见 [`docs/DECISIONS.md`](docs/DECISIONS.md)。
 
 ## 当前处理链
 
 ```text
-Connector Definition / Source / Schedule
-→ CollectionTask / CollectorRuntime
-→ Budget + Risk Guard + Run
-→ RSS / Manual URL / Hotlist / MediaCrawler Adapter
-→ Platform Mapper
+Connector / CollectorRuntime
 → RawSignal / RawSignalComment
-→ Checkpoint / Incremental / Resume
-
-RawSignal
-→ Event / EventSignal                                      M3-A
-→ EmbeddingInput(signal-text-v1) / versioned Embedding     M3-B
-→ pgvector exact cosine candidate recall                   M3-B
-→ deterministic fingerprint / exact + near duplicate       M3-C
-→ event-match-v1 / Event assignment / Merge / Split        M3-C
-→ offline evaluation / convergence / bounded reprocessing  M3-D
-→ processing + assignment provenance                       M3-D
-
-Business Task
-→ AI Task Route / immutable route version                  M4-A
-→ Provider / Model target                                  M4-A
-→ AIGateway                                                M4-A
-→ Invocation / Attempt audit                               M4-A
-→ Usage / pricing snapshot / estimated cost                M4-A
-→ AI Budget reserve / settle                               M4-A
-
-Event + EventSignal / RawSignal
-→ EvidenceInputBuilder                                     M4-B
-→ AIGateway.generate_structured(evidence_extraction)       M4-B
-→ Evidence business validation                             M4-B
-→ EvidenceClaim + Claim Source FK                          M4-B
-→ EventUnknown                                             M4-B
-→ Human verification                                       M4-B
+→ Event / EventSignal
+→ Signal Embedding / Matching / Clustering
+→ EvidenceClaim / EvidenceClaimSource / EventUnknown
+→ Deterministic Trend Snapshot
+→ AIGateway Editorial Scoring
+→ Editorial Score + Risk Candidate
+→ Human Manual Score / Override
+→ Effective Editorial Assessment
 ```
 
-采集层、M3 Processing、M4 AI 基础和 Evidence 层继续解耦。M4-B 不修改 M3 clustering、evaluation ground truth 或 threshold，也不把 AI 输出直接当成“已确认事实”。
+M4-C 中 Trend 回答“事件是否正在发酵”，Editorial Score 回答“这件事对账号是否值得讲”。两者保持分层，不合并为不可解释的黑箱分数；本阶段不建立 DailyCandidate/TOP Pool，也不生成标题、Hook、Event Card、Script 或 Draft。
 
-## M4-A — AI Gateway / Provider / Route / Cost Governance
+## M4-C Trend
 
-M4-A 已建立：
+版本：`trend-calculation-v1`。
 
-- `ai_providers` / `ai_models` / versioned `ai_task_routes`；
-- opaque `credential_ref` 与受控 resolver；
-- `AIGateway.embed / generate_text / generate_structured`；
-- OpenAI-compatible production adapter；
-- bounded retry / explicit fallback；
-- `ai_invocations` / `ai_invocation_attempts`；
-- token usage / pricing snapshot / estimated cost；
-- 独立 AI Budget + PostgreSQL reserve/settle concurrency gate；
-- Provider/Route/Budget/Invocation Admin API 与 Web；
-- M3-B `GatewayEmbeddingProvider` bridge；
-- CI 全部离线，不访问真实付费 Provider。
+`event_trend_snapshots` 是不可变、版本化的派生 artifact；同一 Event / window / calculation version / input hash 重复计算幂等。
 
-Migration：
+当前确定性能力：
 
-```text
-20260809_0010_m4a_ai_gateway
-```
+- `signal_count` / `new_signal_count`
+- `source_count` / `platform_count`
+- `signal_velocity = new_signal_count / window_hours`
+- `cross_source` / `cross_platform`
+- `update_value` 与原始 component metrics
 
-## M4-B — Evidence / Claim / Unknowns
+当前明确不可用：
 
-M4-B 建立“这件事目前有哪些可追溯事实候选、争议和未知项”，不自动做新闻真假裁判。
+- `interaction_velocity = NULL`：RawSignal.metrics 没有可靠跨平台 interaction normalization；
+- `cn_gap = NULL`：Source 没有可靠 country/region/market classification；
+- `semantic_novelty = NULL`：当前没有版本化 Event centroid，也没有已验证且足够简单的 Event-history novelty proxy；
+- media availability：当前没有统一可靠的媒体分类字段。
 
-Migration：
+`feature_availability` 与 `component_metrics.unavailable_reasons` 明确区分 unavailable 与数值 `0`。
 
-```text
-20260809_0011_m4b_evidence_claims
-```
-
-新增：
-
-```text
-evidence_extraction_runs
-evidence_claims
-evidence_claim_sources
-event_unknowns
-```
-
-### Claim 与来源证据链
-
-`EvidenceClaim`：
-
-- `claim_type = fact / allegation / opinion / forecast`；
-- `verification_state = confirmed / investigating / single_source / disputed / false`；
-- nullable `extraction_confidence`；
-- stable SHA-256 `claim_fingerprint`；
-- ExtractionRun / Invocation provenance；
-- `created_by_type = ai / human`；
-- actor / editor note / timestamps。
-
-同 Event 使用：
-
-```text
-UNIQUE(event_id, claim_fingerprint)
-```
-
-Evidence source 使用真实 FK 关联表：
-
-```text
-claim_id -> evidence_claims.id
-signal_id -> raw_signals.id
-role      -> supporting | contradicting
-UNIQUE(claim_id, signal_id)
-```
-
-RawSignal FK 使用 `ON DELETE RESTRICT`，防止历史证据静默丢失。所有 source 必须通过 EventSignal 属于目标 Event。
-
-### AI 与 Human 权限
-
-AI structured output 只是候选：
-
-```text
-有 contradicting evidence -> disputed
-仅 1 个 supporting        -> single_source
-多个 supporting           -> investigating
-```
-
-AI 无权自动写：
-
-```text
-confirmed
-false
-```
-
-即使模型输出这两个状态，Service 也不会采信。
-
-Human verification 必须带 Actor + reason：
-
-- confirmed 至少 1 supporting source；
-- false 至少 1 contradicting source；
-- 两个来源不自动等于 confirmed；
-- confirmed Claim 不能删除最后一个 support；
-- false Claim 不能删除最后一个 contradiction；
-- Human verification/editor note 不被 AI rerun 覆盖。
-
-### Unknown
-
-Unknown 是独立业务对象：
-
-```text
-status      = open | resolved | dismissed
-source_type = ai | human
-```
-
-同 Event 使用 stable fingerprint 幂等；AI rerun 不自动重新打开已 resolved/dismissed Unknown。
-
-### Evidence Input / Prompt 安全
-
-Provider 输入仅来自 Event + EventSignal + 安全 RawSignal 字段：
-
-- signal ID；
-- title / text；
-- author / platform；
-- published / collected time；
-- original/canonical URL metadata。
-
-默认不输入：
-
-- `raw_payload`；
-- credential / Cookie / Authorization；
-- connector config；
--完整 comment dump；
-- Embedding vector。
-
-输入有 deterministic order 与 `max_signals / max_chars_per_signal / max_total_chars` hard bound。截断显式记录，不无声吞掉。
+## M4-C Editorial Score
 
 版本：
 
-```text
-prompt_version = evidence-extraction-v1
-schema_version = evidence-schema-v1
-extraction_version = evidence-service-v1
-```
+- template key：`general`
+- template version：`score-template-general-v1`
+- scoring version：`editorial-score-service-v1`
+- prompt version：`editorial-scoring-v1`
+- schema version：`editorial-score-schema-v1`
 
-RawSignal 文本被标记为 `UNTRUSTED CONTENT`；Prompt 防注入之外，Service 仍强制检查 Event membership、source role、confidence 与 AI verification 权限。
+七个维度统一为 `0..100 integer`：
 
-### Extraction / Preview / Partial
+| Dimension | Weight |
+|---|---:|
+| emotion | 20 |
+| information_gap | 15 |
+| visual_value | 15 |
+| user_relevance | 15 |
+| discussion | 15 |
+| novelty | 10 |
+| extendability | 10 |
 
-AI extraction 严格复用 M4-A：
-
-```text
-EvidenceInputBuilder
-→ AIGateway.generate_structured(task=evidence_extraction)
-→ Route / Budget / Retry / Fallback / Schema
-→ Invocation / Attempt / Cost
-→ Evidence Service business validation
-→ short transaction apply
-```
-
-Provider 网络调用不持有 Event 长事务。
-
-Preview：产生 Invocation/ExtractionRun，但不写 Claim/Unknown；真实 Provider 下不宣称免费。
-
-Apply 对局部脏输出使用 `PARTIAL`：合法项保存，无来源 Claim 记录 `UNSUPPORTED_CLAIM` 而不落事实表，错误 signal ID 记录 invalid item，Run/API/Audit 保留 invalid count 与安全错误码。
-
-### Merged Event
-
-如果：
+`traffic_total` 不信任模型输出，由 Service 确定性重算：
 
 ```text
-event.merged_into_event_id != NULL
+sum(dimension_score * weight) / 100
 ```
 
-旧 source Event 禁止新增/修改 Evidence，返回：
+历史 Score append-only；rerun、新模型或未来新模板不能 silent overwrite 旧记录。
+
+## Risk / Recommended Format / Human Priority
+
+AI 只提出 `R0..R4` risk candidate 与有限 format 候选：
+
+- `daily_compilation`
+- `quick_explainer`
+- `fact_check`
+- `deep_dive`
+- `entertainment`
+- `consumer_safety`
+
+Risk consistency guard 至少保证：无 Evidence、无 confirmed Claim、全部 single_source/disputed、或仍有 open Unknown 时，AI 不能给出 R0。R4 表达当前表达路径存在高风险，不删除 Event；被证伪 Claim 仍可成为 `fact_check` 主题。
+
+人工可创建完整 Human Score，无需伪造 AI Invocation；也可对七维、risk、recommended format 创建 append-only override。人工写入要求 Actor + reason + AuditLog。Effective view 同时保留原始 Score 与人工决定，后续 AI rerun 不会静默抹掉 Human override。
+
+## Admin API
 
 ```text
-EVENT_MERGED
-+ target_event_id
+GET  /api/v1/admin/events/{event_id}/trend
+POST /api/v1/admin/events/{event_id}/trend/calculate
+GET  /api/v1/admin/events/{event_id}/editorial-scores
+GET  /api/v1/admin/events/{event_id}/editorial-scores/effective
+POST /api/v1/admin/events/{event_id}/editorial-scores/preview
+POST /api/v1/admin/events/{event_id}/editorial-scores
+POST /api/v1/admin/events/{event_id}/editorial-scores/manual
+POST /api/v1/admin/events/{event_id}/editorial-scores/{score_id}/override
 ```
 
-历史 Evidence 仍可读取。
+所有写操作继续要求 Admin Token + `X-Actor-ID`。API 不返回 RawSignal `raw_payload`、credential、Authorization、完整 Prompt 或 embedding vector。
 
-## Evidence Admin API
+## AIGateway 边界
 
-沿用 `/api/v1/admin/events`：
+M4-C AI Scoring 只允许：
 
 ```text
-GET    /{event_id}/evidence
-POST   /{event_id}/evidence/extract
-POST   /{event_id}/claims
-GET    /{event_id}/claims
-GET    /{event_id}/claims/{claim_id}
-PATCH  /{event_id}/claims/{claim_id}
-POST   /{event_id}/claims/{claim_id}/sources
-DELETE /{event_id}/claims/{claim_id}/sources/{signal_id}
-POST   /{event_id}/claims/{claim_id}/verify
-GET    /{event_id}/unknowns
-POST   /{event_id}/unknowns
-PATCH  /{event_id}/unknowns/{unknown_id}
+EditorialScoringInputBuilder
+→ AIGateway.generate_structured(task_key="editorial_scoring")
+→ Route
+→ Budget
+→ Retry / Fallback
+→ Provider adapter
+→ Structured Schema Validation
+→ Invocation / Attempt / Usage / Cost
+→ M4-C Risk Guard
+→ EditorialScore
 ```
 
-Safe Evidence view 不返回 RawSignal full text、raw_payload、API Key、Authorization、完整 Prompt 或 Embedding vector。
+Provider 调用位于数据库长事务之外。Preview 仍可能产生 Invocation/token/cost，但不写正式 EditorialScore。
 
-## CI Gate
+## 数据库迁移
+
+当前 migration head：`20260809_0012_m4c_trend_editorial_scoring`。
+
+新增：
+
+- `event_trend_snapshots`
+- `editorial_scoring_runs`
+- `editorial_scores`
+- `editorial_score_overrides`
+
+0012 基于 0011，未修改 0001～0011。
+
+## 基础验收
 
 ```bash
 ruff check .
 mypy apps packages
 pytest
-python -m scripts.evaluate_m3_clustering --format text
-pytest -q -s tests/test_clustering_performance_m3d.py
+
 alembic upgrade head
 alembic downgrade -1
 alembic upgrade head
 alembic downgrade base
 alembic upgrade head
+
 python -m scripts.sync_connector_definitions
 python -m scripts.sync_connector_definitions
 
@@ -266,23 +163,8 @@ npm test -- --run
 npm run build
 ```
 
-所有 AI Provider / Evidence extraction CI 测试必须离线。
+所有 CI AI 测试保持离线。
 
-## 当前阶段边界
+## 下一阶段边界
 
-```text
-M1 COMPLETE
-M2 Engineering COMPLETE
-M2 Real Smoke Validation DEFERRED / NOT_TESTED
-M2 Real-world Validation NOT COMPLETE
-M3 Overall Engineering COMPLETE
-M4-A AI Gateway COMPLETE / PR #15 merged
-M4-B Evidence / Claim COMPLETE / PR #16 Open
-Production AI Provider Validation NOT_TESTED
-M4-C NOT STARTED
-M4-D NOT STARTED
-M4 Overall NOT COMPLETE
-M5 NOT STARTED
-```
-
-PR #16 保持 Open，由人工决定是否合并。后续 M4-C 只有在 PR #16 人工合并后才能从最新 `main` 创建独立分支，不得从 `feature/m4b-evidence-claims` 继续派生。
+PR #17 保持 Open，不自行合并。只有 PR #17 人工合并后，才能从最新 `main` 独立进入 M4-D；M4-D 才处理 Event Card / Candidate Pack / Script / Draft。
