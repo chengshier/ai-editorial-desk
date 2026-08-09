@@ -4,7 +4,17 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from packages.database.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -64,12 +74,24 @@ class EvidenceExtractionRunRecord(UUIDPrimaryKeyMixin, Base):
 
     __tablename__ = "evidence_extraction_runs"
     __table_args__ = (
-        CheckConstraint("requested_signal_count >= 0", name="evidence_run_signal_count_nonnegative"),
+        CheckConstraint(
+            "requested_signal_count >= 0",
+            name="evidence_run_signal_count_nonnegative",
+        ),
         CheckConstraint("claim_count >= 0", name="evidence_run_claim_count_nonnegative"),
         CheckConstraint("unknown_count >= 0", name="evidence_run_unknown_count_nonnegative"),
-        CheckConstraint("invalid_item_count >= 0", name="evidence_run_invalid_count_nonnegative"),
-        CheckConstraint("character_count >= 0", name="evidence_run_character_count_nonnegative"),
-        CheckConstraint("char_length(input_hash) = 64", name="evidence_run_input_hash_sha256"),
+        CheckConstraint(
+            "invalid_item_count >= 0",
+            name="evidence_run_invalid_count_nonnegative",
+        ),
+        CheckConstraint(
+            "character_count >= 0",
+            name="evidence_run_character_count_nonnegative",
+        ),
+        CheckConstraint(
+            "char_length(input_hash) = 64",
+            name="evidence_run_input_hash_sha256",
+        ),
         Index("ix_evidence_extraction_runs_event_created", "event_id", "created_at"),
         Index("ix_evidence_extraction_runs_invocation", "ai_invocation_id"),
     )
@@ -84,18 +106,29 @@ class EvidenceExtractionRunRecord(UUIDPrimaryKeyMixin, Base):
     prompt_version: Mapped[str] = mapped_column(String(100), nullable=False)
     schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
     mode: Mapped[EvidenceExtractionRunMode] = mapped_column(
-        string_enum(EvidenceExtractionRunMode, name="evidence_extraction_run_mode"), nullable=False
+        string_enum(EvidenceExtractionRunMode, name="evidence_extraction_run_mode"),
+        nullable=False,
     )
     status: Mapped[EvidenceExtractionRunStatus] = mapped_column(
-        string_enum(EvidenceExtractionRunStatus, name="evidence_extraction_run_status"), nullable=False
+        string_enum(
+            EvidenceExtractionRunStatus,
+            name="evidence_extraction_run_status",
+        ),
+        nullable=False,
     )
-    requested_signal_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    requested_signal_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     claim_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     unknown_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     invalid_item_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     character_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    truncated: Mapped[bool] = mapped_column(nullable=False, default=False, server_default=text("false"))
+    truncated: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     requested_by: Mapped[str | None] = mapped_column(String(255))
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_summary: Mapped[str | None] = mapped_column(Text)
@@ -106,15 +139,26 @@ class EvidenceExtractionRunRecord(UUIDPrimaryKeyMixin, Base):
 
 
 class EvidenceClaimRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """A traceable claim candidate; AI output is never automatically confirmed or false."""
+    """A traceable claim candidate; AI never automatically confirms or rejects it."""
 
     __tablename__ = "evidence_claims"
     __table_args__ = (
-        UniqueConstraint("event_id", "claim_fingerprint", name="uq_evidence_claims_event_fingerprint"),
-        CheckConstraint("char_length(btrim(claim_text)) > 0", name="evidence_claim_text_nonempty"),
-        CheckConstraint("char_length(claim_fingerprint) = 64", name="evidence_claim_fingerprint_sha256"),
+        UniqueConstraint(
+            "event_id",
+            "claim_fingerprint",
+            name="uq_evidence_claims_event_fingerprint",
+        ),
         CheckConstraint(
-            "extraction_confidence IS NULL OR (extraction_confidence >= 0 AND extraction_confidence <= 1)",
+            "char_length(btrim(claim_text)) > 0",
+            name="evidence_claim_text_nonempty",
+        ),
+        CheckConstraint(
+            "char_length(claim_fingerprint) = 64",
+            name="evidence_claim_fingerprint_sha256",
+        ),
+        CheckConstraint(
+            "extraction_confidence IS NULL OR "
+            "(extraction_confidence >= 0 AND extraction_confidence <= 1)",
             name="evidence_claim_confidence_range",
         ),
         Index("ix_evidence_claims_event_state", "event_id", "verification_state"),
@@ -129,7 +173,8 @@ class EvidenceClaimRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         string_enum(EvidenceClaimType, name="evidence_claim_type"), nullable=False
     )
     verification_state: Mapped[EvidenceVerificationState] = mapped_column(
-        string_enum(EvidenceVerificationState, name="evidence_verification_state"), nullable=False
+        string_enum(EvidenceVerificationState, name="evidence_verification_state"),
+        nullable=False,
     )
     extraction_confidence: Mapped[float | None] = mapped_column(Float)
     claim_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -141,7 +186,8 @@ class EvidenceClaimRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ForeignKey("ai_invocations.id", ondelete="RESTRICT"), index=True
     )
     created_by_type: Mapped[EvidenceCreatedByType] = mapped_column(
-        string_enum(EvidenceCreatedByType, name="evidence_created_by_type"), nullable=False
+        string_enum(EvidenceCreatedByType, name="evidence_created_by_type"),
+        nullable=False,
     )
     created_by_actor: Mapped[str | None] = mapped_column(String(255))
     editor_note: Mapped[str | None] = mapped_column(Text)
@@ -152,15 +198,23 @@ class EvidenceClaimSourceRecord(UUIDPrimaryKeyMixin, Base):
 
     __tablename__ = "evidence_claim_sources"
     __table_args__ = (
-        UniqueConstraint("claim_id", "signal_id", name="uq_evidence_claim_sources_claim_signal"),
+        UniqueConstraint(
+            "claim_id",
+            "signal_id",
+            name="uq_evidence_claim_sources_claim_signal",
+        ),
         Index("ix_evidence_claim_sources_signal", "signal_id"),
     )
 
     claim_id: Mapped[UUID] = mapped_column(
-        ForeignKey("evidence_claims.id", ondelete="RESTRICT"), nullable=False, index=True
+        ForeignKey("evidence_claims.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     signal_id: Mapped[UUID] = mapped_column(
-        ForeignKey("raw_signals.id", ondelete="RESTRICT"), nullable=False, index=True
+        ForeignKey("raw_signals.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
     )
     role: Mapped[EvidenceSourceRole] = mapped_column(
         string_enum(EvidenceSourceRole, name="evidence_source_role"), nullable=False
@@ -175,9 +229,19 @@ class EventUnknownRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     __tablename__ = "event_unknowns"
     __table_args__ = (
-        UniqueConstraint("event_id", "unknown_fingerprint", name="uq_event_unknowns_event_fingerprint"),
-        CheckConstraint("char_length(btrim(unknown_text)) > 0", name="event_unknown_text_nonempty"),
-        CheckConstraint("char_length(unknown_fingerprint) = 64", name="event_unknown_fingerprint_sha256"),
+        UniqueConstraint(
+            "event_id",
+            "unknown_fingerprint",
+            name="uq_event_unknowns_event_fingerprint",
+        ),
+        CheckConstraint(
+            "char_length(btrim(unknown_text)) > 0",
+            name="event_unknown_text_nonempty",
+        ),
+        CheckConstraint(
+            "char_length(unknown_fingerprint) = 64",
+            name="event_unknown_fingerprint_sha256",
+        ),
         Index("ix_event_unknowns_event_status", "event_id", "status"),
     )
 
@@ -190,7 +254,8 @@ class EventUnknownRecord(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         string_enum(EventUnknownStatus, name="event_unknown_status"), nullable=False
     )
     source_type: Mapped[EventUnknownSourceType] = mapped_column(
-        string_enum(EventUnknownSourceType, name="event_unknown_source_type"), nullable=False
+        string_enum(EventUnknownSourceType, name="event_unknown_source_type"),
+        nullable=False,
     )
     extraction_run_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("evidence_extraction_runs.id", ondelete="RESTRICT"), index=True
