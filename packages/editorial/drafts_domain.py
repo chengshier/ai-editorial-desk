@@ -41,10 +41,6 @@ SAFE_MEDIA_METADATA_KEYS = frozenset(
     {
         "type",
         "media_type",
-        "url",
-        "source_url",
-        "thumbnail_url",
-        "cover_url",
         "mime_type",
         "duration",
         "duration_seconds",
@@ -64,7 +60,7 @@ Evidence permission rules are mandatory:
 - disputed: must explicitly preserve the dispute and use disputed citation usage.
 - false: may only appear to explain/debunk the false claim and must use debunked citation usage.
 - unknown: may only be an open question. Never invent an answer or turn it into a factual statement.
-- Never create Claim/Unknown IDs, sources, facts, quotations, title facts or conclusions not in input.
+- Never create Claim/Unknown IDs, sources, facts, quotations or conclusions absent from input.
 - Every factual section must cite at least one supplied Claim ID.
 - Do not modify Claim verification state, Event membership, Trend, score or risk.
 - Keep title/hook/cover candidates bounded and avoid certainty when evidence is attributed/disputed.
