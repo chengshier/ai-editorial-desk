@@ -74,14 +74,15 @@ async def test_ai_apply_recomputes_total_uses_gateway_and_is_idempotent(db_sessi
     assert second.score.id == first.score.id
     assert second.reused is True
     assert len(calls) == 1
-    request_body = calls[0].content.decode()
-    assert "editorial_scoring" not in request_body or "model-primary" in request_body
-    assert "BEGIN UNTRUSTED EVENT DATA" in request_body
-    assert '"interaction_velocity":null' in request_body
-    assert RAW_ONLY_SECRET not in request_body
-    assert "raw_payload" not in request_body
-    assert "authorization" not in request_body.casefold()
-    assert "embedding" not in request_body.casefold()
+    request_body = json.loads(calls[0].content.decode())
+    assert request_body["model"] == "model-primary"
+    user_message = request_body["messages"][1]["content"]
+    assert "BEGIN UNTRUSTED EVENT DATA" in user_message
+    assert '"interaction_velocity":null' in user_message
+    assert RAW_ONLY_SECRET not in user_message
+    assert "raw_payload" not in user_message
+    assert "authorization" not in user_message.casefold()
+    assert "embedding" not in user_message.casefold()
 
     async with get_async_sessionmaker()() as session:
         assert await session.scalar(
