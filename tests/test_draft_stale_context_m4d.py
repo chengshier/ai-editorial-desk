@@ -53,7 +53,7 @@ async def test_evidence_change_between_snapshot_and_apply_is_stale(db_session) -
 
     invocation_id = uuid4()
     with pytest.raises(StaleEditorialContextError):
-        await service._apply(  # noqa: SLF001
+        await service._apply_ai_draft(  # noqa: SLF001
             run_id=run.id,
             invocation_id=invocation_id,
             snapshot=snapshot,
@@ -112,7 +112,7 @@ async def test_merge_between_snapshot_and_apply_blocks_old_event(db_session) -> 
 
     invocation_id = uuid4()
     with pytest.raises(DraftEventMergedError) as caught:
-        await service._apply(  # noqa: SLF001
+        await service._apply_ai_draft(  # noqa: SLF001
             run_id=run.id,
             invocation_id=invocation_id,
             snapshot=snapshot,
