@@ -7,7 +7,7 @@ from packages.ai_gateway.domain import AIModelTarget, AIUsage
 MILLION = Decimal("1000000")
 
 
-def pricing_snapshot(target: AIModelTarget) -> dict[str, str | None]:
+def pricing_snapshot(target: AIModelTarget) -> dict[str, object]:
     return {
         "pricing_version": target.pricing_version,
         "input_price_per_million": _decimal_text(target.input_price_per_million),
