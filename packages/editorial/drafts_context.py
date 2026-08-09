@@ -404,16 +404,15 @@ async def load_editorial_context(
         context_hash=effective_hash,
     )
 
-    memberships = tuple(
-        (
-            await session.execute(
-                select(EventSignalRecord, RawSignalRecord)
-                .join(RawSignalRecord, RawSignalRecord.id == EventSignalRecord.signal_id)
-                .where(EventSignalRecord.event_id == event_id)
-                .order_by(EventSignalRecord.signal_id.asc())
-            )
-        ).all()
-    )
+    membership_rows = (
+        await session.execute(
+            select(EventSignalRecord, RawSignalRecord)
+            .join(RawSignalRecord, RawSignalRecord.id == EventSignalRecord.signal_id)
+            .where(EventSignalRecord.event_id == event_id)
+            .order_by(EventSignalRecord.signal_id.asc())
+        )
+    ).all()
+    memberships = tuple((row[0], row[1]) for row in membership_rows)
     context_hash = stable_hash(
         {
             "event": {
