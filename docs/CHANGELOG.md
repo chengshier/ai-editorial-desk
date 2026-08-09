@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-08-09 - M4-D Event Card / Draft Engineering Closure
+
+### Added
+
+- 新增 migration `20260809_0013_m4d_editorial_pack_drafts`；
+- 新增 versioned / append-only `event_cards`，以 `event-card-v1` 固化 Event + Evidence + Trend + Effective Editorial Assessment provenance；
+- 新增 versioned / append-only `editorial_packs`，以 `editorial-pack-v1` 整理 source / timeline / material metadata / warning / suggested angles；
+- 新增 `draft_generation_runs`、`editorial_drafts`、`draft_claim_references`；
+- 新增 `draft-service-v1 / draft-generation-v1 / draft-schema-v1`；
+- 新增 `short_30s / standard_90s / deep_180s` Evidence-aware Draft / Script generation；
+- 新增 Claim citation chain、unsupported / cross-event Claim 与 Unknown 拒绝、false / disputed / single_source / investigating 安全语义；
+- 新增 Risk-aware Draft path、stale editorial context protection 与 merged Event protection；
+- 新增 Human Draft / Human Revision append-only version chain，AI 原始稿不被覆盖；
+- 新增 deterministic Markdown Export，不再次调用 AI；
+- 新增 M4-D Admin API 与 PostgreSQL constraint / concurrency / migration / API / export 回归测试。
+
+### Validation
+
+- PR #18 `feat: 完成 M4-D Event Card、Draft与阶段收口` 已人工 Squash merge；
+- PR #18 final exact-head `9ae6033b57111a800c24c3eb69aa6ef694e53235` 的 GitHub Actions run `31312854489` / #383 为 `completed / success`；
+- Python / Web Gate 均 success；full pytest `489 passed, 1 warning`；
+- Alembic five-step round trip 与 Connector Definition sync ×2 success；
+- `M4-D Event Card / Draft = COMPLETE`；
+- `M4 Overall Engineering = COMPLETE`；
+- `Production AI Provider Validation = NOT_TESTED`；
+- `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；
+- `M2 Real-world Validation = NOT COMPLETE`；
+- `M5 = NOT STARTED`。
+
 ## 2026-08-09 - M4-C Trend / Editorial Score Engineering
 
 ### Added
@@ -36,7 +65,7 @@
 - `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；
 - `M2 Real-world Validation = NOT COMPLETE`；
 - `M3 Overall Engineering = COMPLETE`；
-- `M4-D = NOT STARTED`。
+- M4-D 在当时尚未开始；其完成记录见本文件上方 M4-D Engineering Closure。
 
 ## 2026-08-09 - M4-B Evidence / Claim Engineering
 

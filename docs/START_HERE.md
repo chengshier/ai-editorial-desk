@@ -10,26 +10,16 @@ M2 Real-world Validation NOT COMPLETE
 M3 Overall Engineering COMPLETE / 已合并
 M4-A AI Gateway COMPLETE / 已合并
 M4-B Evidence / Claim COMPLETE / 已合并
-M4-C Trend / Editorial Score COMPLETE / PR #17 Open
-M4-D Event Card / Script NOT STARTED
-M4 Overall NOT COMPLETE
+M4-C Trend / Editorial Score COMPLETE / 已合并
+M4-D Event Card / Draft COMPLETE / PR #18 MERGED
+M4 Overall Engineering COMPLETE
 Production AI Provider Validation NOT_TESTED
 M5 NOT STARTED
 ```
 
-当前分支：
+M4-D 已通过 PR #18 `feat: 完成 M4-D Event Card、Draft与阶段收口` 人工 Squash merge 到 `main`。M4 工程阶段已经收口，但 Production AI Provider Validation 仍为 `NOT_TESTED`，M2 Real Smoke / Real-world Validation 状态保持不变。
 
-```text
-feature/m4c-trend-editorial-scoring
-```
-
-当前 PR：
-
-```text
-#17 feat: 完成 M4-C Trend与Editorial Score基础
-```
-
-PR 保持 Open，不自行合并。
+当前没有 M5 功能开发分支。下一开发阶段是 M5-A；开始时必须以**当时最新 `main`** 为基线新建独立分支，不得从 `feature/m4d-editorial-pack`、`feature/m4c-trend-editorial-scoring` 或任何旧 feature 分支派生。
 
 ## 开发前必读
 
@@ -57,6 +47,11 @@ Connector Definition / Source / Schedule
 → Risk Consistency Guard
 → Human Manual Score / Override
 → Effective Editorial Assessment
+→ Event Card
+→ Editorial Pack
+→ Draft Generation
+→ Human Draft / Human Revision
+→ Markdown Export
 ```
 
 ## M4-C 冻结语义
@@ -73,16 +68,9 @@ M4-C 不把规则/趋势特征和 AI 语义评分混成一个最终黑箱，也�
 
 版本：`trend-calculation-v1`。
 
-`event_trend_snapshots` 是 append-only、版本化、可幂等重算的派生 artifact。计算必须使用显式 UTC window，并且 window 有上限，不依赖 `datetime.now()` 作为测试语义。
+`event_trend_snapshots` 是 append-only、版本化、可幂等重算的派生 artifact。计算使用显式 UTC window；unavailable 与数值 `0` 必须区分。
 
-当前可用：
-
-- signal velocity；
-- source/platform spread；
-- cross_source/cross_platform；
-- 基于真实 Signal/Claim/official_response/correction 的 update_value component。
-
-当前不可用：
+当前明确保持 unavailable 的能力：
 
 - interaction velocity：`INTERACTION_NORMALIZATION_UNAVAILABLE`；
 - cn_gap：`GEOGRAPHY_CLASSIFICATION_UNAVAILABLE`；
@@ -91,7 +79,7 @@ M4-C 不把规则/趋势特征和 AI 语义评分混成一个最终黑箱，也�
 
 禁止用平台名推断国内/海外，禁止把不同平台互动数直接相加，禁止为了 novelty 临时向 Event 写 centroid。
 
-### Editorial Score
+### Editorial Score / Human Priority
 
 版本：
 
@@ -103,82 +91,175 @@ prompt version: editorial-scoring-v1
 schema version: editorial-score-schema-v1
 ```
 
-七维统一 `0..100 integer`：
+七维统一 `0..100 integer`；`traffic_total = sum(dimension * weight) / 100`，由 Service 重算。模型返回的 total 不作为业务真相。
+
+Scoring 只能读取 Claim verification / source count / Unknown 状态，不能创建、确认、删除或改写 Evidence。Human manual score 与 Human override 均保留独立 provenance；后续 AI rerun 可以产生新 Score，但不能 silent overwrite Human 决定。
+
+## M4-D 冻结语义
+
+### Artifact 分层
+
+M4-D 明确保持三层：
 
 ```text
-emotion             20
-information_gap     15
-visual_value        15
-user_relevance      15
-discussion          15
-novelty             10
-extendability       10
+Event Card
+→ Editorial Pack
+→ Draft
 ```
 
-`traffic_total = sum(dimension * weight) / 100`，由 Service 重算。模型返回的 total 不作为业务真相。
+Event Card 是当前 Event + Evidence + Trend + Effective Editorial Assessment 的确定性编辑快照；Editorial Pack 是基于 Card 整理出的资料包；Draft 是在 Card/Pack 与 Evidence permission 约束下生成或人工创建的版本化稿件。三者不得合并成一个不可审计的 AI 输出。
 
-### Evidence / Risk 边界
+### Event Card
 
-Scoring 只能读取 Claim verification / source count / Unknown 状态，不能创建、确认、删除或改写 Evidence。
+版本：`event-card-v1`。
 
-AI 可建议 R0-R4，但至少：
+- versioned / append-only；
+- 通过 `event_id + card_version + input_hash` 保持输入幂等；
+- 保存 Evidence snapshot provenance；
+- 绑定 Trend Snapshot（可为空）与 Effective Editorial Assessment；
+- 保存 risk / recommended format；
+- v1 为 deterministic build，`ai_invocation_id = NULL`；
+- Evidence、Effective Score 或 Human Override 变化后，旧 Card 继续保留为历史，但不能作为当前 Pack/Draft 的有效输入。
 
-- 无 Evidence 不得 R0；
-- 无 confirmed Claim 不得 R0；
-- 全部 single_source/disputed 不得 R0；
-- 存在 open Unknown 不得 R0。
+### Editorial Pack
 
-R4 不删除 Event；被证伪内容仍可作为 `fact_check` 候选。
+版本：`editorial-pack-v1`。
 
-### Human Priority
+- versioned / append-only / input idempotent；
+- 包含 source items、timeline items、Claim reference 摘要、open Unknown、suggested angles；
+- material 只保存受控 media metadata 与原始 source URL，不下载素材，不把 raw payload / Authorization / secret 带入 Pack；
+- 媒体 metadata 不可用时使用显式 warning，例如 `MEDIA_METADATA_UNAVAILABLE`，不得伪造可用性；
+- disputed / false / single-source Claim 对应资料必须保留风险提示。
 
-Human manual score：
+### Draft Generation
 
-- 完整七维；
+版本：
+
+```text
+draft service: draft-service-v1
+prompt version: draft-generation-v1
+schema version: draft-schema-v1
+```
+
+支持：
+
+```text
+short_30s
+standard_90s
+deep_180s
+```
+
+AI Draft 只能通过：
+
+```text
+AIGateway.generate_structured(task_key="draft_generation")
+```
+
+完整经过 Route / Budget / Retry / Fallback / Schema / Invocation / Attempt / Usage / Cost。Provider 网络调用位于数据库长事务之外。
+
+### Evidence / Citation 安全边界
+
+Draft 中的事实只能沿目标 Event 内真实 Evidence Claim 引用：
+
+- confirmed：可 `fact` 或 attributed；
+- investigating：必须 attributed；
+- single_source：必须 attributed，不能当 confirmed；
+- disputed：必须保留 disputed 语义；
+- false：只能用于 debunk / fact-check，不得重新作为事实传播；
+- Unknown：只能作为 open question，不得转成事实答案。
+
+每个 factual section 必须引用 Claim；unsupported / 跨 Event / verification 不允许的 Claim usage 必须拒绝。AI Draft 无权修改或提升 Claim verification，也不能创建虚构 Claim / Unknown / source。
+
+### Risk-aware Draft Path
+
+Draft Apply 继续使用 M4-C Effective Risk：
+
+- R4：只允许 `fact_check` AI Draft Apply；Event 不因此删除；
+- R3：普通内容路径需要 Human 明确 risk approval reason；
+- Preview 不绕过 Evidence validation，但不会写正式 Draft；
+- Risk Gate 不得通过配置、测试或文档被降级。
+
+### Human Draft / Human Revision
+
+Human Draft：
+
 - Actor + reason；
+- 必须有合法 Claim references；
 - `source_type=human`；
 - 不创建 Fake AI Invocation；
-- 写 AuditLog。
+- 建立独立 draft chain v1。
 
-Human override：
+Human Revision：
 
+- 只能基于当前 chain 最新版本创建下一版本；
 - append-only；
-- 可覆盖七维、risk、recommended format；
-- Actor + reason；
-- 原始 Score 保留；
-- effective view 应用人工决定；
-- 后续 AI rerun 可以新建 Score，但不能 silent overwrite Human 决定。
+- 保留 parent / chain / version provenance；
+- AI 原始稿不能被 Human Revision update 覆盖；
+- Human Revision 形成新的版本记录并写 AuditLog。
 
-## AIGateway 唯一路径
+### Stale / Merge / Transaction Protection
 
-Editorial Scoring 必须使用：
+Draft 生成先构建安全 snapshot，再调用 Provider；Apply 阶段重新读取并锁定当前 Event context：
+
+- Evidence snapshot 变化 → stale；
+- Effective Editorial Assessment / Human Override 变化 → stale；
+- Claim verification 变化导致 citation usage 不再合法 → stale；
+- Unknown 不再 open → stale；
+- source Event 已 merged → `EVENT_MERGED + target_event_id`，禁止新增 Card/Pack/Draft；
+- 历史 artifact 继续可读。
+
+不得为了消除 stale 检查而把 Provider 调用包进数据库长事务。
+
+### Markdown Export
+
+`EditorialMarkdownExporter` 是 deterministic renderer：
+
+- 只读取已存在的 Event Card / Editorial Pack / 可选 Draft；
+- 输出 Event / Trend / Editorial Score / Risk / Claims / Unknowns / Timeline / Sources / Suggested Angles / Material Checklist / Draft；
+- 不再次调用 AI；
+- 不修改 artifact；
+- 不输出 raw payload、credential、Authorization 或未受控 secret。
+
+### M4-D 明确不包含
+
+- DailyCandidate / 今日候选池；
+- 采用 / 观察 / 放弃工作流；
+- Publication；
+- Performance Feedback；
+- 自动调权；
+- M5 Editorial Workbench。
+
+这些属于 M5 或更后阶段，M4-D 不提前实现。
+
+## Production AI Provider Validation
 
 ```text
-AIGateway.generate_structured(task_key="editorial_scoring")
+Production AI Provider Validation = NOT_TESTED
 ```
 
-完整经过 Route / Budget / Retry / Fallback / Schema / Invocation / Attempt / Usage / Cost。Provider 网络调用放在数据库长事务之外。Preview 不是 free，但不能写正式 EditorialScore。
-
-Production AI Provider Validation 仍为 `NOT_TESTED`，CI Mock/Fake 成功不能改写该状态。
+M4-A～M4-D 工程完成与 CI Mock/Fake 成功均不能把该状态改成 PASSED。只有后续人工提供真实 production credential 并完成明确的真实网络验证后，才能单独更新。
 
 ## Migration
 
 当前 head：
 
 ```text
-20260809_0012_m4c_trend_editorial_scoring
+20260809_0013_m4d_editorial_pack_drafts
 ```
 
-M4-C 新增：
+M4-D 新增：
 
-- `event_trend_snapshots`
-- `editorial_scoring_runs`
-- `editorial_scores`
-- `editorial_score_overrides`
+- `event_cards`
+- `editorial_packs`
+- `draft_generation_runs`
+- `editorial_drafts`
+- `draft_claim_references`
 
-没有修改 0001～0011。
+0013 down revision 为 `20260809_0012`，未修改 0001～0012。
 
 ## Admin API
+
+M4-C：
 
 ```text
 GET  /api/v1/admin/events/{event_id}/trend
@@ -189,6 +270,22 @@ POST /api/v1/admin/events/{event_id}/editorial-scores/preview
 POST /api/v1/admin/events/{event_id}/editorial-scores
 POST /api/v1/admin/events/{event_id}/editorial-scores/manual
 POST /api/v1/admin/events/{event_id}/editorial-scores/{score_id}/override
+```
+
+M4-D：
+
+```text
+GET  /api/v1/admin/events/{event_id}/cards
+POST /api/v1/admin/events/{event_id}/cards
+GET  /api/v1/admin/events/{event_id}/editorial-packs
+POST /api/v1/admin/events/{event_id}/editorial-packs
+GET  /api/v1/admin/events/{event_id}/drafts
+GET  /api/v1/admin/events/{event_id}/drafts/{draft_id}
+POST /api/v1/admin/events/{event_id}/drafts/preview
+POST /api/v1/admin/events/{event_id}/drafts
+POST /api/v1/admin/events/{event_id}/drafts/manual
+POST /api/v1/admin/events/{event_id}/drafts/{draft_id}/revisions
+GET  /api/v1/admin/events/{event_id}/editorial-pack/export.md
 ```
 
 所有写操作要求 Admin Token + `X-Actor-ID`。
@@ -220,4 +317,12 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`。
 
 ## 下一阶段
 
-M4-D 仍为 `NOT STARTED`。只有 PR #17 人工合并后，才能基于最新 `main` 新建独立 M4-D 分支；不得从 `feature/m4c-trend-editorial-scoring` 继续派生。M4-D 才允许进入 Event Card / Candidate Pack / Script / Draft。
+下一阶段为 **M5-A**，当前仍为 `NOT STARTED`。
+
+开始 M5-A 时必须：
+
+1. 先确认 M4 文档收口 PR 已人工合并；
+2. 拉取当时最新 `main`；
+3. 从最新 `main` 新建独立 M5-A 分支；
+4. 不得从 `feature/m4d-editorial-pack`、`feature/m4c-trend-editorial-scoring` 或本次文档分支继续派生；
+5. M5-A 的范围与 Gate 需单独确认，不能把 M4-D 收口当作 M5 功能开工。

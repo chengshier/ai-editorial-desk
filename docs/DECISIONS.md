@@ -167,3 +167,24 @@ M3 的 SignalEmbeddingRecord/version/input hash/recall 语义保持不变；M4-A
 21. **merged Event 与历史审计保持一致。** source Event 已 merged 时禁止新增 Trend/Score/Override，返回 `EVENT_MERGED + target_event_id`；历史 artifact 仍可读取。
 22. **Production Provider Validation 保持独立。** M4-C CI 全部使用 Mock/Fake；这不能把 `Production AI Provider Validation = NOT_TESTED` 改成 PASSED/VERIFIED。
 23. **M4-C 不进入 M4-D/M5。** 不实现 Event Card、标题、Hook、Candidate Pack、Script、Draft、DailyCandidate、Publication Feedback 或自动权重学习。
+
+## D-027：M4-D Event Card / Editorial Pack / Draft 分层并保持 Evidence、Human 与历史优先
+
+日期：2026-08-09
+
+决定：
+
+1. **Event Card、Editorial Pack、Draft 是三个独立 artifact 层。** Event Card 固化当前 Event + Evidence + Trend + Effective Editorial Assessment；Editorial Pack 组织来源、时间线、素材 metadata、warning 与角度；Draft 承载具体表达。三者不得合并成一个不可审计的模型输出。
+2. **Event Card / Editorial Pack v1 优先确定性构建。** `event-card-v1` 与 `editorial-pack-v1` 使用 version + input hash 保持 append-only / input idempotency；仅为资料卡和资料包排版不调用 AI。
+3. **Draft 中事实只能通过 Evidence Claim citation chain。** factual section 必须引用目标 Event 内真实 Claim；不允许从 RawSignal 文本、模型自由知识或 Unknown 直接生成无 provenance 的事实。
+4. **AI Draft 不能提升 Claim verification。** confirmed 才可无条件 fact；investigating/single_source 必须 attributed；disputed 必须保留争议；false 只能用于 debunk/fact-check；Unknown 只能作为 open question。模型无权把这些状态改成 confirmed/false 或创建虚构 Claim/Unknown。
+5. **Draft citation 是一等 provenance。** `draft_claim_references` 保存 draft → claim → section → usage 的明确关系；跨 Event、unsupported 或与 verification state 不兼容的引用必须拒绝。
+6. **AI/Human Draft 均采用 append-only/versioned history。** AI 原始稿不 update 覆盖；Human Draft 建立独立 chain；Human Revision 只能基于当前 chain 最新版本创建下一版本，并保留 parent/chain/version/actor/change_note。
+7. **Human Revision 优先于“改写原稿”。** 人工编辑生成新的 `source_type=human` 版本，AI 原始版本持续可审计；不通过覆写 AI 记录来表达人工修订。
+8. **Draft Apply 必须防 stale editorial context。** Provider 调用前建立 snapshot，调用后重新校验 Event、Evidence snapshot、Effective Editorial Assessment、Human Override、Claim verification 与 open Unknown；上下文变化时旧 candidate 不得落正式 Draft。
+9. **merged source Event 禁止新建 M4-D artifact。** source Event 已 merge 时禁止新建 Card/Pack/Draft/Revision，返回 `EVENT_MERGED + target_event_id`；历史 artifact 继续可读，不删除 Event 或 M3 provenance。
+10. **Risk-aware Draft path 继承 Effective Risk。** R4 只允许 `fact_check` AI Draft Apply；R3 普通表达路径需要 Human 明确 risk approval reason；风险较低也不能绕过 Evidence / citation validation。
+11. **Provider 调用位于数据库长事务之外。** Draft snapshot 短事务完成后才进入 AIGateway 网络调用；Apply 使用新的短事务重验并保存，不能为了省去 stale 检查把网络调用包进数据库长事务。
+12. **Markdown Export 是 deterministic / no-AI renderer。** Export 只读取已存在 Card/Pack/Draft，不能再次调用 AI、创建 Invocation 或修改 artifact；输出必须排除 raw_payload、credential、Authorization 与未受控 secret。
+13. **M4-D 不包含 M5 工作流。** DailyCandidate、今日候选池、采用/观察/放弃、Publication、Performance Feedback、自动调权与 M5 Editorial Workbench 均不属于 M4-D。
+14. **Mock/Fake Provider 不等于 Production Validation。** M4-D CI 的 Fake/Mock/MockTransport 只证明工程契约；`Production AI Provider Validation` 在没有真实 credential + network validation 前继续 `NOT_TESTED`。
