@@ -102,6 +102,12 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     if not report.failed:
         return
     message = f"{report.nodeid}\n{report.longrepr}"
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a", encoding="utf-8") as summary:
+            summary.write("### pytest first failure\n\n```text\n")
+            summary.write(message[:12000])
+            summary.write("\n```\n")
     escaped = (
         message.replace("%", "%25")
         .replace("\r", "%0D")
