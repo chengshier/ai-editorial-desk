@@ -15,37 +15,18 @@ from tests.m4d_helpers import create_m4d_context, create_mock_draft_service, val
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_other_event_claim_and_unknown_are_rejected(db_session) -> None:  # type: ignore[no-untyped-def]
-    first = await create_m4d_context(db_session, title="Target event")
+async def test_other_event_claim_is_rejected(db_session) -> None:  # type: ignore[no-untyped-def]
+    target = await create_m4d_context(db_session, title="Target event")
     other = await create_m4d_context(db_session, title="Other event")
-
-    wrong_claim, _calls = await create_mock_draft_service(
+    service, _calls = await create_mock_draft_service(
         db_session,
         response_data=valid_draft_payload(claim_id=other.claims["confirmed"].id),
     )
     with pytest.raises(UnsupportedDraftClaimError):
-        await wrong_claim.generate(
-            event_id=first.event.id,
-            event_card_id=first.card.id,
-            editorial_pack_id=first.pack.id,
-            draft_type=DraftType.STANDARD_90S,
-            actor="writer",
-            apply=False,
-        )
-
-    wrong_unknown_payload = valid_draft_payload(
-        claim_id=first.claims["confirmed"].id,
-        unknown_id=other.unknown.id,
-    )
-    wrong_unknown, _calls = await create_mock_draft_service(
-        db_session,
-        response_data=wrong_unknown_payload,
-    )
-    with pytest.raises(UnsupportedDraftUnknownError):
-        await wrong_unknown.generate(
-            event_id=first.event.id,
-            event_card_id=first.card.id,
-            editorial_pack_id=first.pack.id,
+        await service.generate(
+            event_id=target.event.id,
+            event_card_id=target.card.id,
+            editorial_pack_id=target.pack.id,
             draft_type=DraftType.STANDARD_90S,
             actor="writer",
             apply=False,
@@ -53,13 +34,35 @@ async def test_other_event_claim_and_unknown_are_rejected(db_session) -> None:  
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_invalid_format_and_overlong_output_never_persist(db_session) -> None:  # type: ignore[no-untyped-def]
-    context = await create_m4d_context(db_session)
-    invalid_format = valid_draft_payload(claim_id=context.claims["confirmed"].id)
-    invalid_format["format_key"] = "super_viral"
+async def test_other_event_unknown_is_rejected(db_session) -> None:  # type: ignore[no-untyped-def]
+    target = await create_m4d_context(db_session, title="Target event")
+    other = await create_m4d_context(db_session, title="Other event")
     service, _calls = await create_mock_draft_service(
         db_session,
-        response_data=invalid_format,
+        response_data=valid_draft_payload(
+            claim_id=target.claims["confirmed"].id,
+            unknown_id=other.unknown.id,
+        ),
+    )
+    with pytest.raises(UnsupportedDraftUnknownError):
+        await service.generate(
+            event_id=target.event.id,
+            event_card_id=target.card.id,
+            editorial_pack_id=target.pack.id,
+            draft_type=DraftType.STANDARD_90S,
+            actor="writer",
+            apply=False,
+        )
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_invalid_format_never_persists(db_session) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(db_session)
+    payload = valid_draft_payload(claim_id=context.claims["confirmed"].id)
+    payload["format_key"] = "super_viral"
+    service, _calls = await create_mock_draft_service(
+        db_session,
+        response_data=payload,
     )
     with pytest.raises(AIGatewayError) as invalid:
         await service.generate(
@@ -72,17 +75,20 @@ async def test_invalid_format_and_overlong_output_never_persist(db_session) -> N
         )
     assert invalid.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
 
-    overlong = valid_draft_payload(
-        claim_id=context.claims["confirmed"].id,
-        draft_type="short_30s",
-        text="长" * 1000,
-    )
-    long_service, _calls = await create_mock_draft_service(
+
+@pytest.mark.usefixtures("clean_database")
+async def test_overlong_output_never_persists(db_session) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(db_session)
+    service, _calls = await create_mock_draft_service(
         db_session,
-        response_data=overlong,
+        response_data=valid_draft_payload(
+            claim_id=context.claims["confirmed"].id,
+            draft_type="short_30s",
+            text="长" * 1000,
+        ),
     )
     with pytest.raises(DraftValidationError):
-        await long_service.generate(
+        await service.generate(
             event_id=context.event.id,
             event_card_id=context.card.id,
             editorial_pack_id=context.pack.id,
@@ -90,7 +96,6 @@ async def test_invalid_format_and_overlong_output_never_persist(db_session) -> N
             actor="writer",
             apply=False,
         )
-
     async with get_async_sessionmaker()() as session:
         assert await session.scalar(
             select(func.count()).select_from(EditorialDraftRecord)
