@@ -100,7 +100,8 @@ def test_m3d_migration_creates_processing_and_assignment_audit_schema() -> None:
 
 def test_m3d_downgrade_one_restores_m3c_without_touching_0008() -> None:
     config = Config("alembic.ini")
-    command.upgrade(config, "head")
+    # This test owns the M3-D migration boundary, not the repository's current later head.
+    command.downgrade(config, "20260808_0009")
     try:
         command.downgrade(config, "-1")
 
