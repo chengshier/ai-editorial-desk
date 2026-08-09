@@ -108,7 +108,7 @@ class DraftService:
         gateway: StructuredGateway | None = None,
     ) -> None:
         self.session_factory = session_factory or get_async_sessionmaker()
-        self.gateway: StructuredGateway = gateway or AIGateway(session_factory=self.session_factory)
+        self.gateway = gateway or AIGateway(session_factory=self.session_factory)
         self.input_builder = DraftGenerationInputBuilder(self.session_factory)
 
     async def generate(
@@ -490,7 +490,7 @@ class DraftService:
                 }
                 if mode is DraftGenerationMode.APPLY:
                     return await repo.claim_apply(values)
-                run = DraftGenerationRunRecord(**values)  # type: ignore[arg-type]
+                run = DraftGenerationRunRecord(**values)
                 repo.add(run)
                 await session.flush()
                 return run, True
