@@ -119,7 +119,7 @@ def test_m4c_migration_creates_trend_score_run_and_override_schema() -> None:
 
 def test_m4c_downgrade_one_preserves_m4b_tables() -> None:
     config = Config("alembic.ini")
-    command.upgrade(config, "20260809_0012")
+    command.downgrade(config, "20260809_0012")
     try:
         command.downgrade(config, "-1")
         tables = asyncio.run(_inspect_tables())
