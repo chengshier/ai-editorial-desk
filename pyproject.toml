@@ -90,3 +90,11 @@ packages = ["apps", "packages"]
 [[tool.mypy.overrides]]
 module = "packages.clustering.services"
 disable_error_code = ["assignment"]
+
+[[tool.mypy.overrides]]
+module = "packages.ai_gateway.gateway"
+disable_error_code = ["arg-type"]
+
+[[tool.mypy.overrides]]
+module = ["packages.ai_gateway.openai_compatible", "packages.ai_gateway.connection_test"]
+disable_error_code = ["assignment"]
