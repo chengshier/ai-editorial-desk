@@ -284,3 +284,42 @@ M4-C NOT STARTED
 M4-D NOT STARTED
 M4 Overall NOT COMPLETE
 ```
+
+## D-025 M4-B Evidence 必须具备 RawSignal provenance，AI 只有候选权限，Human verification 优先
+
+M4-B 的目标是建立“当前有哪些可追溯事实候选、争议和未知项”，而不是建立自动新闻真伪裁判。
+
+正式决策：
+
+- **EvidenceClaim 必须有具体 RawSignal provenance。** AI 或 Human 新增的 source 必须通过 `EventSignal(event_id, signal_id)` 属于目标 Event；无 supporting/contradicting source 的模型陈述不进入 Claim 表，当前统一记为 `UNSUPPORTED_CLAIM`；
+- Evidence source 正式使用 `evidence_claim_sources` 真实 FK 关联表，而不是在 Claim 保存裸 UUID 数组；`UNIQUE(claim_id, signal_id)` 保证一个 Signal 在同一 Claim 不同时扮演 supporting/contradicting；`signal_id → raw_signals.id` 使用 `ON DELETE RESTRICT`，防止清理 RawSignal 时历史证据静默消失；
+- Claim 类型固定为 `fact / allegation / opinion / forecast`；verification 状态固定为 `confirmed / investigating / single_source / disputed / false`，第一版不扩张更多未经验证状态；
+- **AI 无权自动写 `confirmed` 或 `false`。** 模型即使在结构化输出中自行声称 confirmed/false，Evidence Service 也必须忽略；AI 初始状态只按实际来源关系推导：存在 contradiction 为 `disputed`，仅一个 support 为 `single_source`，多个 support 且无 contradiction 为 `investigating`；`extraction_confidence` 只表示抽取置信度，不等于事实真实性；
+- **Human verification 优先于 AI rerun。** confirmed 至少需要一个 supporting source；false 至少需要一个 contradicting source；两者都要求 Human Actor + 明确 reason/editor note + AuditLog。AI 重跑只能幂等补充已有来源，不能把已人工确认状态降回 investigating/single_source/disputed，也不能覆盖人工 editor note；
+- confirmed Claim 不允许删除最后一个 supporting source，false Claim 不允许删除最后一个 contradicting source。本批不暴露 Claim hard-delete API，人工验证历史不能通过正常 Admin API 无痕消失；
+- `EventUnknown` 是一等业务对象，不用“事故时间不明”之类伪 Claim 代替未知项；Unknown 在 Event 内按 stable fingerprint 幂等，`resolved / dismissed` 后 AI rerun 不自动 reopen，只有明确 Human 操作可改变生命周期；
+- Claim fingerprint 使用 `SHA-256(claim_type + normalized claim_text)`；Unknown fingerprint 使用规范化文本 SHA-256；PostgreSQL UNIQUE + `ON CONFLICT` 是并发幂等最终保护；
+- 如果 `event.merged_into_event_id IS NOT NULL`，旧 source Event 禁止新增或修改 Evidence，返回 `EVENT_MERGED + target_event_id`。历史 Evidence 可读取，但新的 Evidence 必须挂到 merge target；M4-B 不改变 M3 Event clustering、ground truth 或 threshold；
+- Evidence 输入只允许 Event + EventSignal + 安全 RawSignal 字段：signal ID、title/text、author、platform、published/collected time 与 URL metadata；默认禁止 `raw_payload`、credential、Cookie、Authorization、connector config、完整 comment dump 与 Embedding vector；
+- 输入必须 bounded 且 deterministic：显式 signal IDs 或 `max_signals`，同时限制 `max_chars_per_signal / max_total_chars`；按 `COALESCE(published_at,collected_at), signal_id` 排序；截断必须记录 `truncated=true` 与 signal IDs，不能无声截断；
+- Prompt 与 Schema 独立版本化，当前固定 `evidence-extraction-v1` / `evidence-schema-v1`；RawSignal 正文在 Prompt 中明确标记为 **UNTRUSTED CONTENT**。Prompt 要求模型不得执行帖子中的指令，但安全不能只靠 Prompt：Service 必须二次校验 Event、membership、source role、confidence、unsupported claim 与 AI verification 权限；
+- Evidence extraction 必须通过 M4-A `AIGateway.generate_structured(task_key=evidence_extraction)`，继续经过 Route、Budget、bounded retry、fallback、schema validation、Invocation/Attempt、usage/cost；业务层不得直接 HTTP 调 Provider，也不得复制第二套 JSON repair；
+- Invocation 固定记录 `subject_type=event`、`subject_id=event.id`、prompt/schema version；`EvidenceExtractionRun` 只表达业务执行与 Invocation 关联，不重复保存 Provider token/cost 日志；
+- Provider 网络调用继续位于数据库长事务之外：先短事务获取安全 snapshot，再调 Gateway，最后新短事务重新检查 Event 未 merged 与 signal membership 后 apply；
+- Preview 可以产生真实 Invocation 和费用，但不写 Claim/Unknown，不能称为 free preview；
+- 局部脏 structured result 采用 **PARTIAL**：合法项保存，无来源/错误 source 的 item 明确记录 invalid count/code；不静默丢弃后把整批标记 success，也不因为单个坏 item 自动回滚全部合法 Evidence；
+- route disabled、credential missing、budget exceeded、provider unavailable、malformed/schema-invalid 输出必须明确失败，绝不 fallback 到 Fake 或凭空生成 Claim；人工 Claim/Verification 流程在 Production Provider `NOT_TESTED` 时仍可使用；
+- CI 的 Evidence AI 测试全部离线使用 MockTransport/Fake。Fixture success 只能证明工程 contract，不能改变 `Production AI Provider Validation = NOT_TESTED`；
+- M4-B 不建立 Source Credibility 评分，不实现 Trend / Editorial Score，不生成 Event Card、Draft、Script、标题、封面文案或素材包。
+
+因此阶段语义更新为：
+
+```text
+M4-A AI Gateway COMPLETE
+M4-B Evidence / Claim COMPLETE
+Production AI Provider Validation NOT_TESTED
+M4-C NOT STARTED
+M4-D NOT STARTED
+M4 Overall NOT COMPLETE
+M5 NOT STARTED
+```
