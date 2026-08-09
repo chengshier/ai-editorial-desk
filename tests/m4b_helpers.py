@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,7 +72,7 @@ async def create_event_context(
         actor="m4b-test",
     )
 
-    signals: list[RawSignalRecord] = []
+    signal_ids: list[UUID] = []
     base_time = datetime(2026, 8, 9, 5, 0, tzinfo=UTC)
     for index, text in enumerate(texts):
         external_id = f"m4b-{suffix}-{index}"
@@ -98,16 +98,21 @@ async def create_event_context(
             canonical_url=normalize_http_url(raw.url),
         )
         ingestion = (await RawSignalService(session).ingest_many([normalized]))[0]
-        stored = await session.get(RawSignalRecord, ingestion.signal_id)
-        assert stored is not None
-        signals.append(stored)
+        signal_ids.append(ingestion.signal_id)
         await EventService(session).attach_signal(
             event_id=event.id,
-            signal_id=stored.id,
+            signal_id=ingestion.signal_id,
             relation=EventSignalRelation.RELATED,
             confidence=1.0,
             attached_by=EventSignalAttachedBy.HUMAN,
             actor="m4b-test",
         )
+
+    stored_rows = list(
+        await session.scalars(select(RawSignalRecord).where(RawSignalRecord.id.in_(signal_ids)))
+    )
+    stored_by_id = {signal.id: signal for signal in stored_rows}
+    signals = [stored_by_id[signal_id] for signal_id in signal_ids]
     await session.commit()
+    assert not session.in_transaction()
     return event, signals
