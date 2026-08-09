@@ -188,7 +188,12 @@ class DraftService:
             candidate = validate_draft_candidate(result.data)
             _validate_candidate(candidate, snapshot)
         except ValueError as exc:
-            await self._finish_failed(run.id, result.invocation_id, "DRAFT_OUTPUT_INVALID", str(exc))
+            await self._finish_failed(
+                run.id,
+                result.invocation_id,
+                "DRAFT_OUTPUT_INVALID",
+                str(exc),
+            )
             raise DraftValidationError(str(exc)) from exc
         except ConnectorManagementError as exc:
             await self._finish_failed(run.id, result.invocation_id, exc.code, exc.message)
@@ -251,7 +256,12 @@ class DraftService:
         async with self.session_factory() as session:
             async with session.begin():
                 context = await load_editorial_context(session, event_id, for_update=True)
-                card, pack = await _require_card_pack(session, event_id, event_card_id, editorial_pack_id)
+                card, pack = await _require_card_pack(
+                    session,
+                    event_id,
+                    event_card_id,
+                    editorial_pack_id,
+                )
                 assert_card_current(card, context)
                 refs = _validate_human_refs(references, context)
                 draft_id = uuid4()
@@ -369,7 +379,10 @@ class DraftService:
                     sections=[],
                     body=body,
                     ending=_inherit(ending, parent.ending),
-                    interaction_question=_inherit(interaction_question, parent.interaction_question),
+                    interaction_question=_inherit(
+                        interaction_question,
+                        parent.interaction_question,
+                    ),
                     prompt_version=None,
                     schema_version=None,
                     ai_invocation_id=None,
@@ -643,7 +656,10 @@ def _enforce_risk_gate(
         raise DraftRiskGateError("R3普通内容路径需要Human明确risk approval reason")
 
 
-def _validate_candidate(candidate: ValidatedDraftCandidate, snapshot: DraftGenerationSnapshot) -> None:
+def _validate_candidate(
+    candidate: ValidatedDraftCandidate,
+    snapshot: DraftGenerationSnapshot,
+) -> None:
     if candidate.draft_type is not snapshot.draft_type:
         raise DraftValidationError("模型返回的draft_type与请求不一致")
     if candidate.format_key is not snapshot.format_key:
@@ -668,7 +684,9 @@ def _validate_candidate(candidate: ValidatedDraftCandidate, snapshot: DraftGener
         else:
             for unknown_id in section.unknown_ids:
                 if unknown_id not in snapshot.open_unknown_ids:
-                    raise UnsupportedDraftUnknownError("Draft引用不存在、已解决或其他Event的Unknown")
+                    raise UnsupportedDraftUnknownError(
+                        "Draft引用不存在、已解决或其他Event的Unknown"
+                    )
 
 
 def _validate_candidate_against_context(
