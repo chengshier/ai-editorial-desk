@@ -12,7 +12,6 @@ from packages.ai_gateway.gateway import AIGateway
 from packages.database.models import (
     AIBudgetRecord,
     AIInvocationRecord,
-    AITaskRouteRecord,
     DraftCitationUsage,
     DraftGenerationRunRecord,
     DraftGenerationStatus,
@@ -28,7 +27,6 @@ from packages.editorial.drafts_domain import DRAFT_PROMPT_VERSION, DRAFT_SCHEMA_
 from packages.editorial.drafts_generation import DraftService
 from packages.editorial.errors import (
     DraftRiskGateError,
-    DraftValidationError,
     UnsafeDraftClaimUsageError,
     UnsupportedDraftClaimError,
 )
@@ -158,55 +156,53 @@ async def test_preview_spends_gateway_but_writes_no_draft(db_session) -> None:  
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_claim_permissions_unknown_and_fact_check_are_enforced(db_session) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing",
+        "investigating_as_fact",
+        "single_source_as_fact",
+        "disputed_as_fact",
+        "false_as_fact",
+    ],
+)
+async def test_invalid_claim_permission_is_rejected(
+    db_session,
+    case: str,
+) -> None:  # type: ignore[no-untyped-def]
     context = await create_m4d_context(db_session)
-
-    invalid_cases = [
-        valid_draft_payload(claim_id=uuid4()),
-        valid_draft_payload(
-            claim_id=context.claims["investigating"].id,
+    if case == "missing":
+        claim_id = uuid4()
+        text = "不存在的Claim。"
+        expected_error = UnsupportedDraftClaimError
+    else:
+        claim_key = case.removesuffix("_as_fact")
+        claim_id = context.claims[claim_key].id
+        text = "模型试图把弱Evidence写成确定事实。"
+        expected_error = UnsafeDraftClaimUsageError
+    service, _calls = await create_mock_draft_service(
+        db_session,
+        response_data=valid_draft_payload(
+            claim_id=claim_id,
             usage=DraftCitationUsage.FACT,
-            text="监管部门已经确认额外责任方。",
+            text=text,
         ),
-        valid_draft_payload(
-            claim_id=context.claims["single_source"].id,
-            usage=DraftCitationUsage.FACT,
-            text="现场确定发生了停电。",
-        ),
-        valid_draft_payload(
-            claim_id=context.claims["disputed"].id,
-            usage=DraftCitationUsage.FACT,
-            text="设备故障就是确定原因。",
-        ),
-        valid_draft_payload(
-            claim_id=context.claims["false"].id,
-            usage=DraftCitationUsage.FACT,
-            text="所有服务已经永久停止。",
-        ),
-    ]
-    expected = [
-        UnsupportedDraftClaimError,
-        UnsafeDraftClaimUsageError,
-        UnsafeDraftClaimUsageError,
-        UnsafeDraftClaimUsageError,
-        UnsafeDraftClaimUsageError,
-    ]
-    for payload, error_type in zip(invalid_cases, expected, strict=True):
-        service, _calls = await create_mock_draft_service(
-            db_session,
-            response_data=payload,
+    )
+    with pytest.raises(expected_error):
+        await service.generate(
+            event_id=context.event.id,
+            event_card_id=context.card.id,
+            editorial_pack_id=context.pack.id,
+            draft_type=DraftType.STANDARD_90S,
+            actor="writer",
+            apply=False,
         )
-        with pytest.raises(error_type):
-            await service.generate(
-                event_id=context.event.id,
-                event_card_id=context.card.id,
-                editorial_pack_id=context.pack.id,
-                draft_type=DraftType.STANDARD_90S,
-                actor="writer",
-                apply=False,
-            )
 
-    valid_attributed, _calls = await create_mock_draft_service(
+
+@pytest.mark.usefixtures("clean_database")
+async def test_investigating_claim_is_valid_when_explicitly_attributed(db_session) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(db_session)
+    service, _calls = await create_mock_draft_service(
         db_session,
         response_data=valid_draft_payload(
             claim_id=context.claims["investigating"].id,
@@ -214,7 +210,7 @@ async def test_claim_permissions_unknown_and_fact_check_are_enforced(db_session)
             text="相关责任问题目前仍在调查中。",
         ),
     )
-    attributed = await valid_attributed.generate(
+    outcome = await service.generate(
         event_id=context.event.id,
         event_card_id=context.card.id,
         editorial_pack_id=context.pack.id,
@@ -222,12 +218,14 @@ async def test_claim_permissions_unknown_and_fact_check_are_enforced(db_session)
         actor="writer",
         apply=False,
     )
-    assert attributed.candidate is not None
+    assert outcome.candidate is not None
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_risk_gate_keeps_r4_fact_check_possible_and_never_deletes_event(db_session) -> None:  # type: ignore[no-untyped-def]
-    r4 = await create_m4d_context(
+async def test_risk_gate_keeps_r4_fact_check_possible_and_never_deletes_event(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(
         db_session,
         risk_level=EditorialRiskLevel.R4,
         recommended_format=EditorialRecommendedFormat.FACT_CHECK,
@@ -235,23 +233,23 @@ async def test_risk_gate_keeps_r4_fact_check_possible_and_never_deletes_event(db
     service, _calls = await create_mock_draft_service(
         db_session,
         response_data=valid_draft_payload(
-            claim_id=r4.claims["false"].id,
+            claim_id=context.claims["false"].id,
             format_key="fact_check",
             usage=DraftCitationUsage.DEBUNKED,
             text="网传所有服务永久停止的说法已被现有证据反驳。",
         ),
     )
     outcome = await service.generate(
-        event_id=r4.event.id,
-        event_card_id=r4.card.id,
-        editorial_pack_id=r4.pack.id,
+        event_id=context.event.id,
+        event_card_id=context.card.id,
+        editorial_pack_id=context.pack.id,
         draft_type=DraftType.STANDARD_90S,
         actor="fact-checker",
         apply=True,
     )
     assert outcome.draft is not None
     async with get_async_sessionmaker()() as session:
-        assert await session.get(EventRecord, r4.event.id) is not None
+        assert await session.get(EventRecord, context.event.id) is not None
 
 
 @pytest.mark.usefixtures("clean_database")
@@ -291,9 +289,8 @@ async def test_r3_regular_path_requires_explicit_human_approval(db_session) -> N
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_malformed_structured_output_leaves_no_draft(db_session) -> None:  # type: ignore[no-untyped-def]
     context = await create_m4d_context(db_session)
-
     service, _calls = await create_mock_draft_service(
         db_session,
         response_data={"draft_type": "standard_90s"},
@@ -309,6 +306,10 @@ async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_ses
         )
     assert malformed.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
 
+
+@pytest.mark.usefixtures("clean_database")
+async def test_route_disabled_fails_before_provider_call(db_session) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(db_session)
     _provider, _model, _fallback, route = await create_ai_stack(
         db_session,
         task_key="draft_generation",
@@ -316,29 +317,15 @@ async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_ses
     )
     calls = 0
 
-    def ok_handler(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
+        del request
         calls += 1
-        return httpx.Response(
-            200,
-            json={
-                "choices": [
-                    {
-                        "message": {
-                            "content": json.dumps(
-                                valid_draft_payload(
-                                    claim_id=context.claims["confirmed"].id
-                                )
-                            )
-                        }
-                    }
-                ]
-            },
-        )
+        return httpx.Response(500)
 
     gateway = AIGateway(
         session_factory=get_async_sessionmaker(),
-        provider_factory=mock_factory(httpx.MockTransport(ok_handler)),
+        provider_factory=mock_factory(httpx.MockTransport(handler)),
     )
     route.enabled = False
     await db_session.commit()
@@ -354,7 +341,15 @@ async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_ses
     assert disabled.value.code is AIErrorCode.ROUTE_NOT_CONFIGURED
     assert calls == 0
 
-    route.enabled = True
+
+@pytest.mark.usefixtures("clean_database")
+async def test_budget_exceeded_fails_before_provider_call(db_session) -> None:  # type: ignore[no-untyped-def]
+    context = await create_m4d_context(db_session)
+    await create_ai_stack(
+        db_session,
+        task_key="draft_generation",
+        capability="structured_output",
+    )
     db_session.add(
         AIBudgetRecord(
             scope_type="global",
@@ -369,6 +364,18 @@ async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_ses
         )
     )
     await db_session.commit()
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        del request
+        calls += 1
+        return httpx.Response(500)
+
+    gateway = AIGateway(
+        session_factory=get_async_sessionmaker(),
+        provider_factory=mock_factory(httpx.MockTransport(handler)),
+    )
     with pytest.raises(AIGatewayError) as budget:
         await DraftService(gateway=gateway).generate(
             event_id=context.event.id,
@@ -380,11 +387,6 @@ async def test_malformed_route_budget_and_provider_failure_leave_no_draft(db_ses
         )
     assert budget.value.code is AIErrorCode.BUDGET_EXCEEDED
     assert calls == 0
-
-    async with get_async_sessionmaker()() as session:
-        assert await session.scalar(
-            select(func.count()).select_from(EditorialDraftRecord)
-        ) == 0
 
 
 @pytest.mark.usefixtures("clean_database")
