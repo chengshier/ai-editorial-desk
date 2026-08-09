@@ -5,7 +5,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from sqlalchemy import func, select
 
-from packages.database.models import EventRecord, EventSignalRelation, EventStatus, EventTrendSnapshotRecord
+from packages.database.models import (
+    EventRecord,
+    EventSignalRelation,
+    EventStatus,
+    EventTrendSnapshotRecord,
+)
 from packages.editorial.domain import (
     GEOGRAPHY_UNAVAILABLE,
     INTERACTION_UNAVAILABLE,
@@ -102,7 +107,9 @@ async def test_trend_is_deterministic_and_preserves_unavailable_semantics(db_ses
 
 
 @pytest.mark.usefixtures("clean_database")
-async def test_trend_zero_is_distinct_from_unavailable_and_covers_source_platform_shapes(db_session) -> None:  # type: ignore[no-untyped-def]
+async def test_trend_zero_is_distinct_from_unavailable_and_covers_source_platform_shapes(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
     event, _signals = await create_trend_context(
         db_session,
         specs=[
