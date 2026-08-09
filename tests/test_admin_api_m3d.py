@@ -108,8 +108,8 @@ async def test_evaluation_api_only_uses_registered_dataset_and_policy(db_session
     assert body["production_policy_modified"] is False
     assert "raw_payload" not in response.text
     assert '"embedding"' not in response.text.casefold()
-    assert unknown_dataset.status_code == 422
-    assert unknown_policy.status_code == 422
+    assert unknown_dataset.status_code == 400
+    assert unknown_policy.status_code == 400
 
     run = await db_session.scalar(select(ClusteringProcessingRunRecord))
     assert run is not None
