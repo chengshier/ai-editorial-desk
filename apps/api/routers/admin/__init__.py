@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from apps.api.routers.admin.ai_gateway import router as ai_gateway_router
 from apps.api.routers.admin.checkpoints import router as checkpoints_router
 from apps.api.routers.admin.clustering import router as clustering_router
 from apps.api.routers.admin.collection_budgets import router as budgets_router
@@ -26,6 +27,7 @@ router.include_router(raw_signals_router)
 router.include_router(events_router)
 router.include_router(embeddings_router)
 router.include_router(clustering_router)
+router.include_router(ai_gateway_router)
 router.include_router(budgets_router)
 router.include_router(runtime_router)
 router.include_router(runs_router)

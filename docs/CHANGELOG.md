@@ -1,5 +1,27 @@
 # 文档与架构变更记录
 
+## 2026-08-09 — M4-A AI Gateway / Provider / Routing / Cost Governance
+
+- 确认 PR #14 已合并到 `main`，从 merge 后最新 `main` `e87d89a0f2861fe5f7f62010ada3f8e249ac18ef` 独立创建 `feature/m4a-ai-gateway`，未从 M3-D feature branch 继续派生；
+- 新增 `20260809_0010_m4a_ai_gateway.py` migration 与 `ai_providers`、`ai_models`、`ai_task_routes`、`ai_invocations`、`ai_invocation_attempts`、`ai_budgets`、`ai_budget_usages`；
+- Provider 使用稳定 `provider_key`、协议级 `provider_type`、可配置 `base_url` 与 opaque `credential_ref`；Model 使用内部稳定 `model_key` 与供应商实际 `model_name`，不硬编码商业模型 enum；
+- 新增受控 `env://NAME` CredentialResolver，DB/API/Web/日志不保存或回显明文 API Key；Provider/Model config 拒绝敏感字段，Credential UI 只允许 replace；
+- 新增 `AIGateway.embed / generate_text / generate_structured`、Provider Protocol 与 OpenAI-compatible production adapter；OpenAI 官方兼容端点和可配置本地 compatible endpoint 复用同一协议实现；
+- Provider base URL 只允许 HTTP/HTTPS，禁止 URL userinfo/query/fragment 与 redirect；HTTP、private/localhost endpoint 需要显式管理员策略；无 credential 在 DNS/网络动作前返回 `CREDENTIAL_NOT_CONFIGURED`；
+- Route 按 `(task_key, version)` 版本化并由 partial unique index 保证单 active version；更新只影响新 Invocation，历史 Invocation 保留 route/provider/model 快照；
+- 新增 bounded retry 与显式 fallback；每次 retry/fallback 写 `ai_invocation_attempts`，记录 provider/model、retry/fallback index、usage、cost、latency、request id 与错误码；AI Provider 429 不写入 MediaCrawler `PlatformRiskEvent`；
+- Structured Output 使用 JSON Schema Draft 2020-12 校验，malformed JSON、missing field、wrong type、refusal 不能返回 success，repair/retry 受有限 retry 约束；
+- 模型定价来自配置，Invocation/Attempt 固化 `pricing_version`、价格 snapshot 与最终 estimated cost；usage/price 缺失保持 unknown，不伪造 0；
+- AI Budget 与 CollectionBudget 分离，支持 global/task/provider scope、daily/monthly cost 与 daily tokens；调用前 reserve、调用后 settle，并通过 PostgreSQL `FOR UPDATE` 串行化并发预算判断；unknown cost 默认 block，可显式 allow_once 但仍受原子 reservation 限制；
+- 新增 `GatewayEmbeddingProvider`，复用 M3-B `EmbeddingProvider` Contract、`EmbeddingService`、`signal_embeddings` 与 exact recall，不建立第二套 Embedding/Vector Recall，不自动全库 backfill；
+- 新增 Admin Provider/Model/Route/Budget/Invocation API，并继续复用 Admin Token、Actor 与 `ConfigurationChangeLog`；Connection Test 使用极短受控输入、`test=true` Invocation，不 fallback 到 Fake；
+- 现有 React/Vite 工作台新增 `AI Providers`、`AI Routes`、`AI Budgets`、`AI Invocations`；Invocation 页面不展示完整敏感 Prompt；
+- 新增离线 MockTransport/PostgreSQL 测试，覆盖 Provider success/auth/429/timeout/network/5xx/malformed/refusal/usage missing、structured output、bounded retry/fallback、Invocation idempotency、credential non-leak、Route version/concurrency、Budget concurrent reserve/settle、M3-B Embedding bridge；
+- CI AI 测试不访问公网或真实付费 Provider；当前 `Production AI Provider Validation = NOT_TESTED`，Mock/Fake 不能替代真实 Provider Validation；
+- M2 状态继续保持 `M2 Engineering COMPLETE`、`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`、`M2 Real-world Validation = NOT COMPLETE`；M3 Engineering COMPLETE 保持不回归；
+- 本批只做 M4-A；M4-B Evidence / Claim、M4-C Trend / Editorial Score、M4-D Event Card / Script、M5 均未开始，M4 Overall 仍为 NOT COMPLETE；
+- PR #15 `feat: 完成 M4-A AI Gateway与模型路由基础` 保持 Open，不自行合并。
+
 ## 2026-08-09 — M3-D Evaluation / Reprocessing / Engineering Closure
 
 - M3-C PR #13 已人工合并后，从最新 `main` 独立进入 `feature/m3d-evaluation-closure`，未从 M3-C feature 分支继续派生；

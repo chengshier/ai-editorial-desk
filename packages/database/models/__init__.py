@@ -1,5 +1,14 @@
 """Import all ORM models so Base.metadata and Alembic see a complete schema."""
 
+from packages.database.models.ai import (
+    AIBudgetRecord,
+    AIBudgetUsageRecord,
+    AIInvocationAttemptRecord,
+    AIInvocationRecord,
+    AIModelRecord,
+    AIProviderRecord,
+    AITaskRouteRecord,
+)
 from packages.database.models.audit import ConfigurationChangeLog
 from packages.database.models.clustering import (
     MatchDecisionType,
@@ -55,6 +64,13 @@ from packages.database.models.signals import (
 )
 
 __all__ = [
+    "AIBudgetRecord",
+    "AIBudgetUsageRecord",
+    "AIInvocationAttemptRecord",
+    "AIInvocationRecord",
+    "AIModelRecord",
+    "AIProviderRecord",
+    "AITaskRouteRecord",
     "ClusteringProcessingMode",
     "ClusteringProcessingRunRecord",
     "ClusteringProcessingStatus",

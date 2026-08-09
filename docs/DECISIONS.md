@@ -239,3 +239,48 @@ M3 的最终完成语义调整为 **M3 Overall Engineering COMPLETE**：Event、
 早期 V1.2 M3 中的生产云 Embedding Provider、Provider UI、通用模型路由、成本中心与 LLM event judge，不再为了 M3 阶段标签提前实现；这些能力与 AI Gateway 一并进入 M4。该调整不否认长期路线，只是明确当前模块边界与交付顺序。
 
 M3 Engineering COMPLETE 同样**不表示** M2 Real Smoke 已通过：M2 仍保持 `DEFERRED / NOT_TESTED` 与 `Real-world Validation NOT COMPLETE`。
+
+## D-024 M4-A 采用 Task Route 驱动的 AI Gateway、opaque credential 与不可变调用审计
+
+M4-A 正式建立通用 AI 基础链：
+
+```text
+Business Task
+→ AI Task Route
+→ Provider / Model
+→ AIGateway
+→ Invocation / Attempt
+→ Usage / Cost / Audit
+→ AI Budget reserve / settle
+```
+
+核心决策：
+
+- **业务代码不得硬编码 Provider URL、商业模型名或 provider_key。** 业务只传稳定 `task_key`，Route 决定 primary/fallback Provider/Model；`model_key` 是内部稳定引用，`model_name` 只表达供应商实际名称；
+- Provider 数据库类型只表达协议级 adapter（当前 `openai_compatible` / `local_openai_compatible`），不把 `gpt-*`、`claude-*`、`gemini-*` 等具体模型写成 enum；OpenAI 官方兼容端点与其他 compatible 服务优先复用同一 adapter；
+- **Credential 使用 opaque reference。** M4-A 不建设完整 Vault/KMS，只增加受控 `env://NAME` resolver；DB 绝不保存 API Key 明文，API/Web/日志不返回 Key、Authorization 或原环境变量名，Web 只允许 replace credential；Provider/Model config 中的敏感键必须拒绝或脱敏；
+- Provider base URL 只允许 HTTP/HTTPS，禁止 `file://`、URL userinfo、任意 shell 与隐式 redirect；HTTP 和 private/localhost endpoint 都要求显式管理员策略打开，不能把“支持本地模型”解释为无条件开放内网 SSRF；无 credential 必须在 DNS/网络动作前返回 `CREDENTIAL_NOT_CONFIGURED`；
+- `AIGateway` 只提供通用 `embed` / `generate_text` / `generate_structured`，不出现 Evidence、Score、Script 等业务方法；Provider adapter 只消费领域对象，不访问业务 ORM，不把第三方 SDK/HTTP response 穿透业务层；
+- Route 使用**版本化行**而不是原地覆盖：`(task_key, version)` 唯一，每个 task 只有一个 active version；配置更新关闭旧 active row 并创建 `version+1`。历史 Invocation 固定保存 `route_id / route_version / provider_key / model_name`，后续 Route 修改不得改变历史解释；
+- `ai_invocations` 表达一次逻辑调用，`ai_invocation_attempts` 表达有限 retry/fallback 的每次实际 Provider attempt；调用只保存 SHA-256 `input_hash`、prompt/schema version、usage、latency、request id、错误、pricing snapshot 与可选 subject trace，默认不保存完整 Prompt/body/vector；`subject_type/subject_id` 是可扩展 trace，不伪造不存在的 polymorphic FK；
+- Retry 只允许 timeout、temporary network、429 与明确 selected 5xx/invalid response 等可恢复错误；route/provider retry 取较小值并 hard cap 3；auth、invalid request、model not found 不无限 retry；Retry-After 只有在受控最大等待时间内执行；
+- Fallback 必须来自 Route 显式顺序，每次 fallback 都形成 Attempt，保留从哪个 Provider/Model、为什么失败、retry/fallback index；AI Provider 429 是 AI Gateway 错误，不写入 MediaCrawler `PlatformRiskEvent`；
+- Structured Output 使用 JSON Schema 做通用 contract 校验；malformed JSON、missing field、wrong type、refusal 必须失败；repair/retry 仍受 bounded retry 约束；Gateway 本身不理解 EvidenceClaim 语义；
+- **Pricing 不硬编码在业务代码。** Model 保存可空 input/output/embedding price 与 `pricing_version`，Invocation/Attempt 固化当时 pricing snapshot 和最终 estimated cost；后续调价不得覆盖历史成本；Provider 无 usage 或价格未知时保持 unknown，不伪造成本 0；
+- **AI Budget 与 CollectionBudget 分离。** 第一版只支持 global/task/provider scope、daily/monthly cost 与 daily tokens；调用前 reserve、调用后 settle。PostgreSQL 对适用 Budget 行 `FOR UPDATE`，monthly 聚合在同一 Budget 锁保护下计算，避免并发 Worker 双花预算；未知成本默认 `block`，可显式 `allow_once`，但也必须通过原子 reservation/counter 限制，不能把 NULL 当 0 无限调用；
+- Provider 网络调用不得持有长数据库事务；Route snapshot、Invocation、Budget reservation/settlement 都采用短事务边界；
+- M3-B `EmbeddingProvider` Contract、`EmbeddingService`、`EmbeddingBatchProcessor`、`signal_embeddings` 与 exact vector recall 保持不变。M4-A 只增加 `GatewayEmbeddingProvider` 生产桥接；bridge 锁定 `embedding` Route 的 primary snapshot 并要求显式 `embedding_version + dimensions` 一致，避免 fallback 静默改变 M3-B artifact 版本语义；本批不自动 backfill 全库；
+- CI 的 AI 测试必须使用 Fake/Stub/MockTransport，不访问公网或真实付费模型。Fake/Mock success 只能证明 engineering contract，**不能**把 Production Provider Validation 写成 PASSED/VERIFIED；没有人工 credential + 真实网络 Provider call 时保持 `NOT_TESTED`；
+- Provider connection test 必须是单个极小受控输入，记录 `test=true` Invocation、usage/cost，并且没有 credential 时明确返回 `CREDENTIAL_NOT_CONFIGURED`，不能自动 fallback 到 Fake 或其他环境中的陌生 key；
+- M4-A 只注册 `embedding / event_boundary_review / evidence_extraction / editorial_scoring / draft_generation / final_review` task route 能力；除 M3-B embedding bridge 外，本批**不消费** Evidence、Editorial、Draft 路由，不接入 LLM event judge，不修改 M3 clustering 结果、评测 ground truth 或 threshold。
+
+因此当前阶段语义为：
+
+```text
+M4-A AI Gateway Engineering COMPLETE
+Production AI Provider Validation NOT_TESTED
+M4-B NOT STARTED
+M4-C NOT STARTED
+M4-D NOT STARTED
+M4 Overall NOT COMPLETE
+```

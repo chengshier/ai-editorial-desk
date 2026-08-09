@@ -37,6 +37,13 @@ EXPECTED_TABLES = {
     "collection_schedule_triggers",
     "scheduler_instances",
     "connector_validation_records",
+    "ai_providers",
+    "ai_models",
+    "ai_task_routes",
+    "ai_invocations",
+    "ai_invocation_attempts",
+    "ai_budgets",
+    "ai_budget_usages",
 }
 
 

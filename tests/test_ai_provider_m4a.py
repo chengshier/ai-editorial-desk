@@ -1,0 +1,209 @@
+from __future__ import annotations
+
+import json
+import os
+from decimal import Decimal
+from uuid import uuid4
+
+import httpx
+import pytest
+
+from packages.ai_gateway.domain import (
+    AIMessage,
+    AIModelTarget,
+    StructuredProviderRequest,
+    TextProviderRequest,
+)
+from packages.ai_gateway.errors import AIErrorCode, AIProviderError
+from packages.ai_gateway.openai_compatible import OpenAICompatibleProvider
+from tests.m4a_helpers import allow_test_host
+
+
+def target() -> AIModelTarget:
+    os.environ["M4A_TEST_KEY"] = "super-secret-test-key"
+    return AIModelTarget(
+        model_id=uuid4(),
+        provider_id=uuid4(),
+        provider_key="provider-under-test",
+        provider_type="openai_compatible",
+        base_url="https://provider.test/v1",
+        credential_ref="env://M4A_TEST_KEY",
+        provider_timeout_seconds=5,
+        provider_retry_limit=1,
+        provider_config={},
+        model_key="internal-model",
+        model_name="vendor-model",
+        capabilities=("text_generation", "structured_output"),
+        dimensions=None,
+        input_price_per_million=Decimal("1"),
+        output_price_per_million=Decimal("2"),
+        embedding_price_per_million=None,
+        pricing_version="pricing-v1",
+        model_config={},
+    )
+
+
+async def test_openai_compatible_success_parses_usage_and_request_id() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == "Bearer super-secret-test-key"
+        body = json.loads(request.content)
+        assert body["model"] == "vendor-model"
+        return httpx.Response(
+            200,
+            json={
+                "id": "body-id",
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+            },
+            headers={"x-request-id": "req-123"},
+        )
+
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(handler),
+        host_validator=allow_test_host,
+    )
+    result = await adapter.generate_text(
+        target=target(),
+        request=TextProviderRequest(messages=(AIMessage(role="user", content="hello"),)),
+        timeout_seconds=2,
+    )
+    assert result.text == "ok"
+    assert result.usage.input_tokens == 3
+    assert result.usage.output_tokens == 2
+    assert result.usage.total_tokens == 5
+    assert result.provider_request_id == "req-123"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected", "retryable"),
+    [
+        (401, AIErrorCode.AUTH_ERROR, False),
+        (429, AIErrorCode.RATE_LIMITED, True),
+        (404, AIErrorCode.MODEL_NOT_FOUND, False),
+        (500, AIErrorCode.PROVIDER_UNAVAILABLE, True),
+    ],
+)
+async def test_openai_compatible_maps_http_errors(
+    status: int,
+    expected: AIErrorCode,
+    retryable: bool,
+) -> None:
+    headers = {"retry-after": "0"} if status == 429 else {}
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(lambda request: httpx.Response(status, headers=headers)),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+    assert caught.value.code is expected
+    assert caught.value.retryable is retryable
+
+
+async def test_openai_compatible_timeout_and_network_are_retryable() -> None:
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    timeout_adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(timeout_handler),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as timeout_error:
+        await timeout_adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+    assert timeout_error.value.code is AIErrorCode.TIMEOUT
+    assert timeout_error.value.retryable is True
+
+    def network_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("offline", request=request)
+
+    network_adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(network_handler),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as network_error:
+        await network_adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+    assert network_error.value.code is AIErrorCode.NETWORK_ERROR
+    assert network_error.value.retryable is True
+
+
+async def test_openai_compatible_rejects_malformed_json_and_refusal() -> None:
+    malformed = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, text="not-json")),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as malformed_error:
+        await malformed.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+    assert malformed_error.value.code is AIErrorCode.INVALID_RESPONSE
+
+    refusal = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"refusal": "no", "content": ""}}]},
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as refusal_error:
+        await refusal.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+    assert refusal_error.value.code is AIErrorCode.INVALID_RESPONSE
+
+
+async def test_openai_compatible_structured_invalid_json_is_explicit() -> None:
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "{bad-json"}}]},
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+    request = StructuredProviderRequest(
+        messages=(AIMessage(role="user", content="x"),),
+        schema={"type": "object"},
+        schema_name="test_schema",
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_structured(target=target(), request=request, timeout_seconds=1)
+    assert caught.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
+    assert caught.value.retryable is True
+
+
+async def test_usage_can_be_unknown_without_fabricating_zero() -> None:
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "ok"}}]},
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+    result = await adapter.generate_text(
+        target=target(),
+        request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+        timeout_seconds=1,
+    )
+    assert result.usage.input_tokens is None
+    assert result.usage.output_tokens is None
+    assert result.usage.total_tokens is None
