@@ -53,17 +53,7 @@ jobs:
         run: timeout 90s pytest -q -s tests/test_clustering_reprocess_concurrency_m3d.py
 
       - name: Pytest
-        shell: bash
-        run: |
-          set -o pipefail
-          timeout 180s pytest -vv 2>&1 | tee pytest-output.log
-
-      - name: Upload pytest diagnostic
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: m3d-pytest-diagnostic
-          path: pytest-output.log
+        run: timeout 180s pytest -vv
 
       - name: M3 offline engineering evaluation
         run: python -m scripts.evaluate_m3_clustering --format text

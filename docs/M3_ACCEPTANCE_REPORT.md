@@ -1,16 +1,17 @@
-# M3 验收报告
+# M3 工程验收报告
 
-## 当前状态
+## 1. 当前结论
 
 ```text
 M3-A Event / EventSignal: COMPLETE
 M3-B Embedding / Vector Recall: COMPLETE
-M3-C Dedup / Clustering: NOT STARTED
-M3-D: NOT STARTED
-M3 Overall: NOT COMPLETE
+M3-C Dedup / Clustering: COMPLETE / PR #13 MERGED
+M3-D Evaluation / Reprocessing / Closure: ENGINEERING COMPLETE / PR #14 OPEN
+M3 Overall: ENGINEERING COMPLETE
+M4: NOT STARTED
 ```
 
-M2 状态继续保持：
+M2 状态保持不变：
 
 ```text
 M2 Engineering: COMPLETE
@@ -18,310 +19,349 @@ M2 Real Smoke Validation: DEFERRED / NOT_TESTED
 M2 Real-world Validation: NOT COMPLETE
 ```
 
-M3-B 工程完成不代表任何真实平台 Validation 已经 PASSED，也不代表 M3 整体完成。
+本报告中的 M3 COMPLETE 只表示当前架构决策下的**工程闭环完成**，不代表真实平台验证、M4 AI 能力或 Production Validation 完成。
 
-## M3-B 开发基线
+---
 
-- PR #11 `feat: 完成 M3-A Event与EventSignal基础` 已合并；
-- M3-B 基线 main：`1aa6d87350f8902fec6fffeb55cee3a7905385cc`；
-- 分支：`feature/m3b-embedding-recall`；
-- PR：#12 `feat: 完成 M3-B Embedding与向量召回基础`；
-- PR #12 保持 Open，不自行合并；
-- M3-B 分支从合并后的最新 main 直接创建，没有从 `feature/m3a-event-foundation` 派生。
+## 2. 阶段基线与分支规则
 
-## SignalEmbedding
+- M3-A、M3-B 已分别完成并合并；
+- M3-C PR #13 `feat: 完成 M3-C 去重与事件聚类基础` 已合并；
+- M3-C 最终 feature HEAD：`2aa8e1907d4fc1b4e6be04cb8312a5f2b431cfe1`；
+- M3-C merge commit：`87008a560ac248d179332d8b62e46fcd052d3236`；
+- M3-D 从该合并后的最新 `main` 独立创建 `feature/m3d-evaluation-closure`；
+- M3-D PR #14 保持 Open，不自行合并；
+- M4 未开始；如果进入 M4，必须在 PR #14 人工合并后从最新 `main` 独立创建新分支。
 
-Embedding 被定义为 RawSignal 之上的可重建、版本化派生 artifact，独立存储于：
+---
+
+## 3. M3-A — Event / EventSignal
+
+M3-A 建立正式事件层：
+
+- `events` / `event_signals`；
+- human create / attach / detach；
+- EventSignal PostgreSQL UNIQUE / FK / CHECK 与并发幂等；
+- `source_count`、`platform_count` 从真实关联重算；
+- `first_seen_at` 使用 Signal 有效时间；
+- `last_updated_at` 只在有效 Event 业务变更时推进；
+- RawSignal 采集事实不被事件操作修改。
+
+Migration：`20260808_0006_m3a_event_foundation.py`。
+
+---
+
+## 4. M3-B — Versioned Embedding / Exact Recall
+
+M3-B 将 Embedding 定义为 RawSignal 之上的可重建、版本化派生 artifact：
 
 ```text
 signal_embeddings
-```
-
-正式字段：
-
-```text
-id
-signal_id
-provider_key
-model_name
-dimensions
-embedding_version
-input_schema_version
-input_hash
-embedding
-created_at
-```
-
-artifact 不提供任意 update 语义；模型或输入规则升级不会覆盖旧版本。
-
-### 唯一性与数据库约束
-
-```text
 UNIQUE(signal_id, embedding_version)
-dimensions > 0
-char_length(input_hash) = 64
-provider_key / model_name / embedding_version / input_schema_version 非空
-vector_dims(embedding) = dimensions
-vector_norm(embedding) > 0
 ```
 
-`signal_id` FK 指向 `raw_signals.id`，使用 `ON DELETE CASCADE`：RawSignal 删除时派生 Embedding 可以清理，但删除 Embedding 不会删除 RawSignal。
+完成：
 
-重复和并发写入使用 PostgreSQL `INSERT ... ON CONFLICT DO NOTHING` + UNIQUE 作为最终保护，不依赖单纯的 `SELECT → INSERT`。
+- `signal-text-v1` 确定性 title/text 输入；
+- Provider 输入 SHA-256 `input_hash`；
+- EmbeddingProvider Protocol；
+- batch、有限 retry、空文本 skip、错误向量拒绝；
+- version conflict 防止 silent overwrite；
+- dimensionless `VECTOR()` + 独立 dimensions；
+- PostgreSQL exact cosine recall；
+- recall 只比较相同 `embedding_version + dimensions`；
+- Admin metadata / recall 安全输出。
 
-## Vector Dimension 策略
+Migration：`20260808_0007_m3b_signal_embeddings.py`。
 
-M3-B 正式增加 Python `pgvector` integration，Embedding 列使用：
+M3-B 没有生产 Fake Provider，也没有为了阶段验收接入真实云 Key。
+
+---
+
+## 5. M3-C — Dedup / Event Clustering
+
+PR #13 已合并，正式链路：
 
 ```text
-dimensionless VECTOR()
+RawSignal
+→ deterministic Fingerprint
+→ Exact / Near Duplicate
+→ M3-B Exact Cosine Candidate Recall
+→ immutable Match Decision
+→ Event Assignment
+→ Event Cluster
 ```
 
-不硬编码 1536、3072、768 等供应商维度。每条 artifact 单独保存 `dimensions`；真实 PostgreSQL 测试证明同一 Signal 的不同 embedding version 可以分别保存不同 dimensions。
+核心能力：
 
-Recall 只比较：
+- 版本化 `signal_fingerprints`；
+- `fingerprint-text-v1 + simhash64-v1`；
+- exact duplicate 复用 canonical URL / content hash / platform + external ID；
+- near duplicate 使用 deterministic 64-bit SimHash；
+- semantic candidate 严格复用 M3-B `SignalSimilarityService`，没有第二套 vector recall；
+- `signal_match_decisions` 保存 canonical pair + algorithm version 的不可变判断；
+- `event-match-v1` 集中定义 conservative policy；
+- `signal_match_overrides` 保存人工 same/distinct 边界；
+- `signal_event_suppressions` 防止人工 detach/split 被自动重挂；
+- 自动 Event assignment 使用中性 `related`，不伪造 origin/report/reaction；
+- Event Merge 保留 source Event，并使用 `merged_into_event_id`；
+- Split 写人工 distinct override + suppression；
+- same Signal 并发 worker 使用 RawSignal `FOR UPDATE` + write-time membership recheck；
+- Preview side-effect free；Batch 只处理显式 bounded signal IDs。
+
+Migration：`20260808_0008_m3c_dedup_clustering.py`。
+
+明确未实现：MinHash、HNSW/IVFFlat、Event centroid、LLM event judge。
+
+---
+
+## 6. M3-D — Offline Evaluation
+
+固定评测版本：
 
 ```text
-same embedding_version
-same dimensions
+m3-clustering-eval-v1
 ```
 
-因此不同版本或不同维度不会互相计算距离。
+评测集包含 synthetic/manual 工程样本，并显式表达：
 
-## pgvector Extension
+- same event；
+- distinct event；
+- ambiguous；
+- expected cluster key；
+- expected unassigned；
+- human override。
 
-Migration：
+`ClusteringEvaluationService` 提供 deterministic：
+
+- pair precision / recall / F1；
+- coverage / abstention rate；
+- ground-truth ambiguous 与模型 abstention；
+- cluster pairwise precision / recall / F1；
+- overmerge count；
+- fragmentation count；
+- unassigned / auto-created / auto-attached counters；
+- evaluation performance metadata。
+
+Ambiguous 被作为显式 abstention 统计，不通过强行归类制造虚假准确率。
+
+### Threshold sweep
+
+阈值 sweep 只在固定小范围 candidate policy 上离线比较：
+
+- SimHash duplicate distance；
+- Embedding same-event threshold；
+- Embedding distinct threshold；
+- ambiguous margin；
+- max time gap。
+
+Sweep 是 read-only engineering evaluation：不会修改 `DEFAULT_CLUSTER_POLICY`，不会自动把“最优参数”写回生产配置。
+
+---
+
+## 7. M3-D — Safe Reprocessing
+
+新增 `ClusteringReprocessService`：
+
+- 必须且只能指定 `signal_ids` 或完整 time range；
+- `max_items` 有上限；
+- algorithm version 必须是当前注册 policy；
+- 默认 dry-run；
+- apply 必须有 actor 且显式 confirmation；
+- deterministic target ordering；
+- 不自动全表无限重跑；
+- 不执行 automatic detach。
+
+人工状态优先级：
+
+- human membership → `SKIPPED_HUMAN`；
+- active event suppression → `SUPPRESSED`；
+- human distinct override conflict → `AMBIGUOUS`；
+- multiple active memberships / multiple candidate events → `AMBIGUOUS`；
+- apply 前重新锁定并检查 membership / Event / suppression / override。
+
+因此重处理不能把已经保存的人工边界静默反转。
+
+---
+
+## 8. Processing / Assignment Provenance
+
+Migration `20260808_0009_m3d_processing_audit.py` 新增：
 
 ```text
-migrations/versions/20260808_0007_m3b_signal_embeddings.py
-revision: 20260808_0007
-down_revision: 20260808_0006
+clustering_processing_runs
+event_assignment_records
 ```
 
-upgrade 使用：
+`clustering_processing_runs` 记录：
 
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-```
+- evaluate / dry_run / apply mode；
+- algorithm / dataset version；
+- actor；
+- requested / processed count；
+- counters；
+- config snapshot；
+- status / error summary / timestamps。
 
-Alembic 从 M3-B 起正式保证 vector schema capability 可用。downgrade 删除 `signal_embeddings`，但不 `DROP EXTENSION vector`，因为 extension 是共享数据库能力，未来其他表可能继续使用。
+`event_assignment_records` 是 append-only assignment provenance，记录：
 
-Migration 不 backfill 历史 RawSignal、不调用 Provider、不执行网络请求，也不填充假向量。
+- signal / event；
+- create_event / attach / move / detach / conflict action vocabulary；
+- attached_by；
+- algorithm version；
+- match decision；
+- processing run；
+- previous event；
+- created time。
 
-## Embedding Input
+现有 human membership 和历史 configuration audit 可作为兼容 provenance fallback；M3-D 不改写历史 M3-A/M3-C 数据来伪造 provenance。
 
-当前确定性输入版本：
+---
+
+## 9. Convergence / Replay / Concurrency
+
+PostgreSQL 回归覆盖：
+
+- processing order 前向/反向归一化 partition 一致；
+- batch size 边界收敛；
+- ambiguous signal 保持未强制归类；
+- human membership 保留；
+- split/detach suppression 保留；
+- human distinct override 不被 reprocess 反转；
+- version mismatch 明确拒绝；
+- replay / provenance 可追溯；
+- concurrent reprocess 不产生双重错误归属；
+- RawSignal 采集事实边界继续保持。
+
+归一化 partition 使用逻辑成员集合比较，不把随机 Event UUID 当作聚类正确性的依据。
+
+---
+
+## 10. Engineering Performance Baseline
+
+M3-D 建立固定小数据集 PostgreSQL engineering baseline：
+
+- 20 个 Signal；
+- 4 维固定测试向量；
+- 10 次 exact recall query；
+- `top_k=20`；
+- exact recall 期望每次返回其余 19 个 candidate；
+- 随后执行 20 个 Signal 的 bounded clustering batch；
+- 输出 recall / clustering elapsed milliseconds 作为工程基线；
+- 不把共享 GitHub Runner 的绝对毫秒数伪装成生产 SLA。
+
+当前仍没有规模证据要求 HNSW / IVFFlat，因此 M3 不提前引入 ANN。
+
+---
+
+## 11. Admin API / CLI
+
+新增/完成：
 
 ```text
-input_schema_version = signal-text-v1
+POST /api/v1/admin/clustering/evaluate
+POST /api/v1/admin/clustering/reprocess/preview
+POST /api/v1/admin/clustering/reprocess
 ```
 
-只使用规范化后的：
+- evaluate 只允许已注册 dataset + algorithm version；
+- preview 为 bounded dry-run，不写 Event 业务状态；
+- apply 继续使用 Admin Token，并要求 `X-Actor-ID` + request confirmation；
+- API 不返回 raw_payload、完整 vector、Cookie、credential 或真实 Provider Key。
+
+CLI：
 
 ```text
-RawSignal.title
-RawSignal.text
+python -m scripts.evaluate_m3_clustering
+python -m scripts.reprocess_m3_clusters
 ```
 
-不会加入 metrics、raw_payload、Cookie、credential、connector config 或 URL。
+---
 
-规则：
+## 12. 与 V1.2 原 M3 描述的差异
 
-- title + text：稳定拼接；
-- title only / text only：分别生成有效输入；
-- 空白统一规范化；
-- title 与 text 均为空或纯空白：`NO_EMBEDDABLE_TEXT`；
-- 不 embed 空字符串，不使用 URL 伪装正文；
-- 最终实际发送给 Provider 的规范化文本计算 SHA-256，保存 `input_hash`。
+早期 `AI编辑部_综合开发实施规划_V1.2.md` 的 M3 还列出：
 
-## embedding_version 语义
+- 云 Embedding Provider；
+- Provider 配置/连接测试页面；
+- Embedding 路由与本地备用；
+- LLM 边界判断；
+- Embedding 成本统计。
 
-`embedding_version` 是系统级稳定语义版本，不等于 `model_name`。
+后续 `DECISIONS.md` 的 M3-B 架构决策已把通用 Provider / Model Routing / LLM 能力后移到 M4，并要求 M3 不为了阶段通过而引入真实云 Key、生产 Fake Provider 或第二套 AI Gateway。
 
-它必须覆盖：
-
-- input schema；
-- preprocessing 语义；
-- provider / model 配置版本；
-- dimensions 变化。
-
-同一 `signal_id + embedding_version` 已存在且 input/provider/model/dimensions 语义一致时幂等 skip；如果 `input_hash` 或上述配置语义发生变化但 version 未升级，则返回：
+因此当前验收口径为：
 
 ```text
-EMBEDDING_VERSION_CONFLICT
+M3 = Event foundation
+   + versioned Embedding artifact / Provider contract / exact recall
+   + deterministic dedup / clustering / human boundaries
+   + offline evaluation / safe reprocessing / provenance / convergence
 ```
 
-要求开发者升级 embedding version，不 silent overwrite。
+生产云 Provider、Provider UI、路由、成本中心和 LLM event judge 属于 M4，不作为当前 M3 Engineering Gate 的伪缺口，也不在 PR #14 中提前实现。
 
-## Embedding Provider Contract
+---
 
-`packages/embeddings/providers.py` 建立 M3-B 专用 `EmbeddingProvider` Protocol 与 request/result domain objects，表达：
+## 13. CI Gate
+
+M3-D 最终 merge gate 必须由 PR #14 **latest exact-head** GitHub Actions 证明，而不是旧 commit 或本地猜测。
+
+Python Gate：
 
 ```text
-provider_key
-model_name
-embedding_version
-dimensions
-batch inputs
-vectors
-optional usage metadata
-optional latency metadata
-optional error metadata
+Ruff
+mypy
+M3 concurrent reprocess targeted
+full pytest
+M3 offline engineering evaluation
+M3 exact recall + clustering performance baseline
+Alembic upgrade head
+Alembic downgrade -1
+Alembic upgrade head
+Alembic downgrade base
+Alembic upgrade head
+Connector Definition sync
+Connector Definition sync again / idempotent
 ```
 
-Provider 不访问数据库；Repository 不调用 Provider；Service 协调二者。
-
-当前没有生产 OpenAI / Anthropic / Gemini / Ollama Provider，也没有通用 AI Gateway。Fake / Mapping Provider 只存在 tests，不作为生产默认 Provider 注册。
-
-## Batch Processor
-
-`EmbeddingBatchProcessor` / `EmbeddingService` 支持：
-
-- 显式 signal IDs；
-- signal ID 去重；
-- 可配置 batch size，不加载整张 RawSignal 表；
-- Provider 调用位于数据库事务之外；
-- 已有 artifact skip；
-- 空文本 skip；
-- wrong result count 整个 pending chunk 明确失败，不静默错位；
-- dimension mismatch、空向量、NaN、Infinity、zero vector 拒绝写入；
-- retryable provider/network failure 与 invalid response 分开；
-- retry 默认 1 次，显式上限 3 次，不无限 retry；
-- 返回 generated / skipped / failed counters 与逐项 code；
-- 结构化日志记录 provider/model/version/dimensions/batch/counters/latency，不记录完整 vector、API Key 或完整正文。
-
-RawSignal 在整个生成/失败流程中保持采集事实不可变。
-
-## Exact Vector Recall
-
-`SignalSimilarityService` / `SignalEmbeddingRepository.exact_cosine_recall` 提供 exact recall。
-
-输入：
+Web Gate：
 
 ```text
-signal_id
-embedding_version
-top_k
-optional min_similarity
-optional time_from
-optional time_to
+lint
+typecheck
+unit tests
+production build
 ```
 
-查询规则：
+所有上述步骤必须 success，PR #14 才具备人工合并条件。
 
-- same embedding_version；
-- same dimensions；
-- exclude self；
-- optional threshold；
-- optional effective time range，时间语义为 `COALESCE(published_at, collected_at)`；
-- PostgreSQL exact cosine distance 排序。
+---
 
-统一相似度：
+## 14. 明确未进入的范围
 
-```text
-similarity = 1 - cosine_distance
-```
+M3-D 未实现、未调用：
 
-similarity 越大表示越相似。
-
-输出：
-
-```text
-candidate_signal_id
-similarity
-embedding_version
-published_at
-collected_at
-platform
-source_id
-```
-
-不返回完整 vector 或 RawSignal `raw_payload`。
-
-## Admin API
-
-继续使用现有 Admin Token：
-
-```text
-GET  /api/v1/admin/embeddings/signals/{signal_id}
-POST /api/v1/admin/embeddings/recall
-```
-
-metadata endpoint 只返回 provider/model/version/dimensions/input hash/created time；Recall 只返回安全候选元数据。
-
-M3-B 没有提供允许客户端提交任意 Provider URL、API Key 或生产 Fake Provider 的生成 endpoint。
-
-## ANN 决策
-
-M3-B **没有**创建 HNSW / IVFFlat。
-
-当前阶段优先保证：
-
-- artifact versioning；
-- dimension isolation；
-- exact cosine correctness；
-- PostgreSQL 并发幂等。
-
-目前没有数据规模证据证明 exact search 不可接受，因此 ANN 与参数调优后置到有真实规模依据的性能阶段，避免提前增加运维和版本复杂度。
-
-## PostgreSQL 测试
-
-M3-B 新增并在真实 PostgreSQL 16 + pgvector 中覆盖：
-
-- deterministic input builder、title+text/title only/text only/empty/whitespace/hash；
-- dimensionless vector ORM/type；
-- insert / metadata read；
-- 同 Signal 不同 version、不同 dimensions 共存；
-- duplicate idempotent；
-- version conflict；
-- PostgreSQL FK / UNIQUE / dimension CHECK / zero-vector CHECK；
-- NaN / Infinity / empty / wrong dimensions 应用层拒绝；
-- 两 Worker 同 signal/version 并发生成最终只有一条；
-- RawSignal 不被 Embedding 操作修改；
-- RawSignal 删除只向下 CASCADE embedding；
-- batch 1 item / multi-item / mixed existing+missing+empty / wrong result count / retry boundary / batch size；
-- exact cosine 排序、自身排除、top_k、threshold、time window；
-- embedding version 隔离、dimension 隔离；
-- missing target embedding；
-- Admin unauthorized / metadata / recall / safe output；
-- migration vector extension、dimensionless vector type、FK/UNIQUE/CHECK/INDEX 与 downgrade extension 保留；
-- M1 / M2 / M3-A 全量回归继续执行。
-
-## CI 验收
-
-M3-B 业务实现 HEAD：
-
-```text
-1af81ad09181259c4128d23eaa5164274a7cc187
-```
-
-已完成一次完整 GitHub Actions PostgreSQL Gate：
-
-- `ruff check .`：success；
-- `mypy apps packages`：success，143 source files；
-- PostgreSQL pytest：`297 passed / 1 warning`；
-- Alembic：`upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 全部 success；
-- Definition 第一次同步：`created=11 / updated=0 / unchanged=0 / failed=0`；
-- Definition 第二次同步：`created=0 / updated=0 / unchanged=11 / failed=0`；
-- Web：lint / typecheck / unit tests / production build 全部 success。
-
-最终文档 HEAD 继续由 PR #12 最新 CI 复验。
-
-## 阶段边界确认
-
-M3-B 明确没有实现或调用：
-
-- 真实 OpenAI / Anthropic / Gemini / Ollama Embedding；
-- 通用 AI Gateway / Chat Completion / Prompt Registry；
+- 真实平台 Smoke；
+- 真实云 Embedding Provider；
+- LLM；
+- AI Gateway；
+- Provider UI / task routing / cost center；
 - HNSW / IVFFlat；
-- SimHash / MinHash；
-- Dedup decision；
-- Event clustering；
-- automatic Event creation / merge / split；
+- MinHash；
 - Event centroid；
-- 自动写 `EventSignal attached_by=embedding`；
-- LLM event boundary；
-- M4 Evidence / Editorial Scoring；
-- Web Event Workbench。
+- Evidence / Editorial Scoring；
+- Trend / velocity / information-gap engine；
+- M4/M5 业务。
 
-因此当前正式状态是：**M3-A COMPLETE；M3-B COMPLETE；M3-C / M3-D NOT STARTED；M3 Overall NOT COMPLETE**。
+## 15. 阶段准入结论
+
+在 PR #14 latest exact-head CI `completed/success` 后：
+
+```text
+M3 Overall Engineering COMPLETE
+PR #14 = MERGEABLE BY HUMAN
+M4 = NOT STARTED
+```
+
+PR #14 不自行合并。只有人工合并完成后，才能从最新 `main` 创建 M4 独立分支。
