@@ -28,6 +28,13 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "ai_invocation_attempts",
+    "ai_invocations",
+    "ai_budget_usages",
+    "ai_budgets",
+    "ai_task_routes",
+    "ai_models",
+    "ai_providers",
     "event_assignment_records",
     "clustering_processing_runs",
     "signal_match_decisions",
