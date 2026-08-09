@@ -40,3 +40,52 @@ class EditorialAIError(ConnectorManagementError):
             "Editorial AI scoring 暂不可用",
             details={"ai_error_code": ai_error_code, "message": message[:300]},
         )
+
+
+class DraftValidationError(BusinessValidationError):
+    code = "DRAFT_VALIDATION_ERROR"
+
+
+class UnsupportedDraftClaimError(BusinessValidationError):
+    code = "UNSUPPORTED_DRAFT_CLAIM"
+
+
+class UnsupportedDraftUnknownError(BusinessValidationError):
+    code = "UNSUPPORTED_DRAFT_UNKNOWN"
+
+
+class UnsafeDraftClaimUsageError(BusinessValidationError):
+    code = "UNSAFE_DRAFT_CLAIM_USAGE"
+
+
+class DraftRiskGateError(ConflictError):
+    code = "DRAFT_RISK_GATE_BLOCKED"
+
+
+class StaleEditorialContextError(ConflictError):
+    code = "STALE_EDITORIAL_CONTEXT"
+
+
+class DraftGenerationInProgressError(ConflictError):
+    code = "DRAFT_GENERATION_IN_PROGRESS"
+
+
+class DraftEventMergedError(ConflictError):
+    code = "EVENT_MERGED"
+
+    def __init__(self, target_event_id: UUID) -> None:
+        super().__init__(
+            "已合并 source Event 不能创建新的 Card、Pack、Draft 或 Revision",
+            details={"target_event_id": str(target_event_id)},
+        )
+
+
+class DraftAIError(ConnectorManagementError):
+    status_code = 503
+    code = "DRAFT_AI_ERROR"
+
+    def __init__(self, ai_error_code: str, message: str) -> None:
+        super().__init__(
+            "Draft AI generation 暂不可用",
+            details={"ai_error_code": ai_error_code, "message": message[:300]},
+        )
