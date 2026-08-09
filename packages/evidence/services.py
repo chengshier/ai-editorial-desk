@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -88,8 +89,8 @@ class EvidenceSourceView:
     title: str | None
     platform: str
     author_name: str | None
-    published_at: object | None
-    collected_at: object
+    published_at: datetime | None
+    collected_at: datetime
     original_url: str
     canonical_url: str
 
@@ -735,11 +736,11 @@ class EvidenceExtractionService:
                     if not role_conflict:
                         valid_claims.append(candidate)
 
-                for candidate in valid_unknowns:
+                for unknown_candidate in valid_unknowns:
                     await unknown_repo.insert_if_absent(
                         event_id=event_id,
-                        unknown_text=candidate.text,
-                        unknown_fingerprint=candidate.fingerprint,
+                        unknown_text=unknown_candidate.text,
+                        unknown_fingerprint=unknown_candidate.fingerprint,
                         status=EventUnknownStatus.OPEN,
                         source_type=EventUnknownSourceType.AI,
                         extraction_run_id=run_id,
@@ -765,6 +766,9 @@ class EvidenceExtractionService:
                 run.claim_count = len(valid_claims)
                 run.unknown_count = len(valid_unknowns)
                 run.invalid_item_count = len(invalid_codes)
+                if invalid_codes:
+                    run.error_code = "PARTIAL_INVALID_ITEMS"
+                    run.error_summary = ",".join(invalid_codes)[:1000]
                 run.finished_at = utc_now()
                 await session.flush()
                 AuditLogRepository(session).add(
@@ -803,6 +807,9 @@ class EvidenceExtractionService:
                 run.claim_count = len(validation.claims)
                 run.unknown_count = len(validation.unknowns)
                 run.invalid_item_count = validation.invalid_item_count
+                if validation.invalid_codes:
+                    run.error_code = "PARTIAL_INVALID_ITEMS"
+                    run.error_summary = ",".join(validation.invalid_codes)[:1000]
                 run.finished_at = utc_now()
 
     async def _finish_failed_run(
