@@ -44,6 +44,10 @@ EXPECTED_TABLES = {
     "ai_invocation_attempts",
     "ai_budgets",
     "ai_budget_usages",
+    "evidence_extraction_runs",
+    "evidence_claims",
+    "evidence_claim_sources",
+    "event_unknowns",
 }
 
 
