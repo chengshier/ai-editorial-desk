@@ -197,11 +197,11 @@ class TrendService:
                     )
                 ]
                 official_response_count = sum(
-                    link.relation_type is EventSignalRelation.OFFICIAL_RESPONSE
+                    link.relation is EventSignalRelation.OFFICIAL_RESPONSE
                     for link, _signal in new_memberships
                 )
                 correction_count = sum(
-                    link.relation_type is EventSignalRelation.CORRECTION
+                    link.relation is EventSignalRelation.CORRECTION
                     for link, _signal in new_memberships
                 )
 
@@ -257,7 +257,7 @@ class TrendService:
                             "source_id": str(signal.source_id) if signal.source_id else None,
                             "platform": signal.platform,
                             "effective_time": _effective_time(signal),
-                            "relation_type": link.relation_type.value,
+                            "relation_type": link.relation.value,
                         }
                         for link, signal in memberships
                     ],
