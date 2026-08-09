@@ -58,13 +58,13 @@ async def create_event_card(
     actor: Actor,
 ) -> EventCardCreateResponse:
     del actor
-    outcome = await EventCardService().create(
+    card, created = await EventCardService().create(
         event_id=event_id,
         trend_snapshot_id=payload.trend_snapshot_id,
     )
     return EventCardCreateResponse(
-        card=EventCardResponse.model_validate(outcome.artifact),
-        created=outcome.created,
+        card=EventCardResponse.model_validate(card),
+        created=created,
     )
 
 
@@ -84,13 +84,13 @@ async def create_editorial_pack(
     actor: Actor,
 ) -> EditorialPackCreateResponse:
     del actor
-    outcome = await EditorialPackService().create(
+    pack, created = await EditorialPackService().create(
         event_id=event_id,
         event_card_id=payload.event_card_id,
     )
     return EditorialPackCreateResponse(
-        pack=EditorialPackResponse.model_validate(outcome.artifact),
-        created=outcome.created,
+        pack=EditorialPackResponse.model_validate(pack),
+        created=created,
     )
 
 
@@ -249,7 +249,10 @@ def _generation_response(outcome: DraftGenerationOutcome) -> DraftGenerationResp
                     "section_kind": section.section_kind,
                     "text": section.text,
                     "citations": [
-                        {"claim_id": str(item.claim_id), "usage": item.usage.value}
+                        {
+                            "claim_id": str(item.claim_id),
+                            "usage": item.usage.value,
+                        }
                         for item in section.citations
                     ],
                     "unknown_ids": [str(item) for item in section.unknown_ids],
