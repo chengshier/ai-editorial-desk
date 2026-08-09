@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -12,9 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from packages.ai_gateway.domain import GatewayStructuredResult, InvocationContext
 from packages.ai_gateway.errors import AIGatewayError
 from packages.ai_gateway.gateway import AIGateway
-from packages.connector_management.exceptions import ResourceNotFoundError
+from packages.connector_management.exceptions import (
+    ConnectorManagementError,
+    ResourceNotFoundError,
+)
 from packages.connector_management.repositories import AuditLogRepository
 from packages.database.models import (
+    AIInvocationRecord,
     DraftCitationUsage,
     DraftClaimReferenceRecord,
     DraftGenerationMode,
@@ -40,7 +44,6 @@ from packages.editorial.drafts_context import (
     DraftGenerationInputBuilder,
     DraftGenerationSnapshot,
     EditorialContext,
-    EditorialContextBuilder,
     load_editorial_context,
 )
 from packages.editorial.drafts_domain import (
@@ -74,9 +77,9 @@ from packages.editorial.errors import (
     DraftRiskGateError,
     DraftValidationError,
     StaleEditorialContextError,
+    UnsafeDraftClaimUsageError,
     UnsupportedDraftClaimError,
     UnsupportedDraftUnknownError,
-    UnsafeDraftClaimUsageError,
 )
 
 
@@ -131,24 +134,23 @@ class EventCardService:
         *,
         event_id: UUID,
         trend_snapshot_id: UUID | None = None,
-    ) -> ArtifactCreationOutcome:
+    ) -> tuple[EventCardRecord, bool]:
         async with self.session_factory() as session:
             async with session.begin():
-                context = await load_editorial_context(session, event_id, for_update=True)
+                context = await load_editorial_context(
+                    session,
+                    event_id,
+                    for_update=True,
+                )
                 trend = await _select_trend(session, event_id, trend_snapshot_id)
                 groups = _claim_groups(context)
                 timeline = _timeline(context)[:MAX_CARD_TIMELINE_ITEMS]
-                source_summary = {
-                    "signal_count": len(context.memberships),
-                    "source_count": context.event.source_count,
-                    "platform_count": context.event.platform_count,
-                    "timeline_item_count": len(timeline),
-                    "timeline_truncated": len(context.memberships) > len(timeline),
-                }
                 effective = {
                     "score_id": str(context.effective.base_score.id),
                     "context_hash": context.effective.context_hash,
-                    "override_ids": [str(item.id) for item in context.effective.overrides],
+                    "override_ids": [
+                        str(item.id) for item in context.effective.overrides
+                    ],
                     "values": context.effective.values,
                 }
                 input_hash = stable_hash(
@@ -168,7 +170,7 @@ class EventCardService:
                         "effective_context_hash": context.effective.context_hash,
                     }
                 )
-                card, created = await EventCardRepository(session).insert_if_absent(
+                return await EventCardRepository(session).insert_if_absent(
                     {
                         "event_id": event_id,
                         "card_version": EVENT_CARD_VERSION,
@@ -188,16 +190,25 @@ class EventCardService:
                             for item in context.evidence.unknowns
                             if item.status.value == "open"
                         ],
-                        "source_summary": source_summary,
+                        "source_summary": {
+                            "signal_count": len(context.memberships),
+                            "source_count": context.event.source_count,
+                            "platform_count": context.event.platform_count,
+                            "timeline_item_count": len(timeline),
+                            "timeline_truncated": (
+                                len(context.memberships) > len(timeline)
+                            ),
+                        },
                         "effective_assessment": effective,
                         "risk_level": context.effective.risk_level,
-                        "recommended_format": context.effective.recommended_format,
+                        "recommended_format": (
+                            context.effective.recommended_format
+                        ),
                         "generated_by": "deterministic",
                         "ai_invocation_id": None,
                         "input_hash": input_hash,
                     }
                 )
-                return ArtifactCreationOutcome(artifact=card, created=created)
 
     async def list(self, event_id: UUID) -> tuple[EventCardRecord, ...]:
         async with self.session_factory() as session:
@@ -218,14 +229,19 @@ class EditorialPackService:
         *,
         event_id: UUID,
         event_card_id: UUID,
-    ) -> ArtifactCreationOutcome:
+    ) -> tuple[EditorialPackRecord, bool]:
         async with self.session_factory() as session:
             async with session.begin():
-                context = await load_editorial_context(session, event_id, for_update=True)
+                context = await load_editorial_context(
+                    session,
+                    event_id,
+                    for_update=True,
+                )
                 card = await session.get(EventCardRecord, event_card_id)
                 if card is None or card.event_id != event_id:
                     raise ResourceNotFoundError("Event Card不存在")
                 _assert_card_current(card, context)
+
                 source_items = _source_items(context)[:MAX_PACK_SOURCE_ITEMS]
                 material_items, media_warnings = _material_items(context)
                 material_items = material_items[:MAX_PACK_MATERIAL_ITEMS]
@@ -256,7 +272,7 @@ class EditorialPackService:
                         "suggested_angles": angles,
                     }
                 )
-                pack, created = await EditorialPackRepository(session).insert_if_absent(
+                return await EditorialPackRepository(session).insert_if_absent(
                     {
                         "event_id": event_id,
                         "event_card_id": card.id,
@@ -273,13 +289,14 @@ class EditorialPackService:
                         "ai_invocation_id": None,
                     }
                 )
-                return ArtifactCreationOutcome(artifact=pack, created=created)
 
     async def list(self, event_id: UUID) -> tuple[EditorialPackRecord, ...]:
         async with self.session_factory() as session:
             if await session.get(EventRecord, event_id) is None:
                 raise ResourceNotFoundError("事件不存在")
-            return tuple(await EditorialPackRepository(session).list_for_event(event_id))
+            return tuple(
+                await EditorialPackRepository(session).list_for_event(event_id)
+            )
 
 
 class DraftService:
@@ -292,7 +309,6 @@ class DraftService:
         self.session_factory = session_factory or get_async_sessionmaker()
         self.gateway = gateway or AIGateway(session_factory=self.session_factory)
         self.input_builder = DraftGenerationInputBuilder(self.session_factory)
-        self.context_builder = EditorialContextBuilder(self.session_factory)
 
     async def generate(
         self,
@@ -312,44 +328,41 @@ class DraftService:
             editorial_pack_id=editorial_pack_id,
             draft_type=draft_type,
         )
-        _enforce_risk_gate(snapshot, apply=apply, approval_reason=risk_approval_reason)
+        _enforce_risk_gate(
+            snapshot,
+            apply=apply,
+            approval_reason=risk_approval_reason,
+        )
         mode = DraftGenerationMode.APPLY if apply else DraftGenerationMode.PREVIEW
+
         if apply:
             existing = await self._existing_ai(snapshot)
             if existing is not None:
-                return DraftGenerationOutcome(
-                    run_id=existing.generation_run_id,
-                    ai_invocation_id=existing.ai_invocation_id,
-                    mode=mode,
-                    status=DraftGenerationStatus.SUCCEEDED,
-                    draft=existing,
-                    candidate=None,
-                    reused=True,
-                )
+                return _reused_outcome(existing)
 
         run, created = await self._start_run(snapshot, actor=actor, mode=mode)
         if apply and not created:
             if run.status is DraftGenerationStatus.RUNNING:
-                raise DraftGenerationInProgressError("相同Draft输入已有Worker正在生成")
+                raise DraftGenerationInProgressError(
+                    "相同Draft输入已有Worker正在生成"
+                )
             existing = await self._existing_ai(snapshot)
             if existing is not None:
-                return DraftGenerationOutcome(
-                    run_id=run.id,
-                    ai_invocation_id=existing.ai_invocation_id,
-                    mode=mode,
-                    status=DraftGenerationStatus.SUCCEEDED,
-                    draft=existing,
-                    candidate=None,
-                    reused=True,
-                )
-            raise DraftValidationError("相同Draft输入已有失败Run；需在上下文更新后重新生成")
+                return _reused_outcome(existing)
+            raise DraftValidationError(
+                "相同Draft输入已有失败Run；需重新生成Card/Pack或调整上下文后重试"
+            )
 
-        if apply and risk_approval_reason and snapshot.risk_level is EditorialRiskLevel.R3:
+        if (
+            apply
+            and snapshot.risk_level is EditorialRiskLevel.R3
+            and normalize_text(risk_approval_reason or "")
+        ):
             await self._audit_risk_approval(
                 run_id=run.id,
                 event_id=event_id,
                 actor=actor,
-                reason=risk_approval_reason,
+                reason=risk_approval_reason or "",
             )
 
         invocation_id = uuid4()
@@ -376,26 +389,33 @@ class DraftService:
                 invocation_id=invocation_id,
             )
         except AIGatewayError as exc:
-            await self._finish_failed(run.id, invocation_id, exc.code.value, exc.message)
+            await self._finish_failed(
+                run.id,
+                invocation_id,
+                exc.code.value,
+                exc.message,
+            )
             raise
 
         try:
             candidate = validate_draft_candidate(result.data)
             _validate_candidate_against_snapshot(candidate, snapshot)
-        except (
-            ValueError,
-            UnsupportedDraftClaimError,
-            UnsupportedDraftUnknownError,
-            UnsafeDraftClaimUsageError,
-            DraftValidationError,
-        ) as exc:
+        except ValueError as exc:
             await self._finish_failed(
                 run.id,
                 result.invocation_id,
-                getattr(exc, "code", "DRAFT_OUTPUT_INVALID"),
+                "DRAFT_OUTPUT_INVALID",
                 str(exc),
             )
-            raise DraftValidationError(str(exc)) from exc if isinstance(exc, ValueError) else exc
+            raise DraftValidationError(str(exc)) from exc
+        except ConnectorManagementError as exc:
+            await self._finish_failed(
+                run.id,
+                result.invocation_id,
+                exc.code,
+                exc.message,
+            )
+            raise
 
         if not apply:
             await self._finish_success(run.id, result.invocation_id)
@@ -409,13 +429,23 @@ class DraftService:
                 reused=False,
             )
 
-        draft, draft_created = await self._apply_ai_draft(
-            run_id=run.id,
-            invocation_id=result.invocation_id,
-            snapshot=snapshot,
-            candidate=candidate,
-            actor=actor,
-        )
+        try:
+            draft, draft_created = await self._apply_ai_draft(
+                run_id=run.id,
+                invocation_id=result.invocation_id,
+                snapshot=snapshot,
+                candidate=candidate,
+                actor=actor,
+            )
+        except ConnectorManagementError as exc:
+            await self._finish_failed(
+                run.id,
+                result.invocation_id,
+                exc.code,
+                exc.message,
+            )
+            raise
+
         return DraftGenerationOutcome(
             run_id=run.id,
             ai_invocation_id=result.invocation_id,
@@ -447,11 +477,19 @@ class DraftService:
         body = _bounded_body(body, draft_type)
         if not references:
             raise DraftValidationError("Human Draft至少需要一个Claim reference")
+
         async with self.session_factory() as session:
             async with session.begin():
-                context = await load_editorial_context(session, event_id, for_update=True)
+                context = await load_editorial_context(
+                    session,
+                    event_id,
+                    for_update=True,
+                )
                 card, pack = await _require_card_pack(
-                    session, event_id, event_card_id, editorial_pack_id
+                    session,
+                    event_id,
+                    event_card_id,
+                    editorial_pack_id,
                 )
                 _assert_card_current(card, context)
                 normalized_refs = _validate_human_references(references, context)
@@ -466,7 +504,11 @@ class DraftService:
                         "draft_type": draft_type.value,
                         "body": body,
                         "references": [
-                            (str(item.claim_id), item.section_key, item.usage.value)
+                            (
+                                str(item.claim_id),
+                                item.section_key,
+                                item.usage.value,
+                            )
                             for item in normalized_refs
                         ],
                         "reason": reason,
@@ -487,9 +529,9 @@ class DraftService:
                     source_type=DraftSourceType.HUMAN,
                     status=DraftStatus.EDITED,
                     title=_optional(title),
-                    title_candidates=[_optional(title)] if _optional(title) else [],
+                    title_candidates=_candidate_list(title),
                     hook=_optional(hook),
-                    hook_candidates=[_optional(hook)] if _optional(hook) else [],
+                    hook_candidates=_candidate_list(hook),
                     cover_text_candidates=[],
                     sections=[],
                     body=body,
@@ -538,19 +580,26 @@ class DraftService:
     ) -> EditorialDraftRecord:
         actor = _require_actor(actor)
         change_note = _require_note(change_note, "Revision change_note")
+        if not references:
+            raise DraftValidationError("Human Revision至少需要一个Claim reference")
+
         async with self.session_factory() as session:
             async with session.begin():
-                context = await load_editorial_context(session, event_id, for_update=True)
+                context = await load_editorial_context(
+                    session,
+                    event_id,
+                    for_update=True,
+                )
                 repo = EditorialDraftRepository(session)
                 parent = await repo.get_for_update(parent_draft_id)
                 if parent is None or parent.event_id != event_id:
                     raise ResourceNotFoundError("Parent Draft不存在")
                 body = _bounded_body(body, parent.draft_type)
-                if not references:
-                    raise DraftValidationError("Human Revision至少需要一个Claim reference")
                 latest_version = await repo.max_chain_version(parent.draft_chain_id)
                 if latest_version != parent.draft_version:
-                    raise DraftValidationError("只能基于当前chain最新Draft创建Revision")
+                    raise DraftValidationError(
+                        "只能基于当前chain最新Draft创建Revision"
+                    )
                 normalized_refs = _validate_human_references(references, context)
                 new_version = latest_version + 1
                 input_hash = stable_hash(
@@ -562,7 +611,11 @@ class DraftService:
                         "context_hash": context.context_hash,
                         "body": body,
                         "references": [
-                            (str(item.claim_id), item.section_key, item.usage.value)
+                            (
+                                str(item.claim_id),
+                                item.section_key,
+                                item.usage.value,
+                            )
                             for item in normalized_refs
                         ],
                         "change_note": change_note,
@@ -581,18 +634,17 @@ class DraftService:
                     parent_draft_id=parent.id,
                     source_type=DraftSourceType.HUMAN,
                     status=DraftStatus.EDITED,
-                    title=_optional(title) if title is not None else parent.title,
+                    title=_inherit_optional(title, parent.title),
                     title_candidates=[],
-                    hook=_optional(hook) if hook is not None else parent.hook,
+                    hook=_inherit_optional(hook, parent.hook),
                     hook_candidates=[],
                     cover_text_candidates=[],
                     sections=[],
                     body=body,
-                    ending=_optional(ending) if ending is not None else parent.ending,
-                    interaction_question=(
-                        _optional(interaction_question)
-                        if interaction_question is not None
-                        else parent.interaction_question
+                    ending=_inherit_optional(ending, parent.ending),
+                    interaction_question=_inherit_optional(
+                        interaction_question,
+                        parent.interaction_question,
                     ),
                     prompt_version=None,
                     schema_version=None,
@@ -628,23 +680,36 @@ class DraftService:
             return tuple(await EditorialDraftRepository(session).list_for_event(event_id))
 
     async def detail(
-        self, event_id: UUID, draft_id: UUID
+        self,
+        event_id: UUID,
+        draft_id: UUID,
     ) -> tuple[EditorialDraftRecord, tuple[DraftClaimReferenceRecord, ...]]:
         async with self.session_factory() as session:
             draft = await session.get(EditorialDraftRecord, draft_id)
             if draft is None or draft.event_id != event_id:
                 raise ResourceNotFoundError("Draft不存在")
-            refs = tuple(await DraftClaimReferenceRepository(session).list_for_draft(draft.id))
-            return draft, refs
+            refs = await DraftClaimReferenceRepository(session).list_for_draft(draft.id)
+            return draft, tuple(refs)
 
-    async def chain(self, event_id: UUID, draft_id: UUID) -> tuple[EditorialDraftRecord, ...]:
+    async def chain(
+        self,
+        event_id: UUID,
+        draft_id: UUID,
+    ) -> tuple[EditorialDraftRecord, ...]:
         async with self.session_factory() as session:
             draft = await session.get(EditorialDraftRecord, draft_id)
             if draft is None or draft.event_id != event_id:
                 raise ResourceNotFoundError("Draft不存在")
-            return tuple(await EditorialDraftRepository(session).list_chain(draft.draft_chain_id))
+            return tuple(
+                await EditorialDraftRepository(session).list_chain(
+                    draft.draft_chain_id
+                )
+            )
 
-    async def _existing_ai(self, snapshot: DraftGenerationSnapshot) -> EditorialDraftRecord | None:
+    async def _existing_ai(
+        self,
+        snapshot: DraftGenerationSnapshot,
+    ) -> EditorialDraftRecord | None:
         async with self.session_factory() as session:
             return await EditorialDraftRepository(session).get_ai_by_input(
                 event_card_id=snapshot.event_card_id,
@@ -700,13 +765,15 @@ class DraftService:
         async with self.session_factory() as session:
             async with session.begin():
                 context = await load_editorial_context(
-                    session, snapshot.event_id, for_update=True
+                    session,
+                    snapshot.event_id,
+                    for_update=True,
                 )
                 if context.context_hash != snapshot.context_hash:
                     raise StaleEditorialContextError(
                         "Draft生成期间Evidence、Event或Effective Editorial Assessment已变化"
                     )
-                card, pack = await _require_card_pack(
+                card, _pack = await _require_card_pack(
                     session,
                     snapshot.event_id,
                     snapshot.event_card_id,
@@ -717,9 +784,11 @@ class DraftService:
                 run = await DraftGenerationRunRepository(session).get_for_update(run_id)
                 if run is None:
                     raise RuntimeError("Draft Generation Run不存在")
+
                 draft_id = uuid4()
-                sections = _serialize_sections(candidate)
-                draft, created = await EditorialDraftRepository(session).insert_ai_if_absent(
+                draft, created = await EditorialDraftRepository(
+                    session
+                ).insert_ai_if_absent(
                     {
                         "id": draft_id,
                         "event_id": snapshot.event_id,
@@ -728,7 +797,9 @@ class DraftService:
                         "draft_chain_id": draft_id,
                         "draft_type": snapshot.draft_type,
                         "format_key": snapshot.format_key,
-                        "duration_target_seconds": snapshot.duration_target_seconds,
+                        "duration_target_seconds": (
+                            snapshot.duration_target_seconds
+                        ),
                         "language": context.event.primary_language or "zh-CN",
                         "draft_version": 1,
                         "parent_draft_id": None,
@@ -738,8 +809,10 @@ class DraftService:
                         "title_candidates": list(candidate.title_candidates),
                         "hook": candidate.hook_candidates[0],
                         "hook_candidates": list(candidate.hook_candidates),
-                        "cover_text_candidates": list(candidate.cover_text_candidates),
-                        "sections": sections,
+                        "cover_text_candidates": list(
+                            candidate.cover_text_candidates
+                        ),
+                        "sections": _serialize_sections(candidate),
                         "body": candidate.body_text(),
                         "ending": candidate.ending,
                         "interaction_question": candidate.interaction_question,
@@ -780,20 +853,21 @@ class DraftService:
                 run.finished_at = utc_now()
 
     async def _finish_failed(
-        self, run_id: UUID, invocation_id: UUID, error_code: str, error_summary: str
+        self,
+        run_id: UUID,
+        invocation_id: UUID,
+        error_code: str,
+        error_summary: str,
     ) -> None:
         async with self.session_factory() as session:
             async with session.begin():
                 run = await DraftGenerationRunRepository(session).get_for_update(run_id)
                 if run is None:
                     return
-                invocation = await session.get(
-                    __import__("packages.database.models", fromlist=["AIInvocationRecord"]).AIInvocationRecord,
-                    invocation_id,
-                )
+                invocation = await session.get(AIInvocationRecord, invocation_id)
                 run.ai_invocation_id = invocation_id if invocation is not None else None
                 run.status = DraftGenerationStatus.FAILED
-                run.error_code = error_code
+                run.error_code = error_code[:100]
                 run.error_summary = normalize_text(error_summary)[:500]
                 run.finished_at = utc_now()
 
@@ -843,11 +917,12 @@ class EditorialMarkdownExporter:
             card = await session.get(EventCardRecord, pack.event_card_id)
             if card is None:
                 raise ResourceNotFoundError("Event Card不存在")
-            trend = (
-                await session.get(EventTrendSnapshotRecord, card.trend_snapshot_id)
-                if card.trend_snapshot_id
-                else None
-            )
+            trend = None
+            if card.trend_snapshot_id is not None:
+                trend = await session.get(
+                    EventTrendSnapshotRecord,
+                    card.trend_snapshot_id,
+                )
             claims = {
                 item.id: item
                 for item in (
@@ -864,36 +939,55 @@ class EditorialMarkdownExporter:
                 draft = await session.get(EditorialDraftRecord, draft_id)
                 if draft is None or draft.event_id != event_id:
                     raise ResourceNotFoundError("Draft不存在")
-                refs = await DraftClaimReferenceRepository(session).list_for_draft(draft.id)
+                refs = await DraftClaimReferenceRepository(
+                    session
+                ).list_for_draft(draft.id)
 
-        lines = [f"# Event\n\n{card.title}", "## Summary", card.concise_summary]
-        lines.extend(["## Trend", _trend_markdown(trend)])
         values = card.effective_assessment.get("values", {})
-        lines.extend(
-            [
-                "## Editorial Score",
+        lines = [
+            f"# Event\n\n{card.title}",
+            "## Summary",
+            card.concise_summary,
+            "## Trend",
+            _trend_markdown(trend),
+            "## Editorial Score",
+            (
                 f"- traffic_total: {values.get('traffic_total', 'N/A')}\n"
-                f"- score_id: {card.editorial_score_id}",
-                "## Risk",
+                f"- score_id: {card.editorial_score_id}"
+            ),
+            "## Risk",
+            (
                 f"- risk_level: {card.risk_level.value}\n"
-                f"- recommended_format: {card.recommended_format.value}",
-                "## Claims",
-                _claims_markdown(card, claims),
-                "## Unknowns",
-                _list_mapping(pack.unknown_items, "text"),
-                "## Timeline",
-                _timeline_markdown(pack.timeline_items),
-                "## Sources",
-                _sources_markdown(pack.source_items),
-                "## Suggested Angles",
-                _list_mapping(pack.suggested_angles, "text"),
-                "## Material Checklist",
-                _materials_markdown(pack.material_items, pack.warnings),
-                "## Draft",
-                _draft_markdown(draft, refs),
-            ]
-        )
+                f"- recommended_format: {card.recommended_format.value}"
+            ),
+            "## Claims",
+            _claims_markdown(card, claims),
+            "## Unknowns",
+            _list_mapping(pack.unknown_items, "text"),
+            "## Timeline",
+            _timeline_markdown(pack.timeline_items),
+            "## Sources",
+            _sources_markdown(pack.source_items),
+            "## Suggested Angles",
+            _list_mapping(pack.suggested_angles, "text"),
+            "## Material Checklist",
+            _materials_markdown(pack.material_items, pack.warnings),
+            "## Draft",
+            _draft_markdown(draft, refs),
+        ]
         return "\n\n".join(lines).strip() + "\n"
+
+
+def _reused_outcome(draft: EditorialDraftRecord) -> DraftGenerationOutcome:
+    return DraftGenerationOutcome(
+        run_id=draft.generation_run_id,
+        ai_invocation_id=draft.ai_invocation_id,
+        mode=DraftGenerationMode.APPLY,
+        status=DraftGenerationStatus.SUCCEEDED,
+        draft=draft,
+        candidate=None,
+        reused=True,
+    )
 
 
 def _claim_groups(context: EditorialContext) -> dict[str, list[str]]:
@@ -920,7 +1014,9 @@ def _concise_summary(context: EditorialContext) -> str:
             pieces.append(f"{label}：{by_state[state][0]}")
         if len(pieces) >= 3:
             break
-    return "；".join(pieces) if pieces else "当前尚无可用于资料卡的Evidence Claim。"
+    if not pieces:
+        return "当前尚无可用于资料卡的Evidence Claim。"
+    return "；".join(pieces)
 
 
 def _timeline(context: EditorialContext) -> list[dict[str, Any]]:
@@ -931,7 +1027,9 @@ def _timeline(context: EditorialContext) -> list[dict[str, Any]]:
             "title": signal.title,
             "platform": signal.platform,
             "author_name": signal.author_name,
-            "published_at": signal.published_at.isoformat() if signal.published_at else None,
+            "published_at": (
+                signal.published_at.isoformat() if signal.published_at else None
+            ),
             "collected_at": signal.collected_at.isoformat(),
             "original_url": signal.original_url,
             "canonical_url": signal.canonical_url,
@@ -957,7 +1055,10 @@ def _material_items(
     claim_ids_by_signal: dict[UUID, list[str]] = {}
     claim_by_id = {item.id: item for item in context.evidence.claims}
     for link in context.evidence.source_links:
-        claim_ids_by_signal.setdefault(link.signal_id, []).append(str(link.claim_id))
+        claim_ids_by_signal.setdefault(link.signal_id, []).append(
+            str(link.claim_id)
+        )
+
     materials: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     for _event_link, signal in context.memberships:
@@ -967,18 +1068,24 @@ def _material_items(
                 {
                     "code": "MEDIA_METADATA_UNAVAILABLE",
                     "signal_id": str(signal.id),
-                    "message": "该Signal没有统一可验证的media metadata，请人工检查原链接。",
+                    "message": (
+                        "该Signal没有统一可验证的media metadata，请人工检查原链接。"
+                    ),
                 }
             )
             continue
+
         attached_claims = [
-            claim_by_id[UUID(item)]
-            for item in claim_ids_by_signal.get(signal.id, [])
-            if UUID(item) in claim_by_id
+            claim_by_id[UUID(raw_id)]
+            for raw_id in claim_ids_by_signal.get(signal.id, [])
+            if UUID(raw_id) in claim_by_id
         ]
         risky = any(
             item.verification_state
-            in (EvidenceVerificationState.DISPUTED, EvidenceVerificationState.FALSE)
+            in (
+                EvidenceVerificationState.DISPUTED,
+                EvidenceVerificationState.FALSE,
+            )
             for item in attached_claims
         )
         for media in media_items:
@@ -988,7 +1095,11 @@ def _material_items(
                 if key in SAFE_MEDIA_METADATA_KEYS
                 and isinstance(value, (str, int, float, bool))
             }
-            media_type = str(metadata.get("media_type") or metadata.get("type") or "unclassified")[:50]
+            media_type = str(
+                metadata.get("media_type")
+                or metadata.get("type")
+                or "unclassified"
+            )[:50]
             materials.append(
                 {
                     "signal_id": str(signal.id),
@@ -996,9 +1107,15 @@ def _material_items(
                     "source_url": signal.original_url,
                     "title": signal.title,
                     "available_metadata": metadata,
-                    "usage_note": "metadata_only_no_download; review copyright/context before use",
+                    "usage_note": (
+                        "metadata_only_no_download; review copyright/context before use"
+                    ),
                     "claim_ids": claim_ids_by_signal.get(signal.id, []),
-                    "risk_note": "verify_disputed_or_false_context" if risky else "manual_rights_review_required",
+                    "risk_note": (
+                        "verify_disputed_or_false_context"
+                        if risky
+                        else "manual_rights_review_required"
+                    ),
                 }
             )
     return materials, warnings
@@ -1051,13 +1168,15 @@ def _suggested_angles(context: EditorialContext) -> list[dict[str, Any]]:
     by_state = {state: [] for state in EvidenceVerificationState}
     for item in context.evidence.claims:
         by_state[item.verification_state].append(str(item.id))
+
     candidates: list[dict[str, Any]] = []
-    if by_state[EvidenceVerificationState.CONFIRMED]:
+    confirmed = by_state[EvidenceVerificationState.CONFIRMED]
+    if confirmed:
         candidates.append(
             {
                 "key": "fact_timeline",
                 "text": "围绕已确认事实做时间线还原",
-                "claim_ids": by_state[EvidenceVerificationState.CONFIRMED][:5],
+                "claim_ids": confirmed[:5],
             }
         )
     fact_check_ids = (
@@ -1112,11 +1231,17 @@ async def _select_trend(
 
 def _assert_card_current(card: EventCardRecord, context: EditorialContext) -> None:
     if card.evidence_snapshot_hash != context.evidence.snapshot_hash:
-        raise StaleEditorialContextError("Event Card的Evidence已变化，请生成新Card")
+        raise StaleEditorialContextError(
+            "Event Card的Evidence已变化，请生成新Card"
+        )
     if card.editorial_score_id != context.effective.base_score.id:
-        raise StaleEditorialContextError("Event Card绑定的Effective Score已变化")
+        raise StaleEditorialContextError(
+            "Event Card绑定的Effective Score已变化"
+        )
     if card.effective_assessment.get("context_hash") != context.effective.context_hash:
-        raise StaleEditorialContextError("Event Card绑定的Human Override已变化")
+        raise StaleEditorialContextError(
+            "Event Card绑定的Human Override已变化"
+        )
 
 
 async def _require_card_pack(
@@ -1144,14 +1269,22 @@ def _enforce_risk_gate(
         return
     if snapshot.risk_level is EditorialRiskLevel.R4:
         if snapshot.format_key is not EditorialRecommendedFormat.FACT_CHECK:
-            raise DraftRiskGateError("R4只允许fact_check AI Draft Apply；Event不会因此被删除")
+            raise DraftRiskGateError(
+                "R4只允许fact_check AI Draft Apply；Event不会因此被删除"
+            )
         return
-    if snapshot.risk_level is EditorialRiskLevel.R3 and snapshot.format_key not in {
+    safe_r3_formats = {
         EditorialRecommendedFormat.FACT_CHECK,
         EditorialRecommendedFormat.QUICK_EXPLAINER,
-    }:
-        if not normalize_text(approval_reason or ""):
-            raise DraftRiskGateError("R3普通内容路径需要Human明确risk approval reason")
+    }
+    if (
+        snapshot.risk_level is EditorialRiskLevel.R3
+        and snapshot.format_key not in safe_r3_formats
+        and not normalize_text(approval_reason or "")
+    ):
+        raise DraftRiskGateError(
+            "R3普通内容路径需要Human明确risk approval reason"
+        )
 
 
 def _validate_candidate_against_snapshot(
@@ -1161,20 +1294,26 @@ def _validate_candidate_against_snapshot(
     if candidate.draft_type is not snapshot.draft_type:
         raise DraftValidationError("模型返回的draft_type与请求不一致")
     if candidate.format_key is not snapshot.format_key:
-        raise DraftValidationError("模型不得改变Effective Editorial recommended format")
-    body = candidate.body_text()
-    if len(body) > draft_hard_max_chars(snapshot.draft_type):
+        raise DraftValidationError(
+            "模型不得改变Effective Editorial recommended format"
+        )
+    if len(candidate.body_text()) > draft_hard_max_chars(snapshot.draft_type):
         raise DraftValidationError("Draft正文超过该duration的工程hard max")
+
     seen: set[tuple[str, UUID]] = set()
     for section in candidate.sections:
         if section.section_kind == "factual":
             for citation in section.citations:
                 state = snapshot.claim_states.get(citation.claim_id)
                 if state is None:
-                    raise UnsupportedDraftClaimError("Draft引用不存在或其他Event的Claim")
+                    raise UnsupportedDraftClaimError(
+                        "Draft引用不存在或其他Event的Claim"
+                    )
                 marker = (section.section_key, citation.claim_id)
                 if marker in seen:
-                    raise DraftValidationError("同一section不能重复引用同一Claim")
+                    raise DraftValidationError(
+                        "同一section不能重复引用同一Claim"
+                    )
                 seen.add(marker)
                 if citation.usage not in allowed_usages(state):
                     raise UnsafeDraftClaimUsageError(
@@ -1183,7 +1322,9 @@ def _validate_candidate_against_snapshot(
         else:
             for unknown_id in section.unknown_ids:
                 if unknown_id not in snapshot.open_unknown_ids:
-                    raise UnsupportedDraftUnknownError("Draft引用不存在、已解决或其他Event的Unknown")
+                    raise UnsupportedDraftUnknownError(
+                        "Draft引用不存在、已解决或其他Event的Unknown"
+                    )
 
 
 def _validate_candidate_against_context(
@@ -1192,18 +1333,26 @@ def _validate_candidate_against_context(
 ) -> None:
     states = {item.id: item.verification_state for item in context.evidence.claims}
     unknowns = {
-        item.id for item in context.evidence.unknowns if item.status.value == "open"
+        item.id
+        for item in context.evidence.unknowns
+        if item.status.value == "open"
     }
     for section in candidate.sections:
         for citation in section.citations:
             state = states.get(citation.claim_id)
             if state is None:
-                raise UnsupportedDraftClaimError("Apply时Claim已不存在于目标Event")
+                raise UnsupportedDraftClaimError(
+                    "Apply时Claim已不存在于目标Event"
+                )
             if citation.usage not in allowed_usages(state):
-                raise StaleEditorialContextError("Apply时Claim verification已变化")
+                raise StaleEditorialContextError(
+                    "Apply时Claim verification已变化"
+                )
         for unknown_id in section.unknown_ids:
             if unknown_id not in unknowns:
-                raise StaleEditorialContextError("Apply时Unknown状态已变化")
+                raise StaleEditorialContextError(
+                    "Apply时Unknown状态已变化"
+                )
 
 
 def _validate_human_references(
@@ -1217,12 +1366,16 @@ def _validate_human_references(
         section_key = normalize_text(item.section_key)
         state = states.get(item.claim_id)
         if state is None:
-            raise UnsupportedDraftClaimError("Human Draft引用不存在或其他Event Claim")
+            raise UnsupportedDraftClaimError(
+                "Human Draft引用不存在或其他Event Claim"
+            )
         if not section_key:
             raise DraftValidationError("reference section_key不能为空")
         marker = (section_key, item.claim_id)
         if marker in seen:
-            raise DraftValidationError("同一section不能重复引用同一Claim")
+            raise DraftValidationError(
+                "同一section不能重复引用同一Claim"
+            )
         seen.add(marker)
         if item.usage not in allowed_usages(state):
             raise UnsafeDraftClaimUsageError(
@@ -1255,14 +1408,19 @@ def _add_reference_rows(
         )
 
 
-def _serialize_sections(candidate: ValidatedDraftCandidate) -> list[dict[str, Any]]:
+def _serialize_sections(
+    candidate: ValidatedDraftCandidate,
+) -> list[dict[str, Any]]:
     return [
         {
             "section_key": section.section_key,
             "section_kind": section.section_kind,
             "text": section.text,
             "citations": [
-                {"claim_id": str(item.claim_id), "usage": item.usage.value}
+                {
+                    "claim_id": str(item.claim_id),
+                    "usage": item.usage.value,
+                }
                 for item in section.citations
             ],
             "unknown_ids": [str(item) for item in section.unknown_ids],
@@ -1291,18 +1449,37 @@ def _optional(value: str | None) -> str | None:
     return normalize_text(value) or None
 
 
+def _candidate_list(value: str | None) -> list[str]:
+    normalized = _optional(value)
+    return [normalized] if normalized is not None else []
+
+
+def _inherit_optional(value: str | None, previous: str | None) -> str | None:
+    if value is None:
+        return previous
+    return _optional(value)
+
+
 def _bounded_body(body: str, draft_type: DraftType) -> str:
-    normalized = normalize_text(body)
+    normalized = body.strip()
     if not normalized:
         raise DraftValidationError("Draft body不能为空")
     if len(normalized) > draft_hard_max_chars(draft_type):
-        raise DraftValidationError("Draft body超过该duration工程hard max")
+        raise DraftValidationError(
+            "Draft body超过该duration工程hard max"
+        )
     return normalized
 
 
 def _trend_markdown(trend: EventTrendSnapshotRecord | None) -> str:
     if trend is None:
         return "- unavailable: no Trend Snapshot bound to this Card"
+    availability = json.dumps(
+        trend.feature_availability,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return (
         f"- calculation_version: {trend.calculation_version}\n"
         f"- signal_velocity: {trend.signal_velocity}\n"
@@ -1312,7 +1489,7 @@ def _trend_markdown(trend: EventTrendSnapshotRecord | None) -> str:
         f"- semantic_novelty: {trend.semantic_novelty}\n"
         f"- cn_gap: {trend.cn_gap}\n"
         f"- update_value: {trend.update_value}\n"
-        f"- feature_availability: {trend.feature_availability}"
+        f"- feature_availability: {availability}"
     )
 
 
@@ -1332,7 +1509,9 @@ def _claims_markdown(
         for raw_id in ids:
             claim = claims.get(UUID(raw_id))
             if claim is not None:
-                rows.append(f"- [{state}] {claim.claim_text} (claim_id: {claim.id})")
+                rows.append(
+                    f"- [{state}] {claim.claim_text} (claim_id: {claim.id})"
+                )
     return "\n".join(rows) if rows else "- none"
 
 
@@ -1343,9 +1522,11 @@ def _list_mapping(items: Sequence[dict[str, Any]], key: str) -> str:
 
 def _timeline_markdown(items: Sequence[dict[str, Any]]) -> str:
     rows = [
-        f"- {item.get('published_at') or item.get('collected_at')} | "
-        f"{item.get('platform')} | {item.get('title') or '(untitled)'} | "
-        f"{item.get('original_url')}"
+        (
+            f"- {item.get('published_at') or item.get('collected_at')} | "
+            f"{item.get('platform')} | {item.get('title') or '(untitled)'} | "
+            f"{item.get('original_url')}"
+        )
         for item in items
     ]
     return "\n".join(rows) if rows else "- none"
@@ -1353,8 +1534,10 @@ def _timeline_markdown(items: Sequence[dict[str, Any]]) -> str:
 
 def _sources_markdown(items: Sequence[dict[str, Any]]) -> str:
     rows = [
-        f"- signal_id: {item.get('signal_id')} | {item.get('platform')} | "
-        f"{item.get('original_url')}"
+        (
+            f"- signal_id: {item.get('signal_id')} | {item.get('platform')} | "
+            f"{item.get('original_url')}"
+        )
         for item in items
     ]
     return "\n".join(rows) if rows else "- none"
@@ -1365,12 +1548,15 @@ def _materials_markdown(
     warnings: Sequence[dict[str, Any]],
 ) -> str:
     rows = [
-        f"- {item.get('media_type')} | signal_id: {item.get('signal_id')} | "
-        f"{item.get('source_url')} | {item.get('usage_note')}"
+        (
+            f"- {item.get('media_type')} | signal_id: {item.get('signal_id')} | "
+            f"{item.get('source_url')} | {item.get('usage_note')}"
+        )
         for item in materials
     ]
     rows.extend(
-        f"- warning: {item.get('code')} | {item.get('message', '')}" for item in warnings
+        f"- warning: {item.get('code')} | {item.get('message', '')}"
+        for item in warnings
     )
     return "\n".join(rows) if rows else "- none"
 
@@ -1382,13 +1568,18 @@ def _draft_markdown(
     if draft is None:
         return "- no Draft selected"
     reference_lines = [
-        f"- {item.section_key}: claim_id={item.claim_id}, usage={item.usage.value}"
+        (
+            f"- {item.section_key}: claim_id={item.claim_id}, "
+            f"usage={item.usage.value}"
+        )
         for item in refs
     ]
+    references = "\n".join(reference_lines) if reference_lines else "- none"
     return (
         f"### {draft.title or 'Untitled Draft'}\n\n"
-        f"{draft.hook or ''}\n\n{draft.body}\n\n{draft.ending or ''}\n\n"
+        f"{draft.hook or ''}\n\n"
+        f"{draft.body}\n\n"
+        f"{draft.ending or ''}\n\n"
         f"Interaction: {draft.interaction_question or ''}\n\n"
-        "### Claim References\n"
-        + ("\n".join(reference_lines) if reference_lines else "- none")
+        f"### Claim References\n{references}"
     )
