@@ -60,7 +60,8 @@ async def _default_host_validator(host: str, allow_private_network: bool) -> Non
         ):
             raise AIProviderError(
                 AIErrorCode.INVALID_REQUEST,
-                "Provider base_url 指向受限网络地址；本地模型必须显式启用 private network policy",
+                "Provider base_url 指向受限网络地址；"
+                "本地模型必须显式启用 private network policy",
             )
 
 
@@ -72,9 +73,21 @@ async def validate_provider_base_url(
 ) -> str:
     parsed = urlsplit(base_url.strip())
     if parsed.scheme not in {"http", "https"}:
-        raise AIProviderError(AIErrorCode.INVALID_REQUEST, "Provider base_url 仅允许 http/https")
-    if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise AIProviderError(AIErrorCode.INVALID_REQUEST, "Provider base_url 格式无效或包含禁止字段")
+        raise AIProviderError(
+            AIErrorCode.INVALID_REQUEST,
+            "Provider base_url 仅允许 http/https",
+        )
+    if (
+        not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise AIProviderError(
+            AIErrorCode.INVALID_REQUEST,
+            "Provider base_url 格式无效或包含禁止字段",
+        )
     allow_private = bool(config.get("allow_private_network", False))
     allow_http = bool(config.get("allow_insecure_http", False))
     if parsed.scheme == "http" and not allow_http:
@@ -129,9 +142,16 @@ def _http_error(response: httpx.Response) -> AIProviderError:
             retry_after_seconds=_retry_after(response),
         )
     if status in {408, 504}:
-        return AIProviderError(AIErrorCode.TIMEOUT, "Provider 请求超时", retryable=True)
+        return AIProviderError(
+            AIErrorCode.TIMEOUT,
+            "Provider 请求超时",
+            retryable=True,
+        )
     if status == 404:
-        return AIProviderError(AIErrorCode.MODEL_NOT_FOUND, "Provider 模型或端点不存在")
+        return AIProviderError(
+            AIErrorCode.MODEL_NOT_FOUND,
+            "Provider 模型或端点不存在",
+        )
     if status == 400:
         try:
             body = response.json()
@@ -154,7 +174,7 @@ def _http_error(response: httpx.Response) -> AIProviderError:
 
 
 class OpenAICompatibleProvider(AIProviderAdapter):
-    """OpenAI-compatible HTTP adapter shared by cloud and explicitly allowed local endpoints."""
+    """OpenAI-compatible adapter for configured cloud or local endpoints."""
 
     def __init__(
         self,
@@ -175,12 +195,13 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         body: dict[str, Any],
         timeout_seconds: float,
     ) -> tuple[dict[str, Any], str | None]:
+        # Missing credentials fail before DNS/network work and never fall back to a hidden key.
+        credential = self.credential_resolver.resolve(target.credential_ref)
         base_url = await validate_provider_base_url(
             target.base_url,
             target.provider_config,
             host_validator=self.host_validator,
         )
-        credential = self.credential_resolver.resolve(target.credential_ref)
         headers = {
             "Authorization": f"Bearer {credential.get_secret_value()}",
             "Accept": "application/json",
@@ -197,7 +218,11 @@ class OpenAICompatibleProvider(AIProviderAdapter):
             ) as client:
                 response = await client.post(endpoint, json=body)
         except httpx.TimeoutException as exc:
-            raise AIProviderError(AIErrorCode.TIMEOUT, "Provider 请求超时", retryable=True) from exc
+            raise AIProviderError(
+                AIErrorCode.TIMEOUT,
+                "Provider 请求超时",
+                retryable=True,
+            ) from exc
         except httpx.NetworkError as exc:
             raise AIProviderError(
                 AIErrorCode.NETWORK_ERROR,
@@ -214,9 +239,15 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         try:
             payload = response.json()
         except ValueError as exc:
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider 返回非 JSON 响应") from exc
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider 返回非 JSON 响应",
+            ) from exc
         if not isinstance(payload, dict):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider JSON 响应结构无效")
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider JSON 响应结构无效",
+            )
         request_id = response.headers.get("x-request-id")
         if request_id is None and isinstance(payload.get("id"), str):
             request_id = payload["id"]
@@ -237,7 +268,10 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         )
         data = payload.get("data")
         if not isinstance(data, list):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Embedding 响应缺少 data")
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Embedding 响应缺少 data",
+            )
         ordered = sorted(
             data,
             key=lambda item: item.get("index", 0) if isinstance(item, dict) else 0,
@@ -245,11 +279,17 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         vectors: list[tuple[float, ...]] = []
         for item in ordered:
             if not isinstance(item, dict) or not isinstance(item.get("embedding"), list):
-                raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Embedding 向量结构无效")
+                raise AIProviderError(
+                    AIErrorCode.INVALID_RESPONSE,
+                    "Embedding 向量结构无效",
+                )
             try:
                 vector = tuple(float(value) for value in item["embedding"])
             except (TypeError, ValueError) as exc:
-                raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Embedding 向量包含无效值") from exc
+                raise AIProviderError(
+                    AIErrorCode.INVALID_RESPONSE,
+                    "Embedding 向量包含无效值",
+                ) from exc
             vectors.append(vector)
         return EmbeddingProviderResponse(
             vectors=tuple(vectors),
@@ -267,7 +307,8 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         body: dict[str, Any] = {
             "model": target.model_name,
             "messages": [
-                {"role": message.role, "content": message.content} for message in request.messages
+                {"role": message.role, "content": message.content}
+                for message in request.messages
             ],
         }
         if request.max_output_tokens is not None:
@@ -296,7 +337,8 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         body: dict[str, Any] = {
             "model": target.model_name,
             "messages": [
-                {"role": message.role, "content": message.content} for message in request.messages
+                {"role": message.role, "content": message.content}
+                for message in request.messages
             ],
             "response_format": {
                 "type": "json_schema",
@@ -341,16 +383,32 @@ class OpenAICompatibleProvider(AIProviderAdapter):
     @staticmethod
     def _message_content(payload: dict[str, Any]) -> str:
         choices = payload.get("choices")
-        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider 响应缺少 choices")
+        if (
+            not isinstance(choices, list)
+            or not choices
+            or not isinstance(choices[0], dict)
+        ):
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider 响应缺少 choices",
+            )
         message = choices[0].get("message")
         if not isinstance(message, dict):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider 响应缺少 message")
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider 响应缺少 message",
+            )
         if message.get("refusal"):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider 拒绝返回内容")
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider 拒绝返回内容",
+            )
         content = message.get("content")
         if not isinstance(content, str):
-            raise AIProviderError(AIErrorCode.INVALID_RESPONSE, "Provider 响应 content 无效")
+            raise AIProviderError(
+                AIErrorCode.INVALID_RESPONSE,
+                "Provider 响应 content 无效",
+            )
         return content
 
 
