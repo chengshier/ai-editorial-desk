@@ -80,7 +80,33 @@ _FAILURE_FILE_CODES = {
     "tests/test_editorial_scoring_m4c.py": 46,
     "tests/test_m4c_migration.py": 47,
     "tests/test_trend_m4c.py": 48,
+    "tests/test_metadata.py": 61,
+    "tests/test_migrations.py": 62,
+    "tests/test_m4b_migration.py": 63,
+    "tests/test_m3d_migration.py": 64,
+    "tests/test_m3c_migration.py": 65,
+    "tests/test_m3b_migration.py": 66,
+    "tests/test_m3a_migration.py": 67,
+    "tests/test_definition_sync_m1b.py": 68,
 }
+
+
+def _diagnostic_code(path: str) -> int:
+    exact = _FAILURE_FILE_CODES.get(path)
+    if exact is not None:
+        return exact
+    filename = path.rsplit("/", 1)[-1]
+    if filename < "test_editorial_":
+        return 71
+    if filename < "test_m1":
+        return 72
+    if filename < "test_metadata":
+        return 73
+    if filename < "test_read":
+        return 74
+    if filename < "test_validation":
+        return 75
+    return 76
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -115,7 +141,7 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     if not report.failed:
         return
     path = report.nodeid.split("::", 1)[0]
-    _FIRST_FAILURE_CODE = _FAILURE_FILE_CODES.get(path, 99)
+    _FIRST_FAILURE_CODE = _diagnostic_code(path)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
