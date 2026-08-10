@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -132,7 +134,15 @@ def test_browser_profile_resolver_rejects_missing_and_symlink(
     outside = tmp_path / "outside"
     outside.mkdir()
     link = root / "linked"
-    link.symlink_to(outside, target_is_directory=True)
+    if os.name == "nt":
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    else:
+        link.symlink_to(outside, target_is_directory=True)
     with pytest.raises(BrowserProfileResolutionError):
         resolver.resolve(_account(profile_ref="linked"))
 

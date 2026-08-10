@@ -200,3 +200,15 @@ M3 的 SignalEmbeddingRecord/version/input hash/recall 语义保持不变；M4-A
 3. **Apply 必须 input-idempotent 且并发安全。** 相同输入复用既有 run；并发 Apply 由 PostgreSQL 约束与事务语义保证，不能依赖进程内锁或测试时序。
 4. **候选工作流不扩大自动化边界。** M5-B 不自动调用 AI、不自动发布、不自动改变风险、证据或人工决定；M5-C Publication/Feedback 与 M5-D Real E2E 继续不在本阶段范围。
 5. **本地 Windows symlink 权限不改变测试语义。** `WinError 1314` 仅作为本地环境限制记录；生产代码和 symlink 测试保持不变，Linux exact-head CI 继续承担该测试的验收。
+
+## D-029：M5-C Publication / Performance 与 M5-B Candidate、M3/M4 Artifact 保持单向、追加式关联
+
+日期：2026-08-10
+
+决定：
+
+1. **Published 只能由 PublicationRecord 表达。** Human `adopt` 只是 workflow 前置条件，不能自动成为 Published，也不能改变 Candidate Rank 或 Event lifecycle。
+2. **Workflow Publication 冻结而不回写 provenance。** 它绑定 exact Draft、当前 adopt Decision、Candidate、Score、Risk 与 Draft version 的快照；之后的 Candidate、Trend、Score 或 Draft 变化不得改写已记录 Publication。
+3. **Manual Backfill 与 Workflow 分开建模。** Backfill 要求显式原因，可不具有 workflow provenance；两种模式都不修改 M3/M4/M5-B 既有 artifact 语义。
+4. **Performance Feedback 追加式且可校正。** Manual 与 CSV 观测使用 idempotency identity；相同观测复用，修正写入新 snapshot，不能通过覆盖历史伪造效果变化。
+5. **反馈不自动调权或调用 AI。** M5-C 只记录并展示 Publication/Performance；自动调权、真实 E2E 与 MVP closeout 仍属于 M5-D，当前 `NOT STARTED`。

@@ -2,7 +2,7 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench Engineering COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / PR #21 OPEN；M5-C / M5-D = NOT STARTED；M5 Overall = NOT COMPLETE。**
+**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench Engineering COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED；M5-C Publication / Performance Feedback COMPLETE / PR #22 OPEN；M5-D NOT STARTED；M5 Overall = NOT COMPLETE。**
 
 > Production AI Provider Validation 继续 `NOT_TESTED`。CI Fake/Mock/MockTransport 只验证工程契约，不能替代真实生产 Provider Validation；M2 真实平台验证状态也不会因为 M3/M4/M5-A 工程完成而自动升级。
 
@@ -26,6 +26,7 @@ Connector / CollectorRuntime
 → Deterministic Markdown Export
 → M5-A Editorial Workbench
 → M5-B Daily Candidates / Editorial Workflow
+→ M5-C Publication / Performance Feedback
 ```
 
 ## M5-A Editorial Workbench
@@ -97,13 +98,17 @@ Editorial Scoring 与 AI Draft 继续使用既有 `AIGateway.generate_structured
 
 M5-B 在 M5-A 的只读工作台上增加了确定性的 Daily Candidate snapshot、候选池查询和人工 Editorial Decision history。候选排名与人工 `adopt/watch/drop/archive/restore` 决定分离保存；Apply 具备输入幂等与并发安全，不能自动调用 AI、自动发布或改变 M3/M4 既有语义。
 
+## M5-C Publication / Performance Feedback
+
+M5-C 增加 append-only `PublicationRecord`、手动 Performance snapshot 与 CSV import run。Workflow Publication 必须绑定 exact Draft，并要求当前 Human Editorial Decision 为 `adopt`；Publication/Performance 不回写 Candidate Rank、Event lifecycle、Trend 或 Editorial Score。历史补录必须显式标记 `manual_backfill`；Performance correction 追加新快照，不覆盖已有观测。
+
 ## 数据库迁移
 
-M5-B 新增 migration。当前 migration head：
+M5-C 新增 migration。当前 migration head：
 
-`20260810_0014_m5b_daily_candidates`
+`20260810_0015_m5c_publication_performance`
 
-0014 增加 Daily Candidate snapshot 与 Editorial Decision history；不修改既有 M1～M4 artifact 语义。
+0015 增加 Publication、Performance Import 与 Performance Snapshot；不修改 M1～M5-B 既有 artifact 语义。
 
 ## 基础验收
 
@@ -132,4 +137,4 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`；M3 concurr
 
 ## 下一阶段边界
 
-M5-A 已合并。M5-B 已在 PR #21 提交人工审查，保持 Open。**M5-C Publication / Performance Feedback 尚未开始**；M5 Overall 仍未完成。
+M5-A、M5-B 已合并。M5-C 在 PR #22 保持 Open 等待人工审查；**M5-D NOT STARTED**；M5 Overall 仍未完成。

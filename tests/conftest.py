@@ -28,6 +28,9 @@ from packages.database.session import (  # noqa: E402
 )
 
 TABLES_IN_DELETE_ORDER = (
+    "publication_performance_snapshots",
+    "performance_import_runs",
+    "publications",
     "editorial_decisions",
     "daily_candidates",
     "daily_candidate_runs",

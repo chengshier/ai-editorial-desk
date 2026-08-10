@@ -15,13 +15,13 @@ M4-D Event Card / Draft COMPLETE / 已合并
 M4 Overall Engineering COMPLETE
 Production AI Provider Validation NOT_TESTED
 M5-A Editorial Workbench Engineering COMPLETE / MERGED
-M5-B Daily Candidates / Editorial Workflow COMPLETE / PR #21 OPEN
-M5-C Publication / Performance Feedback NOT STARTED
+M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED
+M5-C Publication / Performance Feedback COMPLETE / PR #22 OPEN
 M5-D Hardening / Real E2E / MVP Closeout NOT STARTED
 M5 Overall NOT COMPLETE
 ```
 
-M5-A 已合并。M5-B 在 `feature/m5b-daily-candidates` 完成工程实现并通过 PR #21 提交人工审查，PR 保持 Open。M5-B 工程完成不改变 Production AI Provider 与 M2 真实验证状态。
+M5-A、M5-B 已合并。M5-C 在 `feature/m5c-publication-performance` 完成工程实现并通过 PR #22 提交人工审查，PR 保持 Open。M5-C 工程完成不改变 Production AI Provider 与 M2 真实验证状态。
 
 详细阶段验收见：
 
@@ -57,6 +57,7 @@ Connector Definition / Source / Schedule
 → Markdown Export
 → M5-A Editorial Workbench
 → M5-B Daily Candidates / Editorial Workflow
+→ M5-C Publication / Performance Feedback
 ```
 
 ## M5-A Workbench 能力
@@ -136,15 +137,19 @@ M4/M5-A 工程完成、Mock/Fake CI 成功都不能把该状态改成 PASSED。�
 
 M5-B 增加确定性 Daily Candidate snapshot、候选池读模型和人工 Editorial Decision history。候选排名与人工决定分离；Apply 保持 input idempotency / PostgreSQL concurrency safety，不自动调用 AI、自动发布或改写既有 Event、Evidence、Trend、Score、Card、Pack、Draft 语义。
 
+## M5-C Publication / Performance Feedback
+
+M5-C 记录真实发布与发布后的 Performance Feedback：Workflow Publication 冻结 exact Draft、当前 `adopt` Decision 与候选/评分 provenance；manual backfill 显式保留原因。Performance snapshot 与 CSV import 都是 append-only/idempotent，不回写 Candidate Rank、Event lifecycle、Trend 或 Score。
+
 ## Migration
 
-M5-B 新增 migration。当前 Alembic head：
+M5-C 新增 migration。当前 Alembic head：
 
 ```text
-20260810_0014_m5b_daily_candidates
+20260810_0015_m5c_publication_performance
 ```
 
-0014 仅新增 Daily Candidate snapshot 与 Editorial Decision history，不修改既有 M1～M4 artifact 语义。
+0015 仅新增 Publication / Performance Feedback artifact，不修改既有 M1～M5-B artifact 语义。
 
 ## 完整验收命令
 
@@ -173,4 +178,4 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`。M3 concurr
 
 ## 下一阶段
 
-下一阶段是 **M5-C Publication / Performance Feedback**，当前 `NOT STARTED`。在 PR #21 经人工审查并合并前，不开始 M5-C；M5 Overall 仍为 `NOT COMPLETE`。
+M5-C 在 PR #22 等待人工审查；**M5-D NOT STARTED**，M5 Overall 仍为 `NOT COMPLETE`。

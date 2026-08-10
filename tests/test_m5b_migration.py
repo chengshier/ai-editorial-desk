@@ -70,7 +70,7 @@ def test_m5b_migration_creates_candidate_and_decision_snapshot_schema() -> None:
 
 def test_m5b_downgrade_one_preserves_m4d_tables() -> None:
     config = Config("alembic.ini")
-    command.upgrade(config, "20260810_0014")
+    command.downgrade(config, "20260810_0014")
     try:
         command.downgrade(config, "-1")
 

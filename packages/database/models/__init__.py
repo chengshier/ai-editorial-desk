@@ -86,6 +86,15 @@ from packages.database.models.processing import (
     EventAssignmentAction,
     EventAssignmentRecord,
 )
+from packages.database.models.publication import (
+    PerformanceHorizon,
+    PerformanceImportRunRecord,
+    PerformanceImportStatus,
+    PerformanceSourceType,
+    PublicationMode,
+    PublicationPerformanceSnapshotRecord,
+    PublicationRecord,
+)
 from packages.database.models.risk import PlatformRiskEvent
 from packages.database.models.runs import (
     ConnectorCheckpoint,
@@ -183,8 +192,15 @@ __all__ = [
     "MatchDecisionType",
     "MatchOverrideDecision",
     "MatchPrimaryMethod",
+    "PerformanceHorizon",
+    "PerformanceImportRunRecord",
+    "PerformanceImportStatus",
+    "PerformanceSourceType",
     "PlatformAccount",
     "PlatformRiskEvent",
+    "PublicationMode",
+    "PublicationPerformanceSnapshotRecord",
+    "PublicationRecord",
     "RawSignalCommentRecord",
     "RawSignalRecord",
     "ScheduleTriggerStatus",

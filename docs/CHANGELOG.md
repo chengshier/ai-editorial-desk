@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-10 - M5-C Publication / Performance Feedback Engineering Closure
+
+### Added
+
+- 新增 `20260810_0015_m5c_publication_performance`：Publication、Performance Import Run 与 append-only Performance Snapshot；
+- Workflow Publication 冻结 exact Draft、current adopt Decision、Candidate/Score/Risk provenance；Manual Backfill 显式保留原因；
+- 新增手工与 CSV Performance Feedback，覆盖同快照幂等、append-only correction、空值/百分比/时区校验与并发 import；
+- Web 接入 Publications、Performance Feedback 与 Candidate Published count；旧 Candidates 页面测试改为注入完整类型安全 `PublicationApi`；
+- 修正 M5-C fixture 与 metadata/migration regression，使测试对齐 M5-B 当前持久化契约、迁移边界与全量执行顺序；Windows 使用 junction 验证 profile-root escape safety。
+
+### Validation / Status
+
+- 本地 Python full suite：`511 passed, 1 warning`；M3 concurrent / offline evaluation / performance baseline、ruff、mypy、Alembic 五步、Definition sync ×2 均通过；
+- Web `typecheck`、`test -- --run`（20 passed）、`lint`（0 errors，3 个既有 warning）与 `build` 均通过；
+- `M5-A = COMPLETE / MERGED`；`M5-B = COMPLETE / MERGED`；`M5-C = COMPLETE / PR #22 OPEN`；`M5-D = NOT STARTED`；`M5 Overall = NOT COMPLETE`；
+- `Production AI Provider Validation = NOT_TESTED`；`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；`M2 Real-world Validation = NOT COMPLETE`。
+
 ## 2026-08-10 - M5-B Daily Candidates / Editorial Workflow Engineering Closure
 
 ### Added
