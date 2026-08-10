@@ -1,31 +1,55 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.ai_gateway.connection_test import AIConnectionTester
+from packages.connectors.base import RawSignal
 from packages.database.models import (
     AIInvocationAttemptRecord,
     AIInvocationRecord,
     AIProviderRecord,
+    CandidateGroup,
+    CandidateRunMode,
+    CandidateRunStatus,
     CollectionBudget,
     ConnectorDefinition,
     ConnectorInstance,
+    ConnectorRun,
+    ConnectorRunStatus,
+    ConnectorRunTriggerType,
+    DailyCandidateRecord,
+    DailyCandidateRunRecord,
+    EditorialDecisionRecord,
+    EditorialDecisionType,
+    EventSignalAttachedBy,
+    EventSignalRelation,
+    EvidenceClaimType,
+    EvidenceSourceRole,
     PlatformAccount,
     Source,
 )
 from packages.database.session import get_async_sessionmaker
+from packages.events.services import EventService
+from packages.evidence.services import EventEvidenceService
 from packages.risk_guard.models import AccountStatus
+from packages.signals.domain import NormalizedSignal
+from packages.signals.services import RawSignalService
+from packages.signals.urls import normalize_http_url
 from packages.validation import (
     CheckLevel,
     M5DPreflightService,
     ValidationCheck,
     ValidationSummary,
     verify_business_invocation,
+    verify_m5d_e2e,
 )
 from packages.validation.redaction import sanitize_validation_payload
+from tests.m4c_helpers import create_mock_scoring_service, valid_score_payload
+from tests.m4d_helpers import BASE_TIME, create_m4d_context
 
 pytestmark = pytest.mark.usefixtures("clean_database")
 
@@ -103,6 +127,150 @@ async def _platform_fixture(
     )
     await session.commit()
     return instance, source, account
+
+
+async def _fake_provider_e2e_fixture(
+    session: AsyncSession,
+    *,
+    decision_type: EditorialDecisionType,
+) -> tuple[ConnectorRun, object, DailyCandidateRunRecord, EditorialDecisionRecord]:
+    instance, source, account = await _platform_fixture(
+        session,
+        status=AccountStatus.HEALTHY,
+    )
+    context = await create_m4d_context(session, title="M5-D verifier fixture")
+    now = datetime.now(UTC)
+    run = ConnectorRun(
+        connector_instance_id=instance.id,
+        source_id=source.id,
+        platform_account_id=account.id,
+        trigger_type=ConnectorRunTriggerType.MANUAL,
+        mode="search",
+        status=ConnectorRunStatus.SUCCEEDED,
+        started_at=now,
+        progress_updated_at=now,
+        finished_at=now,
+        requested_limit=1,
+        collected_count=1,
+        inserted_count=1,
+        duplicate_count=0,
+        failed_count=0,
+        retry_count=0,
+        run_metadata={"validation_kind": "m5d-hardening"},
+    )
+    session.add(run)
+    await session.flush()
+
+    raw = RawSignal(
+        platform="bilibili",
+        external_id=f"m5d-{uuid4().hex}",
+        url="https://www.bilibili.com/video/BV1m5dVerifier",
+        title="M5-D verifier source",
+        text="用于验证真实链路 provenance 的低量工程 fixture。",
+        published_at=BASE_TIME,
+        metrics={},
+        raw_payload={},
+        language="zh-CN",
+    )
+    normalized = NormalizedSignal.from_connector_signal(
+        source_id=source.id,
+        connector_instance_id=instance.id,
+        connector_run_id=run.id,
+        connector_type="mediacrawler",
+        signal=raw,
+        canonical_url=normalize_http_url(raw.url),
+    )
+    ingestion = (await RawSignalService(session).ingest_many([normalized]))[0]
+    await EventService(session).attach_signal(
+        event_id=context.event.id,
+        signal_id=ingestion.signal_id,
+        relation=EventSignalRelation.REPORT,
+        confidence=1.0,
+        attached_by=EventSignalAttachedBy.HUMAN,
+        actor="m5d-test",
+    )
+    await EventEvidenceService().create_human_claim(
+        event_id=context.event.id,
+        actor="m5d-test",
+        claim_text="M5-D verifier fixture source is attached to this event.",
+        claim_type=EvidenceClaimType.FACT,
+        sources=[(ingestion.signal_id, EvidenceSourceRole.SUPPORTING)],
+    )
+
+    scoring_service, _calls = await create_mock_scoring_service(
+        session,
+        response_data=valid_score_payload(),
+    )
+    score_outcome = await scoring_service.score(
+        event_id=context.event.id,
+        trend_snapshot_id=context.trend.id,
+        actor="m5d-test",
+        apply=True,
+    )
+    assert score_outcome.score is not None
+    score = score_outcome.score
+
+    candidate_run = DailyCandidateRunRecord(
+        business_date=date(2026, 8, 10),
+        timezone="Asia/Shanghai",
+        as_of_at=now,
+        window_start_at=now - timedelta(hours=24),
+        window_end_at=now,
+        ranking_version="candidate-ranking-v1",
+        requested_limit=20,
+        status=CandidateRunStatus.SUCCEEDED,
+        input_hash="4" * 64,
+        scanned_event_count=1,
+        eligible_event_count=1,
+        candidate_count=1,
+        skipped_event_count=0,
+        skip_summary={},
+        mode=CandidateRunMode.APPLY,
+        actor="m5d-test",
+        error_code=None,
+        finished_at=now,
+    )
+    session.add(candidate_run)
+    await session.flush()
+    candidate = DailyCandidateRecord(
+        run_id=candidate_run.id,
+        event_id=context.event.id,
+        candidate_group=CandidateGroup.NORMAL,
+        rank=1,
+        event_title_snapshot=context.event.title,
+        category_snapshot=context.event.category,
+        event_status_snapshot=context.event.status,
+        event_last_updated_at_snapshot=now,
+        source_count_snapshot=1,
+        platform_count_snapshot=1,
+        trend_snapshot_id=context.trend.id,
+        base_editorial_score_id=score.id,
+        effective_assessment_hash="5" * 64,
+        effective_traffic_total=score.traffic_total,
+        effective_risk_level=score.risk_level,
+        recommended_format=score.recommended_format,
+        open_unknown_count=1,
+        evidence_summary={},
+        ranking_components={},
+        card_exists_snapshot=True,
+        draft_exists_snapshot=False,
+        candidate_context_hash="6" * 64,
+    )
+    session.add(candidate)
+    await session.flush()
+    decision = EditorialDecisionRecord(
+        event_id=context.event.id,
+        candidate_id=candidate.id,
+        decision=decision_type,
+        risk_level_snapshot=score.risk_level,
+        effective_traffic_total_snapshot=score.traffic_total,
+        candidate_context_hash=candidate.candidate_context_hash,
+        actor="m5d-test",
+        reason="Verifier anti-forgery regression fixture.",
+    )
+    session.add(decision)
+    await session.commit()
+    return run, context, candidate_run, decision
 
 
 def test_validation_redaction_removes_sensitive_values() -> None:
@@ -251,6 +419,59 @@ async def test_fake_provider_invocation_cannot_pass_real_gate(
     assert result.result is CheckLevel.BLOCK
     assert _check(result, "real_provider_identity").level is CheckLevel.BLOCK
     assert _check(result, "provider_attempt").level is CheckLevel.BLOCK
+
+
+@pytest.mark.asyncio
+async def test_e2e_verifier_rejects_fake_provider_invocation(
+    db_session: AsyncSession,
+) -> None:
+    run, context, candidate_run, decision = await _fake_provider_e2e_fixture(
+        db_session,
+        decision_type=EditorialDecisionType.ADOPT,
+    )
+    result = await verify_m5d_e2e(
+        db_session,
+        collection_run_id=run.id,
+        event_id=context.event.id,
+        candidate_run_id=candidate_run.id,
+        decision_id=decision.id,
+        draft_id=uuid4(),
+    )
+    assert result.result == "FAIL"
+    assert next(item for item in result.checks if item.key == "candidate").level is CheckLevel.PASS
+    assert next(
+        item for item in result.checks if item.key == "human_decision"
+    ).level is CheckLevel.PASS
+    provider_checks = [
+        item for item in result.checks if item.key == "real_provider_identity"
+    ]
+    assert provider_checks
+    assert all(item.level is CheckLevel.BLOCK for item in provider_checks)
+
+
+@pytest.mark.asyncio
+async def test_e2e_verifier_rejects_non_adopt_decision_provenance(
+    db_session: AsyncSession,
+) -> None:
+    run, context, candidate_run, decision = await _fake_provider_e2e_fixture(
+        db_session,
+        decision_type=EditorialDecisionType.DROP,
+    )
+    result = await verify_m5d_e2e(
+        db_session,
+        collection_run_id=run.id,
+        event_id=context.event.id,
+        candidate_run_id=candidate_run.id,
+        decision_id=decision.id,
+        draft_id=uuid4(),
+    )
+    assert result.result == "FAIL"
+    assert next(item for item in result.checks if item.key == "candidate").level is CheckLevel.PASS
+    decision_check = next(
+        item for item in result.checks if item.key == "human_decision"
+    )
+    assert decision_check.level is CheckLevel.BLOCK
+    assert decision_check.message == "Decision 不是指定 Candidate 的 Human Adopt"
 
 
 @pytest.mark.asyncio
