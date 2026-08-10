@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 
 from packages.validation.redaction import sanitize_validation_payload
 
@@ -32,7 +32,10 @@ class ValidationCheck:
     details: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return sanitize_validation_payload(asdict(self))
+        return cast(
+            dict[str, Any],
+            sanitize_validation_payload(asdict(self)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,14 +66,16 @@ class E2EVerificationResult:
     evidence: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return sanitize_validation_payload(
-            {
-                "result": self.result,
-                "checks": [item.to_dict() for item in self.checks],
-                "evidence": self.evidence,
-                "read_only": True,
-                "artifacts_created": False,
-            }
+        payload = {
+            "result": self.result,
+            "checks": [item.to_dict() for item in self.checks],
+            "evidence": self.evidence,
+            "read_only": True,
+            "artifacts_created": False,
+        }
+        return cast(
+            dict[str, Any],
+            sanitize_validation_payload(payload),
         )
 
 
