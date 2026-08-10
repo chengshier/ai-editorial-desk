@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -403,7 +402,7 @@ async def _latest_card(
         .order_by(EventCardRecord.created_at.desc())
         .limit(1)
     )
-    return cast(EventCardRecord | None, row)
+    return row
 
 
 async def _latest_pack(
@@ -416,7 +415,7 @@ async def _latest_pack(
         .order_by(EditorialPackRecord.created_at.desc())
         .limit(1)
     )
-    return cast(EditorialPackRecord | None, row)
+    return row
 
 
 async def _artifact_invocation(
