@@ -2,7 +2,7 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED；M5-C Publication / Performance Feedback COMPLETE / MERGED；M5-D Engineering Hardening IN PROGRESS / PR #23 OPEN；Real Platform Smoke PENDING；Production AI Provider Validation = NOT_TESTED；Full Human-in-loop E2E PENDING；M5 Overall = NOT COMPLETE。**
+**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED；M5-C Publication / Performance Feedback COMPLETE / MERGED；M5-D Engineering Hardening COMPLETE / PR #23 OPEN；Real Platform Smoke PENDING；Production AI Provider Validation = NOT_TESTED / PENDING；Full Human-in-loop E2E PENDING；M5 Overall = NOT COMPLETE。**
 
 > GitHub CI、Fake Provider、MockTransport、synthetic platform fixture 与 offline E2E 只能证明 Engineering Hardening，不能替代真实平台、真实 Production Provider 或 Human-in-loop E2E 验证。
 
@@ -82,7 +82,7 @@ M5-D 进一步冻结：
 
 ## M5-D Engineering Hardening
 
-新增工程入口：
+Phase 1 已完成工程收口，并提供：
 
 ```bash
 python -m scripts.mvp_doctor
@@ -98,13 +98,14 @@ python -m scripts.verify_m5d_e2e --help
 - `m5d_preflight`：真实 Platform / Provider / E2E 前置条件检查；
 - `run_m5d_platform_smoke`：只薄封装既有 M2 MediaCrawler smoke 主链，禁止在 CI 真实运行；
 - `run_m5d_provider_validation`：要求 `--confirm-paid-call`，Connection Test 单独成功仍返回 `PENDING_BUSINESS_INVOCATION`；
-- `verify_m5d_e2e`：只读验证 CollectionRun→RawSignal→Event→Evidence→Trend→real AI Score→Candidate→Human Adopt→Card/Pack→real AI Draft 同链 provenance，不补建缺失 Artifact。
+- `verify_m5d_e2e`：只读验证 CollectionRun→RawSignal→Event→Evidence→Trend→real AI Score→Candidate→Human Adopt→Card/Pack→real AI Draft 同链 provenance，不补建缺失 Artifact；
+- verifier 防伪回归明确覆盖 Fake/Mock Provider Invocation 与错误 Human Decision provenance，均必须返回 FAIL。
 
 真实运行细节见 `docs/MVP_RUNBOOK.md`。
 
 ## 数据库迁移
 
-M5-D 默认 **NO NEW MIGRATION**。当前 migration head 继续：
+M5-D **NO NEW MIGRATION**。当前 migration head 继续：
 
 `20260810_0015_m5c_publication_performance`
 
@@ -137,7 +138,7 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`；M3 concurr
 
 ## M5-D 真实 Gate
 
-普通 GitHub Actions 不运行真实账号/浏览器或 Production credential。Phase 1 exact-head CI 绿色后，在受控本地同一绿色 HEAD 上执行：
+普通 GitHub Actions 不运行真实账号/浏览器或 Production credential。Phase 1 exact-head Engineering Gate 绿色后，在受控本地同一绿色 HEAD 上执行：
 
 ```text
 Preflight
@@ -158,9 +159,12 @@ Preflight
 
 ## 当前阶段边界
 
-当前只推进 **M5-D Engineering Hardening / PR #23**。在 Real Platform、Production Provider、Human E2E 与 final exact-head CI 全部真实 PASS 前：
+当前为 **M5-D Engineering Hardening COMPLETE / AWAITING HUMAN REAL VALIDATION**。Real Platform、Production Provider 与 Human E2E 尚未真实 PASS，因此：
 
 ```text
+M5-D Real Platform Smoke PENDING / NOT_RUN
+M5-D Production AI Provider Validation PENDING / NOT_TESTED
+M5-D Full Human-in-loop E2E PENDING / NOT_RUN
 M5-D NOT COMPLETE
 M5 Overall NOT COMPLETE
 M2 Real Smoke Validation DEFERRED / NOT_TESTED
