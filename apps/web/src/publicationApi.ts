@@ -12,6 +12,7 @@ export class PublicationApi{
  preview(csv_text:string){return this.api.post<PerformanceImportPreview>('/api/v1/admin/performance-imports/preview',{csv_text})}
  apply(csv_text:string,file_name:string){return this.api.post<{run:PerformanceImportRun;reused:boolean}>('/api/v1/admin/performance-imports',{csv_text,file_name,confirmation:true})}
  overview(values:Record<string,string|undefined>={}){return this.api.request<PerformanceOverview>(`/api/v1/admin/performance/overview${query(values)}`)}
+ async publicationCounts():Promise<Record<string,number>>{const counts:Record<string,number>={};let page=1;while(true){const result=await this.publications({page,page_size:100});for(const item of result.items)counts[item.publication.event_id]=(counts[item.publication.event_id]||0)+1;if(page*result.page_size>=result.total)break;page+=1}return counts}
 }
 export function publicationError(error:unknown):string{return error instanceof ApiError?`${error.code}: ${error.message}`:error instanceof Error?error.message:'Unknown publication/performance error'}
 export const PERFORMANCE_CSV_HEADER='publication_id,platform_key,external_post_id,public_url,observed_at,horizon,views,completion_rate_percent,average_watch_seconds,likes,comments,shares,favorites,follower_delta'
