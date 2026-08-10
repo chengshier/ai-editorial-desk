@@ -16,6 +16,7 @@ from apps.api.routers.admin.events import router as events_router
 from apps.api.routers.admin.evidence import router as evidence_router
 from apps.api.routers.admin.platform_accounts import router as accounts_router
 from apps.api.routers.admin.platform_risk_events import router as risk_events_router
+from apps.api.routers.admin.publication_performance import router as publication_performance_router
 from apps.api.routers.admin.raw_signals import router as raw_signals_router
 from apps.api.routers.admin.scheduler_status import router as scheduler_status_router
 from apps.api.routers.admin.schedules import router as schedules_router
@@ -35,6 +36,7 @@ router.include_router(editorial_router)
 router.include_router(editorial_workflow_router)
 router.include_router(drafts_router)
 router.include_router(workbench_router)
+router.include_router(publication_performance_router)
 router.include_router(embeddings_router)
 router.include_router(clustering_router)
 router.include_router(ai_gateway_router)
