@@ -5,8 +5,8 @@
 ## 阶段状态
 
 - **M5-A Editorial Workbench：COMPLETE / MERGED**
-- **M5-B Daily Candidates / Editorial Workflow：COMPLETE / PR #21 OPEN**
-- **M5-C Publication / Performance Feedback：NOT STARTED**
+- **M5-B Daily Candidates / Editorial Workflow：COMPLETE / MERGED**
+- **M5-C Publication / Performance Feedback：COMPLETE / PR #22 OPEN**
 - **M5-D Hardening / Real E2E / MVP Closeout：NOT STARTED**
 - **M5 Overall：NOT COMPLETE**
 
@@ -62,24 +62,34 @@ M5-B 新增确定性 Daily Candidate snapshot、候选池读模型和人工 Edit
 
 Candidate Apply 对同一输入保持幂等，并使用 PostgreSQL 并发保护避免重复 run。M5-B 不自动调用 AI、不自动发布、不修改 M3/M4 frozen semantics；Web 只展示与调用既有安全边界内的管理能力。
 
+## M5-C 交付范围
+
+M5-C 新增 Publication 与 Performance Feedback 的独立、append-only artifact：
+
+- Workflow Publication 绑定 exact Draft，并要求当前 Editorial Decision 为 `adopt`；冻结 Candidate、Score、Risk、Draft provenance，不把 `adopt` 伪装为 Published；
+- Manual Backfill 必须显式说明原因，仍不回写或改变 Candidate Rank、Event lifecycle、Trend、Score、Card、Pack、Draft 的既有真相；
+- 手工观测与 CSV 导入都写入 append-only Performance snapshot；同一快照幂等，修正产生新快照而非覆盖历史；
+- CSV preview 无业务写入，apply 使用文件内容 identity 幂等且记录 import run；空值、百分比、负数和时区输入均有显式校验；
+- Web 提供 Publication 记录、Performance Feedback 与 Candidate 页面已发布计数展示；Actor 缺失时写操作保持 disabled。
+
 ## Migration
 
-M5-B 新增 migration。
+M5-C 新增 migration。
 
 Alembic head 保持：
 
-`20260810_0014_m5b_daily_candidates`
+`20260810_0015_m5c_publication_performance`
 
-已在全新、独立的本地 PostgreSQL 测试库完成 `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 往返，最终 revision 为 `20260810_0014`（迁移文件 `20260810_0014_m5b_daily_candidates`）。此前旧测试库的 downgrade 问题记录为 local stale test data，不作为 migration failure。
+已完成 `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 往返，最终 revision 为 `20260810_0015`（迁移文件 `20260810_0015_m5c_publication_performance`）。
 
 ## 验收测试
 
-M5-B 定向 PostgreSQL 测试覆盖 deterministic ranking、explainability、input idempotency、concurrent apply、decision risk/archive/restore/drop、stale protection、evidence merge、Admin safe projection、bounded query 与 Workbench read-only overlay。
+M5-C 定向 PostgreSQL 测试覆盖 workflow provenance/adoption、manual backfill、merged Event boundary、Publication 并发 identity、Performance 空值/零值/修正、CSV preview/apply/idempotency、validation 与 bounded query。
 
 新增 Web Mock API 测试覆盖 Event Explorer、Evidence 分级、Source URL、Unavailable Trend、Original/Effective Score、Human Override、Card/Pack、AI/Human Draft version、R3 approval、stale context、Merge/Split、Actor 缺失、安全 URL 与原 M1～M4 导航保留。
 
-本地 M5-B 定向测试已通过；Web `lint`、`typecheck`、`test -- --run`、`build` 已通过。Windows 的 `test_browser_profile_resolver_rejects_missing_and_symlink` 受 `WinError 1314` symlink privilege 限制，未改变生产代码或测试语义；Linux exact-head GitHub Actions 仍是最终验收。AI 测试继续 offline only。
+本地完整 pytest 为 `511 passed, 1 warning`；M3 concurrent regression、offline evaluation、performance baseline，ruff、mypy、Alembic 五步、Definition sync ×2 及 Web `lint`、`typecheck`、`test -- --run`、`build` 已通过。Windows symlink safety regression 使用 junction 覆盖同一根目录逃逸边界。AI 测试继续 offline only；exact-head CI 仍是最终验收。
 
 ## 下一阶段
 
-M5-B PR #21 保持 Open，等待人工审查与 exact-head CI。下一阶段为 **M5-C Publication / Performance Feedback**，当前 `NOT STARTED`；M5-D 也保持 `NOT STARTED`，M5 Overall 仍为 `NOT COMPLETE`。
+M5-C PR #22 保持 Open，等待人工审查与 exact-head CI。**M5-D NOT STARTED**，M5 Overall 仍为 `NOT COMPLETE`。

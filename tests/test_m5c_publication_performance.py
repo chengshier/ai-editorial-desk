@@ -105,33 +105,48 @@ async def _workflow_fixture() -> tuple[UUID, UUID, UUID, UUID]:
         async with session.begin():
             run = DailyCandidateRunRecord(
                 business_date=date(2026, 8, 10),
+                timezone="Asia/Shanghai",
                 as_of_at=BASE_TIME,
-                mode=CandidateRunMode.MANUAL,
-                candidate_policy_version="candidate-ranking-v1",
-                weights_version="editorial-score-v1",
+                window_start_at=BASE_TIME - timedelta(hours=24),
+                window_end_at=BASE_TIME,
+                ranking_version="candidate-ranking-v1",
+                requested_limit=20,
                 status=CandidateRunStatus.SUCCEEDED,
+                input_hash="1" * 64,
+                scanned_event_count=1,
+                eligible_event_count=1,
                 candidate_count=1,
-                run_hash="1" * 64,
+                skipped_event_count=0,
+                skip_summary={},
+                mode=CandidateRunMode.APPLY,
                 actor=ACTOR,
-                failure_code=None,
-                error_summary=None,
+                error_code=None,
+                finished_at=BASE_TIME,
             )
             session.add(run)
             await session.flush()
             candidate = DailyCandidateRecord(
                 run_id=run.id,
                 event_id=context.event.id,
-                candidate_group=CandidateGroup.TOP,
+                candidate_group=CandidateGroup.NORMAL,
                 rank=3,
+                event_title_snapshot=context.event.title,
+                category_snapshot=context.event.category,
+                event_status_snapshot=context.event.status,
+                event_last_updated_at_snapshot=BASE_TIME,
+                source_count_snapshot=1,
+                platform_count_snapshot=1,
+                trend_snapshot_id=None,
                 base_editorial_score_id=context.score.id,
-                base_traffic_total=context.score.traffic_total,
                 effective_assessment_hash="2" * 64,
                 effective_traffic_total=context.score.traffic_total,
                 effective_risk_level=context.score.risk_level,
                 recommended_format=context.score.recommended_format,
-                freshness_score=80.0,
-                opportunity_score=75.0,
-                rank_score=78.0,
+                open_unknown_count=0,
+                evidence_summary={},
+                ranking_components={},
+                card_exists_snapshot=True,
+                draft_exists_snapshot=True,
                 candidate_context_hash="3" * 64,
             )
             session.add(candidate)
@@ -368,7 +383,7 @@ async def test_csv_preview_apply_blank_null_percent_and_file_idempotency() -> No
     assert preview.invalid_rows == 0
     metrics = preview.normalized_rows[0]["metrics"]
     assert isinstance(metrics, dict)
-    assert metrics["completion_rate"] == 0.683
+    assert metrics["completion_rate"] == pytest.approx(0.683)
     assert metrics["average_watch_seconds"] is None
     assert metrics["favorites"] is None
     applied = await service.apply(

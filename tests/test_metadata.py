@@ -60,6 +60,9 @@ EXPECTED_TABLES = {
     "daily_candidate_runs",
     "daily_candidates",
     "editorial_decisions",
+    "publications",
+    "performance_import_runs",
+    "publication_performance_snapshots",
 }
 
 
