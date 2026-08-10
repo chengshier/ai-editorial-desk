@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -8,6 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from apps.api.schemas.m3a import EventResponse
 from apps.api.schemas.m4c import EditorialScoreResponse, TrendSnapshotResponse
 from apps.api.schemas.m4d import EditorialPackResponse, EventCardResponse
+from apps.api.schemas.m5b import (
+    CandidateRunResponse,
+    CandidateSnapshotResponse,
+    EditorialDecisionResponse,
+)
 from packages.database.models import EventSignalAttachedBy, EventSignalRelation
 
 
@@ -52,6 +57,9 @@ class WorkbenchEventItem(BaseModel):
     latest_pack: EditorialPackResponse | None
     draft_count: int
     latest_draft_id: UUID | None
+    current_editorial_decision: EditorialDecisionResponse | None = None
+    latest_candidate: CandidateSnapshotResponse | None = None
+    latest_candidate_run: CandidateRunResponse | None = None
 
 
 class WorkbenchEventPageResponse(BaseModel):
@@ -123,6 +131,14 @@ class WorkbenchCollectionHealth(BaseModel):
     checkpoint_count: int
 
 
+class WorkbenchCandidateWorkflow(BaseModel):
+    business_date: date
+    timezone: str
+    run_exists: bool
+    latest_run: CandidateRunResponse | None
+    current_decision_counts: dict[str, int]
+
+
 class WorkbenchOverviewResponse(BaseModel):
     generated_at: datetime
     active_event_count: int
@@ -134,4 +150,5 @@ class WorkbenchOverviewResponse(BaseModel):
     high_risk_event_count: int
     artifact_counts: WorkbenchArtifactCounts
     collection_health: WorkbenchCollectionHealth
+    candidate_workflow: WorkbenchCandidateWorkflow | None = None
     production_ai_provider_validation: str = Field(pattern="^NOT_TESTED$")
