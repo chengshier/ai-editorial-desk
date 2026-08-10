@@ -341,8 +341,8 @@ async def verify_m5d_e2e(
         )
     )
 
-    card = await _latest(session, EventCardRecord, event_id)
-    pack = await _latest(session, EditorialPackRecord, event_id)
+    card = await _latest_card(session, event_id)
+    pack = await _latest_pack(session, event_id)
     card_pack_ok = bool(card and pack and pack.event_card_id == card.id)
     checks.append(
         check(
@@ -392,15 +392,26 @@ async def verify_m5d_e2e(
     return E2EVerificationResult("FAIL" if failed else "PASS", tuple(checks), evidence)
 
 
-async def _latest(
+async def _latest_card(
     session: AsyncSession,
-    model: type[EventCardRecord] | type[EditorialPackRecord],
     event_id: UUID,
-) -> EventCardRecord | EditorialPackRecord | None:
+) -> EventCardRecord | None:
     return await session.scalar(
-        select(model)
-        .where(model.event_id == event_id)
-        .order_by(model.created_at.desc())
+        select(EventCardRecord)
+        .where(EventCardRecord.event_id == event_id)
+        .order_by(EventCardRecord.created_at.desc())
+        .limit(1)
+    )
+
+
+async def _latest_pack(
+    session: AsyncSession,
+    event_id: UUID,
+) -> EditorialPackRecord | None:
+    return await session.scalar(
+        select(EditorialPackRecord)
+        .where(EditorialPackRecord.event_id == event_id)
+        .order_by(EditorialPackRecord.created_at.desc())
         .limit(1)
     )
 
