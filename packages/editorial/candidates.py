@@ -174,13 +174,21 @@ class DailyCandidateService:
                 ).all()
             )
             event_ids = [event.id for event in events]
-            latest_decisions = await latest_decisions(session, event_ids)
+            decision_by_event = await latest_decisions(session, event_ids)
             evidence = await evidence_summaries(session, event_ids)
             unknowns = await open_unknown_counts(session, event_ids)
             evidence_hashes = await evidence_context_hashes(session, event_ids)
             trends = await latest_trends(session, event_ids, resolved.as_of_at)
-            card_events = await artifact_event_ids(session, EventCardRecord, event_ids)
-            draft_events = await artifact_event_ids(session, EditorialDraftRecord, event_ids)
+            card_events = await artifact_event_ids(
+                session,
+                EventCardRecord,
+                event_ids,
+            )
+            draft_events = await artifact_event_ids(
+                session,
+                EditorialDraftRecord,
+                event_ids,
+            )
 
         skip_summary = {code: 0 for code in SKIP_CODES}
         eligible: list[CandidatePreviewItem] = []
@@ -191,7 +199,7 @@ class DailyCandidateService:
             if event.status is EventStatus.RESOLVED and not resolved.include_resolved:
                 skip_summary[SKIP_RESOLVED_EVENT] += 1
                 continue
-            latest_decision = latest_decisions.get(event.id)
+            latest_decision = decision_by_event.get(event.id)
             if (
                 latest_decision is not None
                 and latest_decision.decision is EditorialDecisionType.ARCHIVE
@@ -200,22 +208,27 @@ class DailyCandidateService:
                 skip_summary[SKIP_EDITORIALLY_ARCHIVED] += 1
                 continue
 
-            # Reuse the official M4-C Effective Editorial Assessment semantics verbatim.
-            # Candidate generation never calls scoring/generation AI on missing assessments.
+            # Reuse the formal M4-C Effective Editorial Assessment semantics.
+            # A missing assessment is skipped; candidate generation never invokes AI.
             effective = await self.editorial.effective(event.id)
-            if effective.effective_base_score_id is None or effective.effective_values is None:
+            if (
+                effective.effective_base_score_id is None
+                or effective.effective_values is None
+            ):
                 skip_summary[SKIP_NO_EDITORIAL_ASSESSMENT] += 1
                 continue
             values = effective.effective_values
             risk = EditorialRiskLevel(str(values["risk_level"]))
             traffic = float(values["traffic_total"])
-            recommended_format = EditorialRecommendedFormat(str(values["recommended_format"]))
+            recommended_format = EditorialRecommendedFormat(
+                str(values["recommended_format"])
+            )
             trend = trends.get(event.id)
             evidence_summary = evidence.get(event.id, empty_evidence_summary())
             open_unknown_count = unknowns.get(event.id, 0)
             evidence_context_hash = evidence_hashes.get(
                 event.id,
-                stable_hash({"event_id": str(event.id), "claims": [], "sources": [], "unknowns": []}),
+                empty_evidence_context_hash(event.id),
             )
             override_ids = tuple(item.id for item in effective.applied_overrides)
             assessment_hash = effective_assessment_hash(
@@ -273,7 +286,13 @@ class DailyCandidateService:
             )
 
         ranked = sorted(eligible, key=ranking_key)
-        top = tuple(with_rank(item, rank) for rank, item in enumerate(ranked[: resolved.requested_limit], 1))
+        top = tuple(
+            with_rank(item, rank)
+            for rank, item in enumerate(
+                ranked[: resolved.requested_limit],
+                1,
+            )
+        )
         input_hash = stable_hash(
             {
                 "business_date": resolved.business_date.isoformat(),
@@ -286,8 +305,11 @@ class DailyCandidateService:
                 "include_resolved": resolved.include_resolved,
                 "include_archived": resolved.include_archived,
                 "event_context_hashes": sorted(
-                    (str(item.event_id), item.candidate_context_hash) for item in ranked
+                    (str(item.event_id), item.candidate_context_hash)
+                    for item in ranked
                 ),
+                "skip_summary": skip_summary,
+                "scanned_event_count": len(events),
             }
         )
         skipped = sum(skip_summary.values())
@@ -338,7 +360,8 @@ class DailyCandidateService:
                     await session.scalars(
                         select(DailyCandidateRunRecord).where(
                             DailyCandidateRunRecord.input_hash == preview.input_hash,
-                            DailyCandidateRunRecord.status == CandidateRunStatus.SUCCEEDED,
+                            DailyCandidateRunRecord.status
+                            == CandidateRunStatus.SUCCEEDED,
                         )
                     )
                 ).first()
@@ -352,7 +375,11 @@ class DailyCandidateService:
                             )
                         ).all()
                     )
-                    return CandidateApplyOutcome(run=existing, candidates=rows, reused=True)
+                    return CandidateApplyOutcome(
+                        run=existing,
+                        candidates=rows,
+                        reused=True,
+                    )
 
                 run = DailyCandidateRunRecord(
                     business_date=preview.business_date,
@@ -376,7 +403,9 @@ class DailyCandidateService:
                 )
                 session.add(run)
                 await session.flush()
-                rows = tuple(candidate_record(run.id, item) for item in preview.candidates)
+                rows = tuple(
+                    candidate_record(run.id, item) for item in preview.candidates
+                )
                 session.add_all(rows)
                 await session.flush()
                 AuditLogRepository(session).add(
@@ -393,7 +422,11 @@ class DailyCandidateService:
                         "input_hash": preview.input_hash,
                     },
                 )
-                return CandidateApplyOutcome(run=run, candidates=rows, reused=False)
+                return CandidateApplyOutcome(
+                    run=run,
+                    candidates=rows,
+                    reused=False,
+                )
 
     async def current_context(
         self,
@@ -445,15 +478,19 @@ class DailyCandidateService:
             )
         ).first()
         evidence = (await evidence_summaries(session, [event_id])).get(
-            event_id, empty_evidence_summary()
+            event_id,
+            empty_evidence_summary(),
         )
         unknowns = await open_unknown_counts(session, [event_id])
         evidence_hash = (await evidence_context_hashes(session, [event_id])).get(
             event_id,
-            stable_hash({"event_id": str(event_id), "claims": [], "sources": [], "unknowns": []}),
+            empty_evidence_context_hash(event_id),
         )
         effective = await self.editorial.effective(event_id)
-        if effective.effective_base_score_id is None or effective.effective_values is None:
+        if (
+            effective.effective_base_score_id is None
+            or effective.effective_values is None
+        ):
             raise CandidateValidationError(
                 "当前 Event 不存在可用 Effective Editorial Assessment",
                 details={"reason": SKIP_NO_EDITORIAL_ASSESSMENT},
@@ -490,13 +527,17 @@ class DailyCandidateService:
         )
 
 
-def resolve_generation_request(request: CandidateGenerationRequest) -> ResolvedCandidateGenerationRequest:
+def resolve_generation_request(
+    request: CandidateGenerationRequest,
+) -> ResolvedCandidateGenerationRequest:
     if not MIN_LOOKBACK_HOURS <= request.lookback_hours <= MAX_LOOKBACK_HOURS:
         raise CandidateValidationError(
             f"lookback_hours 必须在 {MIN_LOOKBACK_HOURS}..{MAX_LOOKBACK_HOURS}"
         )
     if not 1 <= request.requested_limit <= MAX_CANDIDATE_LIMIT:
-        raise CandidateValidationError(f"requested_limit 必须在 1..{MAX_CANDIDATE_LIMIT}")
+        raise CandidateValidationError(
+            f"requested_limit 必须在 1..{MAX_CANDIDATE_LIMIT}"
+        )
     timezone_name = (request.timezone or get_settings().business_timezone).strip()
     try:
         zone = ZoneInfo(timezone_name)
@@ -509,7 +550,9 @@ def resolve_generation_request(request: CandidateGenerationRequest) -> ResolvedC
     local_date = as_of_utc.astimezone(zone).date()
     business_date = request.business_date or local_date
     if business_date != local_date:
-        raise CandidateValidationError("business_date 必须与 as_of_at 在业务 timezone 下的日期一致")
+        raise CandidateValidationError(
+            "business_date 必须与 as_of_at 在业务 timezone 下的日期一致"
+        )
     return ResolvedCandidateGenerationRequest(
         business_date=business_date,
         timezone=timezone_name,
@@ -523,7 +566,10 @@ def resolve_generation_request(request: CandidateGenerationRequest) -> ResolvedC
     )
 
 
-def candidate_record(run_id: UUID, item: CandidatePreviewItem) -> DailyCandidateRecord:
+def candidate_record(
+    run_id: UUID,
+    item: CandidatePreviewItem,
+) -> DailyCandidateRecord:
     return DailyCandidateRecord(
         run_id=run_id,
         event_id=item.event_id,
@@ -656,6 +702,17 @@ def candidate_context_hash(
     )
 
 
+def empty_evidence_context_hash(event_id: UUID) -> str:
+    return stable_hash(
+        {
+            "event_id": str(event_id),
+            "claims": [],
+            "sources": [],
+            "unknowns": [],
+        }
+    )
+
+
 async def latest_decisions(
     session: AsyncSession,
     event_ids: list[UUID],
@@ -723,13 +780,18 @@ async def evidence_summaries(
                 func.count(EvidenceClaimRecord.id),
             )
             .where(EvidenceClaimRecord.event_id.in_(event_ids))
-            .group_by(EvidenceClaimRecord.event_id, EvidenceClaimRecord.verification_state)
+            .group_by(
+                EvidenceClaimRecord.event_id,
+                EvidenceClaimRecord.verification_state,
+            )
         )
     ).all()
     for event_id, state, count in rows:
         result[event_id][state.value] = int(count)
     for summary in result.values():
-        summary["total"] = sum(summary[state.value] for state in EvidenceVerificationState)
+        summary["total"] = sum(
+            summary[state.value] for state in EvidenceVerificationState
+        )
     return result
 
 
@@ -811,7 +873,12 @@ async def evidence_context_hashes(
         )
     ).all()
     payloads: dict[UUID, dict[str, Any]] = {
-        event_id: {"event_id": str(event_id), "claims": [], "sources": [], "unknowns": []}
+        event_id: {
+            "event_id": str(event_id),
+            "claims": [],
+            "sources": [],
+            "unknowns": [],
+        }
         for event_id in event_ids
     }
     for event_id, claim_id, fingerprint, state, updated_at in claim_rows:
@@ -825,7 +892,11 @@ async def evidence_context_hashes(
         )
     for event_id, claim_id, signal_id, role in source_rows:
         payloads[event_id]["sources"].append(
-            {"claim_id": str(claim_id), "signal_id": str(signal_id), "role": role.value}
+            {
+                "claim_id": str(claim_id),
+                "signal_id": str(signal_id),
+                "role": role.value,
+            }
         )
     for event_id, unknown_id, fingerprint, status, updated_at in unknown_rows:
         payloads[event_id]["unknowns"].append(
@@ -836,7 +907,10 @@ async def evidence_context_hashes(
                 "updated_at": updated_at,
             }
         )
-    return {event_id: stable_hash(payload) for event_id, payload in payloads.items()}
+    return {
+        event_id: stable_hash(payload)
+        for event_id, payload in payloads.items()
+    }
 
 
 async def artifact_event_ids(
@@ -849,7 +923,9 @@ async def artifact_event_ids(
     return set(
         (
             await session.scalars(
-                select(model.event_id).where(model.event_id.in_(event_ids)).distinct()
+                select(model.event_id)
+                .where(model.event_id.in_(event_ids))
+                .distinct()
             )
         ).all()
     )

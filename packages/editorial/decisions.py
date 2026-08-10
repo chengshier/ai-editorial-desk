@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select
@@ -18,7 +19,10 @@ from packages.database.models import (
     EventRecord,
 )
 from packages.database.session import get_async_sessionmaker
-from packages.editorial.candidates import CANDIDATE_RANKING_VERSION, DailyCandidateService
+from packages.editorial.candidates import (
+    CANDIDATE_RANKING_VERSION,
+    DailyCandidateService,
+)
 from packages.editorial.domain import normalize_text
 from packages.editorial.workflow_errors import (
     CandidateRunStaleError,
@@ -37,7 +41,7 @@ class EditorialDecisionOutcome:
 
 
 class EditorialDecisionService:
-    """Append-only human editorial decisions, serialized by the Event row in PostgreSQL."""
+    """Append-only decisions serialized by the Event row in PostgreSQL."""
 
     def __init__(
         self,
@@ -61,7 +65,9 @@ class EditorialDecisionService:
         normalized_actor = normalize_text(actor)
         normalized_reason = normalize_text(reason)
         if not normalized_actor or not normalized_reason:
-            raise CandidateValidationError("Editorial Decision 必须包含 Actor 与 reason")
+            raise CandidateValidationError(
+                "Editorial Decision 必须包含 Actor 与 reason"
+            )
 
         async with self.session_factory() as session:
             async with session.begin():
@@ -77,19 +83,67 @@ class EditorialDecisionService:
                     if candidate is None or candidate.event_id != event_id:
                         raise ResourceNotFoundError("Daily Candidate 不存在")
                     run = await session.get(DailyCandidateRunRecord, candidate.run_id)
-                    if run is None or run.status is not CandidateRunStatus.SUCCEEDED:
+                    if (
+                        run is None
+                        or run.status is not CandidateRunStatus.SUCCEEDED
+                    ):
                         raise ResourceNotFoundError("Daily Candidate Run 不存在")
 
-                    if _same_decision_retry(
-                        current=current,
-                        candidate=candidate,
-                        requested_decision=decision,
-                        actor=normalized_actor,
-                        reason=normalized_reason,
-                        risk_acknowledged=risk_acknowledged,
-                    ):
-                        return EditorialDecisionOutcome(decision=current, reused=True)  # type: ignore[arg-type]
+                ranking_version = (
+                    run.ranking_version
+                    if run is not None
+                    else CANDIDATE_RANKING_VERSION
+                )
+                context = await self.candidates.current_context(
+                    event_id,
+                    ranking_version=ranking_version,
+                    session=session,
+                )
 
+                if (
+                    candidate is not None
+                    and candidate.candidate_context_hash
+                    != context.candidate_context_hash
+                ):
+                    raise StaleCandidateContextError(
+                        "Candidate 上下文已变化，请刷新或重新生成 Candidate Pool",
+                        details={
+                            "candidate_id": str(candidate.id),
+                            "candidate_context_hash": candidate.candidate_context_hash,
+                            "current_context_hash": context.candidate_context_hash,
+                        },
+                    )
+
+                if candidate is not None and _same_candidate_retry(
+                    current=current,
+                    candidate=candidate,
+                    requested_decision=decision,
+                    actor=normalized_actor,
+                    reason=normalized_reason,
+                    risk_acknowledged=risk_acknowledged,
+                    context_hash=context.candidate_context_hash,
+                ):
+                    assert current is not None
+                    return EditorialDecisionOutcome(
+                        decision=current,
+                        reused=True,
+                    )
+
+                if candidate is None and _same_direct_retry(
+                    current=current,
+                    requested_decision=decision,
+                    actor=normalized_actor,
+                    reason=normalized_reason,
+                    risk_acknowledged=risk_acknowledged,
+                    context_hash=context.candidate_context_hash,
+                ):
+                    assert current is not None
+                    return EditorialDecisionOutcome(
+                        decision=current,
+                        reused=True,
+                    )
+
+                if run is not None:
                     latest_run = await _latest_successful_run_for_day(
                         session,
                         business_date=run.business_date,
@@ -100,19 +154,11 @@ class EditorialDecisionService:
                             "旧 Candidate Run 只读，不能直接创建新的 Editorial Decision",
                             details={
                                 "candidate_run_id": str(run.id),
-                                "latest_run_id": str(latest_run.id) if latest_run else None,
+                                "latest_run_id": (
+                                    str(latest_run.id) if latest_run else None
+                                ),
                             },
                         )
-
-                if _same_direct_retry(
-                    current=current,
-                    candidate_id=candidate_id,
-                    requested_decision=decision,
-                    actor=normalized_actor,
-                    reason=normalized_reason,
-                    risk_acknowledged=risk_acknowledged,
-                ):
-                    return EditorialDecisionOutcome(decision=current, reused=True)  # type: ignore[arg-type]
 
                 current_id = current.id if current is not None else None
                 if expected_previous_decision_id != current_id:
@@ -124,24 +170,12 @@ class EditorialDecisionService:
                                 if expected_previous_decision_id is not None
                                 else None
                             ),
-                            "current_decision_id": str(current_id) if current_id else None,
-                            "current_decision": current.decision.value if current else None,
-                        },
-                    )
-
-                ranking_version = run.ranking_version if run is not None else CANDIDATE_RANKING_VERSION
-                context = await self.candidates.current_context(
-                    event_id,
-                    ranking_version=ranking_version,
-                    session=session,
-                )
-                if candidate is not None and candidate.candidate_context_hash != context.candidate_context_hash:
-                    raise StaleCandidateContextError(
-                        "Candidate 上下文已变化，请刷新或重新生成 Candidate Pool",
-                        details={
-                            "candidate_id": str(candidate.id),
-                            "candidate_context_hash": candidate.candidate_context_hash,
-                            "current_context_hash": context.candidate_context_hash,
+                            "current_decision_id": (
+                                str(current_id) if current_id else None
+                            ),
+                            "current_decision": (
+                                current.decision.value if current else None
+                            ),
                         },
                     )
 
@@ -151,7 +185,9 @@ class EditorialDecisionService:
                     and decision is not EditorialDecisionType.ARCHIVE
                 ):
                     if not confirmation:
-                        raise CandidateValidationError("Archive 或 Archive 恢复必须显式 confirmation")
+                        raise CandidateValidationError(
+                            "Archive 或 Archive 恢复必须显式 confirmation"
+                        )
 
                 risk = EditorialRiskLevel(str(context.effective_values["risk_level"]))
                 if (
@@ -187,7 +223,9 @@ class EditorialDecisionService:
                     actor=normalized_actor,
                     before_data={
                         "effective_decision_id": str(current.id) if current else None,
-                        "effective_decision": current.decision.value if current else None,
+                        "effective_decision": (
+                            current.decision.value if current else None
+                        ),
                     },
                     after_data={
                         "event_id": str(event_id),
@@ -203,7 +241,10 @@ class EditorialDecisionService:
                 )
                 return EditorialDecisionOutcome(decision=record, reused=False)
 
-    async def history(self, event_id: UUID) -> tuple[EditorialDecisionRecord, ...]:
+    async def history(
+        self,
+        event_id: UUID,
+    ) -> tuple[EditorialDecisionRecord, ...]:
         async with self.session_factory() as session:
             if await session.get(EventRecord, event_id) is None:
                 raise ResourceNotFoundError("事件不存在")
@@ -258,7 +299,7 @@ async def _latest_decision(
 async def _latest_successful_run_for_day(
     session: AsyncSession,
     *,
-    business_date: object,
+    business_date: date,
     timezone: str,
 ) -> DailyCandidateRunRecord | None:
     return (
@@ -279,7 +320,7 @@ async def _latest_successful_run_for_day(
     ).first()
 
 
-def _same_decision_retry(
+def _same_candidate_retry(
     *,
     current: EditorialDecisionRecord | None,
     candidate: DailyCandidateRecord,
@@ -287,11 +328,13 @@ def _same_decision_retry(
     actor: str,
     reason: str,
     risk_acknowledged: bool,
+    context_hash: str,
 ) -> bool:
     return bool(
         current is not None
         and current.candidate_id == candidate.id
         and current.candidate_context_hash == candidate.candidate_context_hash
+        and current.candidate_context_hash == context_hash
         and current.decision is requested_decision
         and current.actor == actor
         and current.reason == reason
@@ -302,16 +345,16 @@ def _same_decision_retry(
 def _same_direct_retry(
     *,
     current: EditorialDecisionRecord | None,
-    candidate_id: UUID | None,
     requested_decision: EditorialDecisionType,
     actor: str,
     reason: str,
     risk_acknowledged: bool,
+    context_hash: str,
 ) -> bool:
     return bool(
-        candidate_id is None
-        and current is not None
+        current is not None
         and current.candidate_id is None
+        and current.candidate_context_hash == context_hash
         and current.decision is requested_decision
         and current.actor == actor
         and current.reason == reason

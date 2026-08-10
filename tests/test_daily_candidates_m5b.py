@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -134,7 +133,13 @@ def _request(limit: int = 20) -> CandidateGenerationRequest:
 async def test_candidate_ranking_v1_fixture_is_deterministic_and_explainable(
     db_session,  # type: ignore[no-untyped-def]
 ) -> None:
-    high, _ = await _event(db_session, title="high normal", score=90, update_value=10, signal_velocity=1)
+    high, _ = await _event(
+        db_session,
+        title="high normal",
+        score=90,
+        update_value=10,
+        signal_velocity=1,
+    )
     r3, _ = await _event(
         db_session,
         title="high R3 review",
@@ -152,16 +157,32 @@ async def test_candidate_ranking_v1_fixture_is_deterministic_and_explainable(
         signal_velocity=10,
     )
     update_high, _ = await _event(
-        db_session, title="same score update high", score=70, update_value=80, signal_velocity=1
+        db_session,
+        title="same score update high",
+        score=70,
+        update_value=80,
+        signal_velocity=1,
     )
     update_low, _ = await _event(
-        db_session, title="same score update low", score=70, update_value=20, signal_velocity=100
+        db_session,
+        title="same score update low",
+        score=70,
+        update_value=20,
+        signal_velocity=100,
     )
     velocity_high, _ = await _event(
-        db_session, title="velocity high", score=60, update_value=30, signal_velocity=9
+        db_session,
+        title="velocity high",
+        score=60,
+        update_value=30,
+        signal_velocity=9,
     )
     velocity_low, _ = await _event(
-        db_session, title="velocity low", score=60, update_value=30, signal_velocity=1
+        db_session,
+        title="velocity low",
+        score=60,
+        update_value=30,
+        signal_velocity=1,
     )
     tie_a, _ = await _event(db_session, title="full tie A", score=50)
     tie_b, _ = await _event(db_session, title="full tie B", score=50)
@@ -170,12 +191,19 @@ async def test_candidate_ranking_v1_fixture_is_deterministic_and_explainable(
     merged, _ = await _event(db_session, title="merged skipped", score=100)
     merge_target, _ = await _event(db_session, title="merge target", score=20)
     resolved, _ = await _event(
-        db_session, title="resolved skipped", score=100, status=EventStatus.RESOLVED
+        db_session,
+        title="resolved skipped",
+        score=100,
+        status=EventStatus.RESOLVED,
     )
     archived, _ = await _event(db_session, title="archived skipped", score=100)
     dropped, _ = await _event(db_session, title="dropped still eligible", score=65)
     watched, _ = await _event(db_session, title="watched still eligible", score=64)
-    overridden, overridden_score = await _event(db_session, title="human override", score=10)
+    overridden, overridden_score = await _event(
+        db_session,
+        title="human override",
+        score=10,
+    )
     assert overridden_score is not None
 
     async with db_session.begin():
@@ -227,7 +255,9 @@ async def test_candidate_ranking_v1_fixture_is_deterministic_and_explainable(
     after_ai = await db_session.scalar(select(func.count(AIInvocationRecord.id)))
     assert before_ai == after_ai
     assert first.input_hash == second.input_hash
-    assert [item.event_id for item in first.candidates] == [item.event_id for item in second.candidates]
+    assert [item.event_id for item in first.candidates] == [
+        item.event_id for item in second.candidates
+    ]
     assert first.ranking_version == CANDIDATE_RANKING_VERSION
 
     by_event = {item.event_id: item for item in first.candidates}
@@ -253,8 +283,14 @@ async def test_candidate_ranking_v1_fixture_is_deterministic_and_explainable(
     assert first.skip_summary["RESOLVED_EVENT"] == 1
     assert first.skip_summary["EDITORIALLY_ARCHIVED"] == 1
 
-    tied = [item for item in first.candidates if item.event_id in {tie_a.id, tie_b.id}]
-    assert [str(item.event_id) for item in tied] == sorted([str(tie_a.id), str(tie_b.id)])
+    tied = [
+        item
+        for item in first.candidates
+        if item.event_id in {tie_a.id, tie_b.id}
+    ]
+    assert [str(item.event_id) for item in tied] == sorted(
+        [str(tie_a.id), str(tie_b.id)]
+    )
 
 
 @pytest.mark.usefixtures("clean_database")
@@ -269,7 +305,9 @@ async def test_candidate_apply_is_idempotent_and_concurrent_safe(
     )
     assert first.run.id == second.run.id
     assert {first.reused, second.reused} == {False, True}
-    assert await db_session.scalar(select(func.count(DailyCandidateRunRecord.id))) == 1
+    assert await db_session.scalar(
+        select(func.count(DailyCandidateRunRecord.id))
+    ) == 1
     assert await db_session.scalar(select(func.count(DailyCandidateRecord.id))) == 1
 
 
@@ -278,7 +316,10 @@ async def test_decision_risk_archive_restore_drop_and_stale_protection(
     db_session,  # type: ignore[no-untyped-def]
 ) -> None:
     risky, risky_score = await _event(
-        db_session, title="R3 candidate", score=90, risk=EditorialRiskLevel.R3
+        db_session,
+        title="R3 candidate",
+        score=90,
+        risk=EditorialRiskLevel.R3,
     )
     dropped, _ = await _event(db_session, title="drop reentry", score=70)
     archived, _ = await _event(db_session, title="archive restore", score=60)
@@ -325,7 +366,9 @@ async def test_decision_risk_archive_restore_drop_and_stale_protection(
         confirmation=True,
     )
     preview_archived = await service.preview(_request())
-    assert archived.id not in {item.event_id for item in preview_archived.candidates}
+    assert archived.id not in {
+        item.event_id for item in preview_archived.candidates
+    }
     restored = await decisions.decide(
         event_id=archived.id,
         decision=EditorialDecisionType.WATCH,
@@ -335,7 +378,8 @@ async def test_decision_risk_archive_restore_drop_and_stale_protection(
         confirmation=True,
     )
     assert restored.decision.previous_decision_id == archived_decision.decision.id
-    assert archived.id in {item.event_id for item in (await service.preview(_request())).candidates}
+    restored_preview = await service.preview(_request())
+    assert archived.id in {item.event_id for item in restored_preview.candidates}
 
     assert risky_score is not None
     await EditorialScoringService().override_score(
@@ -365,7 +409,9 @@ async def test_candidate_evidence_merge_old_run_and_decision_concurrency(
     target, _ = await _event(db_session, title="merge target", score=20)
     service = DailyCandidateService()
     run1 = await service.apply(_request(), actor="editor", confirmed=True)
-    candidate1 = next(item for item in run1.candidates if item.event_id == event.id)
+    candidate1 = next(
+        item for item in run1.candidates if item.event_id == event.id
+    )
 
     await EventEvidenceService().create_unknown(
         event_id=event.id,
@@ -400,7 +446,9 @@ async def test_candidate_evidence_merge_old_run_and_decision_concurrency(
             reason="old run is read only",
         )
 
-    candidate2 = next(item for item in run2.candidates if item.event_id == event.id)
+    candidate2 = next(
+        item for item in run2.candidates if item.event_id == event.id
+    )
     async with db_session.begin():
         row = await db_session.get(EventRecord, event.id)
         assert row is not None
@@ -416,9 +464,15 @@ async def test_candidate_evidence_merge_old_run_and_decision_concurrency(
         )
     assert merged_error.value.details == {"target_event_id": str(target.id)}
 
-    concurrent, _ = await _event(db_session, title="decision concurrency", score=75)
+    concurrent, _ = await _event(
+        db_session,
+        title="decision concurrency",
+        score=75,
+    )
     run3 = await service.apply(_request(), actor="editor", confirmed=True)
-    candidate3 = next(item for item in run3.candidates if item.event_id == concurrent.id)
+    candidate3 = next(
+        item for item in run3.candidates if item.event_id == concurrent.id
+    )
 
     async def decide(value: EditorialDecisionType) -> object:
         try:
@@ -429,18 +483,28 @@ async def test_candidate_evidence_merge_old_run_and_decision_concurrency(
                 actor=f"editor-{value.value}",
                 reason=f"concurrent {value.value}",
             )
-        except Exception as exc:  # noqa: BLE001 - assertion captures exact conflict below
+        except Exception as exc:  # noqa: BLE001 - exact conflict asserted below
             return exc
 
-    outcomes = await asyncio.gather(decide(EditorialDecisionType.ADOPT), decide(EditorialDecisionType.DROP))
+    outcomes = await asyncio.gather(
+        decide(EditorialDecisionType.ADOPT),
+        decide(EditorialDecisionType.DROP),
+    )
     assert sum(not isinstance(item, Exception) for item in outcomes) == 1
-    conflicts = [item for item in outcomes if isinstance(item, EditorialDecisionConflictError)]
+    conflicts = [
+        item
+        for item in outcomes
+        if isinstance(item, EditorialDecisionConflictError)
+    ]
     assert len(conflicts) == 1
     history = list(
         await db_session.scalars(
             select(EditorialDecisionRecord)
             .where(EditorialDecisionRecord.event_id == concurrent.id)
-            .order_by(EditorialDecisionRecord.created_at, EditorialDecisionRecord.id)
+            .order_by(
+                EditorialDecisionRecord.created_at,
+                EditorialDecisionRecord.id,
+            )
         )
     )
     assert len(history) == 1
