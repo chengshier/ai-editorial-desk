@@ -70,9 +70,7 @@ async def list_publications(
         publication_mode=publication_mode,
         has_performance=has_performance,
         editorial_decision_snapshot=editorial_decision_snapshot,
-        recommended_format_snapshot=(
-            recommended_format_snapshot.value if recommended_format_snapshot else None
-        ),
+        recommended_format_snapshot=recommended_format_snapshot,
         page=page,
         page_size=page_size,
     )
@@ -145,8 +143,12 @@ async def correct_publication(
 async def publication_performance(
     publication_id: UUID,
 ) -> list[PerformanceTimelineItemResponse]:
-    timeline = await PerformanceFeedbackQueryService().performance_timeline(publication_id)
-    return [PerformanceTimelineItemResponse.model_validate(item) for item in timeline]
+    timeline = await PerformanceFeedbackQueryService().performance_timeline(
+        publication_id
+    )
+    return [
+        PerformanceTimelineItemResponse.model_validate(item) for item in timeline
+    ]
 
 
 @router.post(
@@ -205,7 +207,8 @@ async def preview_performance_import(
         duplicate_rows=preview.duplicate_rows,
         normalized_rows=list(preview.normalized_rows),
         errors=[
-            PerformanceImportErrorResponse(**item.as_dict()) for item in preview.errors
+            PerformanceImportErrorResponse.model_validate(item.as_dict())
+            for item in preview.errors
         ],
     )
 
@@ -277,7 +280,6 @@ async def feedback_publications(
         platform_key=platform_key,
         published_from=_optional_aware(published_from, "published_from"),
         published_to=_optional_aware(published_to, "published_to"),
-        has_performance=None,
         page=page,
         page_size=page_size,
     )

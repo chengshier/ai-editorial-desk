@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, exists, func, or_, select
-from sqlalchemy.orm import aliased
+from sqlalchemy import exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
+from sqlalchemy.sql.elements import ColumnElement
+from sqlalchemy.sql.selectable import Subquery
 
 from packages.connector_management.exceptions import ResourceNotFoundError
 from packages.database.models import (
@@ -15,6 +17,7 @@ from packages.database.models import (
     DailyCandidateRunRecord,
     EditorialDecisionRecord,
     EditorialDecisionType,
+    EditorialRecommendedFormat,
     EventRecord,
 )
 from packages.database.models.publication import (
@@ -40,7 +43,7 @@ class PublicationListResult:
 
 
 class PerformanceFeedbackQueryService:
-    """Read-only M5-C projection. It never updates editorial artifacts or calls AI."""
+    """Read-only M5-C projection; never updates editorial artifacts or calls AI."""
 
     def __init__(
         self,
@@ -59,7 +62,7 @@ class PerformanceFeedbackQueryService:
         publication_mode: PublicationMode | None = None,
         has_performance: bool | None = None,
         editorial_decision_snapshot: EditorialDecisionType | None = None,
-        recommended_format_snapshot: str | None = None,
+        recommended_format_snapshot: EditorialRecommendedFormat | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> PublicationListResult:
@@ -80,7 +83,9 @@ class PerformanceFeedbackQueryService:
         async with self.session_factory() as session:
             total = int(
                 await session.scalar(
-                    select(func.count()).select_from(PublicationRecord).where(*filters)
+                    select(func.count())
+                    .select_from(PublicationRecord)
+                    .where(*filters)
                 )
                 or 0
             )
@@ -109,7 +114,11 @@ class PerformanceFeedbackQueryService:
             ).all()
             return PublicationListResult(
                 items=tuple(
-                    _publication_projection(publication, event_title, latest_snapshot)
+                    _publication_projection(
+                        publication,
+                        str(event_title),
+                        latest_snapshot,
+                    )
                     for publication, event_title, latest_snapshot in rows
                 ),
                 total=total,
@@ -153,12 +162,13 @@ class PerformanceFeedbackQueryService:
                     )
                 ).all()
             )
-            projection = _publication_projection(row[0], row[1], row[2])
+            projection = _publication_projection(row[0], str(row[1]), row[2])
             projection["audit_entries"] = audit
             return projection
 
     async def performance_timeline(
-        self, publication_id: UUID
+        self,
+        publication_id: UUID,
     ) -> tuple[dict[str, object], ...]:
         async with self.session_factory() as session:
             if await session.get(PublicationRecord, publication_id) is None:
@@ -188,8 +198,7 @@ class PerformanceFeedbackQueryService:
             previous_effective: PublicationPerformanceSnapshotRecord | None = None
             for snapshot in snapshots:
                 is_effective = snapshot.id not in superseded_ids
-                current_metrics = _metrics(snapshot)
-                rate, unavailable_reason = engagement_rate(current_metrics)
+                rate, unavailable_reason = engagement_rate(_metrics(snapshot))
                 deltas: dict[str, int | float | None] = {
                     "views": None,
                     "likes": None,
@@ -199,12 +208,25 @@ class PerformanceFeedbackQueryService:
                 }
                 if is_effective and previous_effective is not None:
                     deltas = {
-                        "views": metric_delta(snapshot.views, previous_effective.views),
-                        "likes": metric_delta(snapshot.likes, previous_effective.likes),
-                        "comments": metric_delta(snapshot.comments, previous_effective.comments),
-                        "shares": metric_delta(snapshot.shares, previous_effective.shares),
+                        "views": metric_delta(
+                            snapshot.views,
+                            previous_effective.views,
+                        ),
+                        "likes": metric_delta(
+                            snapshot.likes,
+                            previous_effective.likes,
+                        ),
+                        "comments": metric_delta(
+                            snapshot.comments,
+                            previous_effective.comments,
+                        ),
+                        "shares": metric_delta(
+                            snapshot.shares,
+                            previous_effective.shares,
+                        ),
                         "follower_delta": metric_delta(
-                            snapshot.follower_delta, previous_effective.follower_delta
+                            snapshot.follower_delta,
+                            previous_effective.follower_delta,
                         ),
                     }
                 result.append(
@@ -252,35 +274,12 @@ class PerformanceFeedbackQueryService:
                     .limit(1)
                 )
             ).first()
-            latest_decision = (
-                select(
-                    EditorialDecisionRecord.event_id.label("event_id"),
-                    EditorialDecisionRecord.decision.label("decision"),
-                    func.row_number()
-                    .over(
-                        partition_by=EditorialDecisionRecord.event_id,
-                        order_by=(
-                            EditorialDecisionRecord.created_at.desc(),
-                            EditorialDecisionRecord.id.desc(),
-                        ),
-                    )
-                    .label("rn"),
-                )
-            ).subquery()
-            adopted_count = int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(latest_decision)
-                    .where(
-                        latest_decision.c.rn == 1,
-                        latest_decision.c.decision == EditorialDecisionType.ADOPT,
-                    )
-                )
-                or 0
-            )
+            adopted_count = await _current_adopted_count(session)
             publication_count = int(
                 await session.scalar(
-                    select(func.count()).select_from(PublicationRecord).where(*filters)
+                    select(func.count())
+                    .select_from(PublicationRecord)
+                    .where(*filters)
                 )
                 or 0
             )
@@ -300,10 +299,13 @@ class PerformanceFeedbackQueryService:
                 )
                 or 0
             )
+            publication_ids = select(PublicationRecord.id).where(*filters)
             latest_observed = await session.scalar(
-                select(func.max(PublicationPerformanceSnapshotRecord.observed_at)).where(
+                select(
+                    func.max(PublicationPerformanceSnapshotRecord.observed_at)
+                ).where(
                     PublicationPerformanceSnapshotRecord.publication_id.in_(
-                        select(PublicationRecord.id).where(*filters)
+                        publication_ids
                     )
                 )
             )
@@ -322,12 +324,19 @@ class PerformanceFeedbackQueryService:
                 "published_count": publication_count,
                 "with_performance_count": with_performance,
                 "latest_observed_at": latest_observed,
-                "platform_counts": {str(key): int(count) for key, count in platform_rows},
-                "note": "observational funnel only; no causal or cross-platform winner score",
+                "platform_counts": {
+                    str(key): int(count) for key, count in platform_rows
+                },
+                "note": (
+                    "observational funnel only; no causal or cross-platform "
+                    "winner score"
+                ),
             }
 
     async def list_import_runs(
-        self, *, limit: int = 50
+        self,
+        *,
+        limit: int = 50,
     ) -> tuple[PerformanceImportRunRecord, ...]:
         limit = max(1, min(limit, 100))
         async with self.session_factory() as session:
@@ -352,6 +361,35 @@ class PerformanceFeedbackQueryService:
             return run
 
 
+async def _current_adopted_count(session: AsyncSession) -> int:
+    latest_decision = (
+        select(
+            EditorialDecisionRecord.event_id.label("event_id"),
+            EditorialDecisionRecord.decision.label("decision"),
+            func.row_number()
+            .over(
+                partition_by=EditorialDecisionRecord.event_id,
+                order_by=(
+                    EditorialDecisionRecord.created_at.desc(),
+                    EditorialDecisionRecord.id.desc(),
+                ),
+            )
+            .label("rn"),
+        )
+    ).subquery()
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(latest_decision)
+            .where(
+                latest_decision.c.rn == 1,
+                latest_decision.c.decision == EditorialDecisionType.ADOPT,
+            )
+        )
+        or 0
+    )
+
+
 def _publication_filters(
     *,
     platform_key: str | None,
@@ -362,11 +400,13 @@ def _publication_filters(
     publication_mode: PublicationMode | None,
     has_performance: bool | None,
     editorial_decision_snapshot: EditorialDecisionType | None,
-    recommended_format_snapshot: str | None,
-) -> list[object]:
-    filters: list[object] = []
+    recommended_format_snapshot: EditorialRecommendedFormat | None,
+) -> list[ColumnElement[bool]]:
+    filters: list[ColumnElement[bool]] = []
     if platform_key and platform_key.strip():
-        filters.append(PublicationRecord.platform_key == platform_key.strip().casefold())
+        filters.append(
+            PublicationRecord.platform_key == platform_key.strip().casefold()
+        )
     if published_from is not None:
         filters.append(PublicationRecord.published_at >= published_from)
     if published_to is not None:
@@ -379,12 +419,13 @@ def _publication_filters(
         filters.append(PublicationRecord.publication_mode == publication_mode)
     if editorial_decision_snapshot is not None:
         filters.append(
-            PublicationRecord.editorial_decision_snapshot == editorial_decision_snapshot
+            PublicationRecord.editorial_decision_snapshot
+            == editorial_decision_snapshot
         )
-    if recommended_format_snapshot and recommended_format_snapshot.strip():
+    if recommended_format_snapshot is not None:
         filters.append(
             PublicationRecord.recommended_format_snapshot
-            == recommended_format_snapshot.strip()
+            == recommended_format_snapshot
         )
     if has_performance is not None:
         predicate = exists(
@@ -397,15 +438,19 @@ def _publication_filters(
     return filters
 
 
-def _latest_effective_snapshot_ids() -> object:
+def _latest_effective_snapshot_ids() -> Subquery:
     child = aliased(PublicationPerformanceSnapshotRecord)
     effective = (
         select(
             PublicationPerformanceSnapshotRecord.id.label("snapshot_id"),
-            PublicationPerformanceSnapshotRecord.publication_id.label("publication_id"),
+            PublicationPerformanceSnapshotRecord.publication_id.label(
+                "publication_id"
+            ),
             func.row_number()
             .over(
-                partition_by=PublicationPerformanceSnapshotRecord.publication_id,
+                partition_by=(
+                    PublicationPerformanceSnapshotRecord.publication_id
+                ),
                 order_by=(
                     PublicationPerformanceSnapshotRecord.observed_at.desc(),
                     PublicationPerformanceSnapshotRecord.created_at.desc(),
@@ -438,8 +483,7 @@ def _publication_projection(
 ) -> dict[str, object]:
     latest: dict[str, object] | None = None
     if latest_snapshot is not None:
-        metrics = _metrics(latest_snapshot)
-        rate, reason = engagement_rate(metrics)
+        rate, reason = engagement_rate(_metrics(latest_snapshot))
         latest = {
             "snapshot": latest_snapshot,
             "engagement_rate": rate,
@@ -452,7 +496,9 @@ def _publication_projection(
     }
 
 
-def _metrics(snapshot: PublicationPerformanceSnapshotRecord) -> PerformanceMetrics:
+def _metrics(
+    snapshot: PublicationPerformanceSnapshotRecord,
+) -> PerformanceMetrics:
     return PerformanceMetrics(
         views=snapshot.views,
         completion_rate=snapshot.completion_rate,
