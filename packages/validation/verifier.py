@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from packages.database.models import (
     AIInvocationAttemptRecord,
     AIInvocationRecord,
+    AIProviderRecord,
     ConnectorDefinition,
     ConnectorInstance,
     ConnectorRun,
@@ -82,6 +83,25 @@ async def verify_business_invocation(
             if provider_ok
             else "Provider identity 不满足真实 Gate",
             provider_key=invocation.provider_key,
+        )
+    )
+    provider = None
+    if invocation.provider_key:
+        provider = await session.scalar(
+            select(AIProviderRecord).where(
+                AIProviderRecord.provider_key == invocation.provider_key,
+                AIProviderRecord.enabled.is_(True),
+            )
+        )
+    provider_validated = bool(provider and provider.validation_status == "PASSED")
+    checks.append(
+        check(
+            "provider_validation_evidence",
+            CheckLevel.PASS if provider_validated else CheckLevel.BLOCK,
+            "Provider 有独立 PASSED Connection Validation 证据"
+            if provider_validated
+            else "Provider 缺少独立 PASSED Connection Validation 证据",
+            validation_status=(provider.validation_status if provider else None),
         )
     )
     attempts = tuple(
