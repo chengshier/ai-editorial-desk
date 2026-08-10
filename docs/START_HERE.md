@@ -17,14 +17,14 @@ Production AI Provider Validation NOT_TESTED
 M5-A Editorial Workbench Engineering COMPLETE / MERGED
 M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED
 M5-C Publication / Performance Feedback COMPLETE / MERGED
-M5-D Engineering Hardening IN PROGRESS / PR #23 OPEN
+M5-D Engineering Hardening COMPLETE / PR #23 OPEN
 M5-D Real Platform Smoke PENDING / NOT_RUN
 M5-D Production AI Provider Validation PENDING / NOT_TESTED
 M5-D Full Human-in-loop E2E PENDING / NOT_RUN
 M5 Overall NOT COMPLETE
 ```
 
-M5-A、M5-B、M5-C 已合并。M5-D 在 `feature/m5d-hardening-mvp-closeout` / PR #23 中推进 Engineering Hardening。GitHub CI、Fake Provider、MockTransport、synthetic platform fixture 与 offline E2E 只能证明 Engineering Hardening，不能提升 Real Platform Smoke、Production AI Provider Validation 或 Full Human-in-loop E2E 的真实状态。
+M5-A、M5-B、M5-C 已合并。M5-D Phase 1 Engineering Hardening 已在 `feature/m5d-hardening-mvp-closeout` / PR #23 完成工程收口；Real Platform Smoke、Production AI Provider Validation 与 Full Human-in-loop E2E 仍等待受控本地人工真实验证。GitHub CI、Fake Provider、MockTransport、synthetic platform fixture 与 offline E2E 只能证明 Engineering Hardening，不能提升真实验证状态。
 
 详细阶段验收与运行手册见：
 
@@ -115,7 +115,7 @@ M5-C 记录真实发布与 Performance Feedback：Workflow Publication 冻结 ex
 
 ## M5-D Engineering Hardening
 
-Phase 1 新增/强化：
+Phase 1 已新增/强化：
 
 - `python -m scripts.mvp_doctor`：read-only PASS/WARN/BLOCK 运行检查；
 - `python -m scripts.m5d_preflight ...`：真实 Platform/Provider/E2E 前置条件检查；
@@ -124,13 +124,14 @@ Phase 1 新增/强化：
 - `python -m scripts.verify_m5d_e2e ...`：只读同链 provenance verifier；
 - Validation output/report 统一脱敏；
 - Fake/Mock validation-status hard gate；
+- E2E verifier Fake Provider 与错误 Human Decision provenance 防伪回归；
 - `docs/MVP_RUNBOOK.md` 与 `docs/M5D_REAL_VALIDATION_REPORT.md`。
 
 这些工具不会自动登录、自动采集、自动调用 AI、自动 Adopt、自动补建缺失 Artifact 或自动发布。
 
 ## Migration
 
-M5-D 默认无新 migration。当前 Alembic head 继续：
+M5-D 无新 migration。当前 Alembic head 继续：
 
 ```text
 20260810_0015_m5c_publication_performance
@@ -186,9 +187,12 @@ M5-D Preflight
 
 ## 当前下一步
 
-当前只推进 **M5-D Engineering Hardening / PR #23**。在 Real Platform、Production Provider 与 Full Human-in-loop E2E 尚未真实通过前：
+当前状态为 **M5-D Engineering Hardening COMPLETE / AWAITING HUMAN REAL VALIDATION**。Real Platform、Production Provider 与 Full Human-in-loop E2E 尚未真实执行，因此：
 
 ```text
+M5-D Real Platform Smoke PENDING / NOT_RUN
+M5-D Production AI Provider Validation PENDING / NOT_TESTED
+M5-D Full Human-in-loop E2E PENDING / NOT_RUN
 M5 Overall NOT COMPLETE
 M2 Real Smoke Validation DEFERRED / NOT_TESTED
 M2 Real-world Validation NOT COMPLETE
