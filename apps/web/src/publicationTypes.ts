@@ -1,0 +1,20 @@
+import type {EditorialDecisionType} from './editorialWorkflowTypes'
+import type {EditorialFormat,EditorialRisk} from './workbenchTypes'
+
+export type PublicationMode='workflow'|'manual_backfill'
+export type PerformanceHorizon='h1'|'h24'|'d7'|'custom'
+export type PerformanceSource='manual'|'csv'
+export interface Publication{
+ id:string;event_id:string;draft_id:string|null;publication_mode:PublicationMode;platform_key:string;account_label:string|null;external_post_id:string|null;public_url:string;published_at:string;title_snapshot:string|null;cover_text_snapshot:string|null;body_snapshot:string|null;publication_content_hash:string|null;candidate_run_id:string|null;candidate_id:string|null;candidate_rank_snapshot:number|null;editorial_decision_id:string|null;editorial_decision_snapshot:EditorialDecisionType|null;base_editorial_score_id:string|null;editorial_score_snapshot:Record<string,unknown>|null;effective_traffic_total_snapshot:number|null;risk_snapshot:EditorialRisk|null;recommended_format_snapshot:EditorialFormat|null;draft_chain_id:string|null;draft_version_snapshot:number|null;draft_source_type_snapshot:'ai'|'human'|null;draft_format_snapshot:EditorialFormat|null;draft_duration_seconds_snapshot:number|null;actor:string;backfill_reason:string|null;record_version:string;created_at:string;updated_at:string
+}
+export interface PerformanceSnapshot{id:string;publication_id:string;observed_at:string;horizon:PerformanceHorizon;source:PerformanceSource;views:number|null;completion_rate:number|null;average_watch_seconds:number|null;likes:number|null;comments:number|null;shares:number|null;favorites:number|null;follower_delta:number|null;snapshot_hash:string;supersedes_snapshot_id:string|null;correction_reason:string|null;actor:string;import_run_id:string|null;snapshot_version:string;created_at:string}
+export interface LatestPerformance{snapshot:PerformanceSnapshot;engagement_rate:number|null;engagement_rate_unavailable_reason:string|null}
+export interface PublicationListItem{publication:Publication;event_title:string;latest_performance:LatestPerformance|null}
+export interface PublicationListResponse{items:PublicationListItem[];total:number;page:number;page_size:number}
+export interface PerformanceTimelineItem{snapshot:PerformanceSnapshot;is_effective:boolean;engagement_rate:number|null;engagement_rate_unavailable_reason:string|null;deltas:Record<string,number|null>}
+export interface PerformanceOverview{candidate_count:number;candidate_run_id:string|null;adopted_count:number;published_count:number;with_performance_count:number;latest_observed_at:string|null;platform_counts:Record<string,number>;note:string}
+export interface PerformanceImportError{row_number:number;field:string;code:string;message:string}
+export interface PerformanceImportPreview{mapping_version:string;file_sha256:string;total_rows:number;valid_rows:number;invalid_rows:number;duplicate_rows:number;normalized_rows:Array<Record<string,unknown>>;errors:PerformanceImportError[]}
+export interface PerformanceImportRun{id:string;source_type:'csv';mapping_version:string;file_name:string|null;file_sha256:string;status:'running'|'succeeded'|'failed';row_count:number;valid_count:number;inserted_count:number;duplicate_count:number;error_count:number;error_summary:Array<Record<string,unknown>>;actor:string;created_at:string;finished_at:string|null}
+export interface PublicationCreateInput{event_id:string;draft_id:string|null;publication_mode:PublicationMode;platform_key:string;account_label?:string|null;external_post_id?:string|null;public_url:string;published_at:string;title_snapshot?:string|null;cover_text_snapshot?:string|null;body_snapshot?:string|null;backfill_reason?:string|null}
+export interface ManualPerformanceInput{observed_at:string;horizon:PerformanceHorizon;views:number|null;completion_rate_percent:number|null;average_watch_seconds:number|null;likes:number|null;comments:number|null;shares:number|null;favorites:number|null;follower_delta:number|null;supersedes_snapshot_id?:string|null;correction_reason?:string|null}
