@@ -212,3 +212,21 @@ M3 的 SignalEmbeddingRecord/version/input hash/recall 语义保持不变；M4-A
 3. **Manual Backfill 与 Workflow 分开建模。** Backfill 要求显式原因，可不具有 workflow provenance；两种模式都不修改 M3/M4/M5-B 既有 artifact 语义。
 4. **Performance Feedback 追加式且可校正。** Manual 与 CSV 观测使用 idempotency identity；相同观测复用，修正写入新 snapshot，不能通过覆盖历史伪造效果变化。
 5. **反馈不自动调权或调用 AI。** M5-C 只记录并展示 Publication/Performance；自动调权、真实 E2E 与 MVP closeout 仍属于 M5-D，当前 `NOT STARTED`。
+
+## D-030：MVP Closeout 必须由四类独立证据共同成立
+
+日期：2026-08-10
+
+决定：
+
+1. **Engineering CI 不能替代 Real Platform。** Unit/PostgreSQL/offline E2E、Mock MediaCrawler、GitHub Actions success 只能证明 Engineering Hardening。
+2. **Engineering CI 不能替代 Production Provider。** FakeProvider、MockTransport、stub server 或注入 ProviderFactory 的 Connection Test 永远不能把 Production AI Provider Validation 提升为 PASSED。
+3. **真实 Provider Gate 需要两层证据。** 必须同时有真实 credential/network 的 Provider Connection Test 和至少一个正式 AIGateway 业务 Invocation/Attempt；只 TCP/HTTP 连接成功不算 Production Validation。
+4. **Human Decision 必须真实由 Human 产生。** Full E2E 中 adopt 必须使用现有 Human Decision 语义，存在真实 actor + reason；脚本不得按 rank 自动 adopt，也不得用 bot actor 冒充人工审核。
+5. **真实平台验证坚持低量、显式确认与现有 Risk/Budget Guard。** 优先 Bilibili，其次 Zhihu；使用隔离低价值账号、可见 Chrome/CDP、已有受控 Profile，不自动登录/扫码，不代理轮换、账号轮换、fingerprint spoofing 或 CAPTCHA 破解。
+6. **真实验证不在普通 CI 运行。** Real Platform 与 Production Provider 必须从绿色 exact-head 在受控本地环境单独执行；普通 PR CI 不配置真实账号或 Production credential。
+7. **任一平台风险信号立即停止。** 403/406/429、CAPTCHA、automation detection、account blocked/abnormal、login invalidation、`REVIEW_REQUIRED`、`RESTRICTED` 等结果记录为 `RISK_BLOCKED`/`PRECONDITION_BLOCKED`，不得 retry 到成功或切换账号/代理绕过。
+8. **Validation Report 只保存脱敏证据。** 允许内部 ID、版本、计数、时间、provider/model/task key 与 usage/cost available/unknown；禁止 RawSignal/评论/帖子正文、个人账号信息、Cookie、Authorization、API Key、完整 Profile 路径、完整 Prompt 或 Draft 正文。
+9. **一平台 Smoke 不等于七平台生产验证。** 一条 Bilibili 或 Zhihu MVP real gate 成功最多将 M2 Real Smoke 更新为 PASSED（注明 platform/scope/limit）；更广的 M2 Real-world Validation 仍按正式范围保守记录。
+10. **MVP Closeout 不等于生产规模验证。** 即便 M5 Overall 最终 COMPLETE，也不表示七平台生产已验证、大规模聚类质量已验证、账号绝对安全、MediaCrawler 商业 License 已解决或自动发布已实现。
+11. **M5 Overall 完成需要四类 Gate 同时成立。** M5-A/B/C COMPLETE / MERGED、M5-D Engineering Hardening COMPLETE、Real Platform MVP Gate PASSED、Production AI Provider Validation PASSED、Full Human-in-loop E2E PASSED、sanitized report 与 final exact-head CI success 缺一不可。
