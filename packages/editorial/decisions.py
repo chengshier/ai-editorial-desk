@@ -179,15 +179,14 @@ class EditorialDecisionService:
                         },
                     )
 
-                if decision is EditorialDecisionType.ARCHIVE or (
+                needs_confirmation = decision is EditorialDecisionType.ARCHIVE or (
                     current is not None
                     and current.decision is EditorialDecisionType.ARCHIVE
-                    and decision is not EditorialDecisionType.ARCHIVE
-                ):
-                    if not confirmation:
-                        raise CandidateValidationError(
-                            "Archive 或 Archive 恢复必须显式 confirmation"
-                        )
+                )
+                if needs_confirmation and not confirmation:
+                    raise CandidateValidationError(
+                        "Archive 或 Archive 恢复必须显式 confirmation"
+                    )
 
                 risk = EditorialRiskLevel(str(context.effective_values["risk_level"]))
                 if (
