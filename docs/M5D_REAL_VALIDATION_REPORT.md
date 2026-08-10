@@ -2,7 +2,7 @@
 
 > Status: **NOT_RUN**
 >
-> 本文档是 M5-D 真实验证的脱敏证据模板。Engineering CI、Mock Provider、synthetic fixture、offline E2E 都不能把本文档状态自动提升为 PASS。
+> 本文档是 M5-D 真实验证的脱敏证据模板。Engineering CI、Mock Provider、synthetic fixture、offline E2E 都不能把本文档的 Real Validation 状态自动提升为 PASS。
 
 ## 1. Validation Metadata
 
@@ -22,17 +22,17 @@
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Ruff | NOT_RUN | final exact-head CI required |
-| Mypy | NOT_RUN | final exact-head CI required |
-| Pytest | NOT_RUN | final exact-head CI required |
-| M3 concurrency regression | NOT_RUN | final exact-head CI required |
-| M3 offline evaluation | NOT_RUN | final exact-head CI required |
-| M3 performance baseline | NOT_RUN | final exact-head CI required |
-| Alembic round trip | NOT_RUN | expected head `20260810_0015` |
-| Definition sync ×2 | NOT_RUN | second run must be created=0 / updated=0 / failed=0 |
-| Web lint/typecheck/test/build | NOT_RUN | final exact-head CI required |
+| Ruff | PASS | Phase 1 exact-head Engineering CI |
+| Mypy | PASS | Phase 1 exact-head Engineering CI |
+| Pytest | PASS | 521 passed / 1 warning |
+| M3 concurrency regression | PASS | existing targeted gate |
+| M3 offline evaluation | PASS | existing offline engineering gate |
+| M3 performance baseline | PASS | existing engineering performance gate |
+| Alembic round trip | PASS | five-step round trip; head `20260810_0015` |
+| Definition sync ×2 | PASS | second run created=0 / updated=0 / failed=0 |
+| Web lint/typecheck/test/build | PASS | all four Engineering gates |
 
-Engineering PASS 只代表 `M5-D Engineering Hardening`，不代表 Real Platform 或 Production Provider。
+Engineering PASS 只代表 `M5-D Engineering Hardening COMPLETE`，不代表 Real Platform 或 Production Provider。文档同步后的 final exact-head CI 仍需保持 Python/Web success。
 
 ## 3. Real Platform Smoke
 
@@ -165,10 +165,10 @@ Human Adopt 必须由真实操作者在 Web/API 正式 Human Decision 语义下�
 | M5-A Editorial Workbench | COMPLETE / MERGED |
 | M5-B Daily Candidates / Editorial Workflow | COMPLETE / MERGED |
 | M5-C Publication / Performance Feedback | COMPLETE / MERGED |
-| M5-D Engineering Hardening | IN_PROGRESS |
-| Real Platform MVP Gate | NOT_RUN |
-| Production AI Provider Validation | NOT_TESTED |
-| Full Human-in-loop E2E | NOT_RUN |
+| M5-D Engineering Hardening | COMPLETE |
+| Real Platform MVP Gate | PENDING / NOT_RUN |
+| Production AI Provider Validation | PENDING / NOT_TESTED |
+| Full Human-in-loop E2E | PENDING / NOT_RUN |
 | M5 Overall | NOT COMPLETE |
 | M2 Real Smoke Validation | DEFERRED / NOT_TESTED |
 | M2 Real-world Validation | NOT COMPLETE |
@@ -178,8 +178,13 @@ Human Adopt 必须由真实操作者在 Web/API 正式 Human Decision 语义下�
 ```text
 M5-D COMPLETE
 M5 Overall COMPLETE
-Production AI Provider Validation PASSED
-M2 Real Smoke Validation PASSED (with actual validated platform/scope/limit)
 ```
 
-即便最终完成，也必须继续保守注明：一平台 MVP Smoke 不等于七平台生产验证；自动发布未实现；大规模聚类质量未验证；MediaCrawler 商业/变现前仍需重新核对许可。
+在此之前当前工程状态仅为：
+
+```text
+M5-D Engineering Hardening COMPLETE
+AWAITING HUMAN REAL VALIDATION
+```
+
+Real Platform、Production Provider、Human E2E 均不得由 Engineering CI/Fake/Mock 结果替代。
