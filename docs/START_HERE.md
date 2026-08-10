@@ -16,16 +16,21 @@ M4 Overall Engineering COMPLETE
 Production AI Provider Validation NOT_TESTED
 M5-A Editorial Workbench Engineering COMPLETE / MERGED
 M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED
-M5-C Publication / Performance Feedback COMPLETE / PR #22 OPEN
-M5-D Hardening / Real E2E / MVP Closeout NOT STARTED
+M5-C Publication / Performance Feedback COMPLETE / MERGED
+M5-D Engineering Hardening IN PROGRESS / PR #23 OPEN
+M5-D Real Platform Smoke PENDING / NOT_RUN
+M5-D Production AI Provider Validation PENDING / NOT_TESTED
+M5-D Full Human-in-loop E2E PENDING / NOT_RUN
 M5 Overall NOT COMPLETE
 ```
 
-M5-A、M5-B 已合并。M5-C 在 `feature/m5c-publication-performance` 完成工程实现并通过 PR #22 提交人工审查，PR 保持 Open。M5-C 工程完成不改变 Production AI Provider 与 M2 真实验证状态。
+M5-A、M5-B、M5-C 已合并。M5-D 在 `feature/m5d-hardening-mvp-closeout` / PR #23 中推进 Engineering Hardening。GitHub CI、Fake Provider、MockTransport、synthetic platform fixture 与 offline E2E 只能证明 Engineering Hardening，不能提升 Real Platform Smoke、Production AI Provider Validation 或 Full Human-in-loop E2E 的真实状态。
 
-详细阶段验收见：
+详细阶段验收与运行手册见：
 
 - `docs/M5_ACCEPTANCE_REPORT.md`
+- `docs/MVP_RUNBOOK.md`
+- `docs/M5D_REAL_VALIDATION_REPORT.md`
 - `docs/M4_ACCEPTANCE_REPORT.md`
 - `docs/M3_ACCEPTANCE_REPORT.md`
 
@@ -36,9 +41,10 @@ M5-A、M5-B 已合并。M5-C 在 `feature/m5c-publication-performance` 完成工
 3. `docs/AI编辑部_PRD_V1.2.md`
 4. `docs/DECISIONS.md`
 5. `docs/M5_ACCEPTANCE_REPORT.md`
-6. `docs/M4_ACCEPTANCE_REPORT.md`
-7. `docs/M3_ACCEPTANCE_REPORT.md`
-8. `docs/CHANGELOG.md`
+6. `docs/MVP_RUNBOOK.md`
+7. `docs/M4_ACCEPTANCE_REPORT.md`
+8. `docs/M3_ACCEPTANCE_REPORT.md`
+9. `docs/CHANGELOG.md`
 
 ## 当前完整处理链
 
@@ -60,32 +66,11 @@ Connector Definition / Source / Schedule
 → M5-C Publication / Performance Feedback
 ```
 
+M5-D 不新增业务主链，而是围绕上述既有链建立 Preflight、Doctor、真实验证 Harness、只读 provenance verifier、脱敏 Validation Report 与 Runbook。
+
 ## M5-A Workbench 能力
 
-Web 继续沿用现有 PageKey 架构，不引入 React Router 或大型 UI Framework。导航按逻辑整理为：
-
-```text
-Editorial
-- Overview
-- Events
-
-Collection
-- Sources
-- Schedules
-- Runs
-- Checkpoints
-- Accounts / Risk
-
-Configuration
-- Definitions
-- Instances
-
-AI
-- AI Providers
-- AI Routes
-- AI Budgets
-- AI Invocations
-```
+Web 继续沿用现有 PageKey 架构，不引入 React Router 或大型 UI Framework。导航按逻辑整理为 Editorial / Collection / Configuration / AI。
 
 M5-A 新增只读查询：
 
@@ -98,21 +83,9 @@ GET /api/v1/admin/workbench/events/{event_id}/signals
 
 所有 Merge/Split、Evidence verification、Unknown、Trend calculate、Score、Card/Pack、Draft/Revision 等写操作继续调用 M3/M4 既有 Admin API，Workbench 不复制业务 Write API。
 
-Event Workbench 分区：
-
-```text
-Overview
-Evidence
-Sources & Timeline
-Trend & Score
-Card & Pack
-Drafts
-```
-
 关键冻结边界：
 
-- Event lifecycle 与未来 M5-B Editorial Decision 分离；
-- Overview 不是 DailyCandidate Pool，不生成 TOP10/TOP3，不保存 candidate rank；
+- Event lifecycle、Algorithmic Candidate Rank 与 Human Editorial Decision 分离；
 - Unknown 不是 Fact，single_source 不是 confirmed；
 - unavailable 必须显示 `Unavailable + reason`，不能显示假 0；
 - Original AI Score 与 Effective Score 同时可追溯，Human Override 明确标记；
@@ -122,7 +95,6 @@ Drafts
 - R3/R4、stale context、citation、verification 最终规则仍由原业务 Service/API 决定；
 - 不自动 fallback 到 Fake Provider；
 - Admin Token / Actor 继续只保存在 `sessionStorage`；
-- Source URL 仅允许安全 `http/https` 外链；
 - 页面/API 不展示 raw_payload、credential、Authorization、API Key、Cookie、完整 Prompt 或 embedding vector。
 
 ## Production AI Provider Validation
@@ -131,27 +103,42 @@ Drafts
 Production AI Provider Validation = NOT_TESTED
 ```
 
-M4/M5-A 工程完成、Mock/Fake CI 成功都不能把该状态改成 PASSED。只有后续使用真实 production credential 完成人工真实网络验证后才可单独更新。
+Mock/Fake CI 成功不能把该状态改成 PASSED。M5-D 进一步冻结：注入测试 ProviderFactory 的 Connection Test 不具备提升真实 validation status 的资格。Production Provider PASS 必须由受控本地真实 credential + 真实 network + Connection Test + 至少一次正式 AIGateway 业务 Invocation/Attempt 共同证明。
 
 ## M5-B Daily Candidates / Editorial Workflow
 
-M5-B 增加确定性 Daily Candidate snapshot、候选池读模型和人工 Editorial Decision history。候选排名与人工决定分离；Apply 保持 input idempotency / PostgreSQL concurrency safety，不自动调用 AI、自动发布或改写既有 Event、Evidence、Trend、Score、Card、Pack、Draft 语义。
+M5-B 使用确定性 Daily Candidate snapshot、候选池读模型和 append-only Human Editorial Decision history。候选排名与人工决定分离；Apply 保持 input idempotency / PostgreSQL concurrency safety，不自动调用 AI、自动发布或改写既有 Event、Evidence、Trend、Score、Card、Pack、Draft 语义。
 
 ## M5-C Publication / Performance Feedback
 
-M5-C 记录真实发布与发布后的 Performance Feedback：Workflow Publication 冻结 exact Draft、当前 `adopt` Decision 与候选/评分 provenance；manual backfill 显式保留原因。Performance snapshot 与 CSV import 都是 append-only/idempotent，不回写 Candidate Rank、Event lifecycle、Trend 或 Score。
+M5-C 记录真实发布与 Performance Feedback：Workflow Publication 冻结 exact Draft、当前 `adopt` Decision 与候选/评分 provenance；manual backfill 显式保留原因。Performance snapshot 与 CSV import 都是 append-only/idempotent，不回写 Candidate Rank、Event lifecycle、Trend、Score、Decision 或 Evidence。
+
+## M5-D Engineering Hardening
+
+Phase 1 新增/强化：
+
+- `python -m scripts.mvp_doctor`：read-only PASS/WARN/BLOCK 运行检查；
+- `python -m scripts.m5d_preflight ...`：真实 Platform/Provider/E2E 前置条件检查；
+- `python -m scripts.run_m5d_platform_smoke ... --confirm-real-network`：薄封装现有 M2 MediaCrawler smoke 主链；
+- `python -m scripts.run_m5d_provider_validation ... --confirm-paid-call`：真实 Provider Connection Test + 业务 Invocation 核验入口；
+- `python -m scripts.verify_m5d_e2e ...`：只读同链 provenance verifier；
+- Validation output/report 统一脱敏；
+- Fake/Mock validation-status hard gate；
+- `docs/MVP_RUNBOOK.md` 与 `docs/M5D_REAL_VALIDATION_REPORT.md`。
+
+这些工具不会自动登录、自动采集、自动调用 AI、自动 Adopt、自动补建缺失 Artifact 或自动发布。
 
 ## Migration
 
-M5-C 新增 migration。当前 Alembic head：
+M5-D 默认无新 migration。当前 Alembic head 继续：
 
 ```text
 20260810_0015_m5c_publication_performance
 ```
 
-0015 仅新增 Publication / Performance Feedback artifact，不修改既有 M1～M5-B artifact 语义。
+0015 仅新增 M5-C Publication / Performance Feedback artifact；M5-D Harness/Doctor/Verifier/Report 不建立新的业务真相表。
 
-## 完整验收命令
+## 完整 Engineering Gate
 
 ```bash
 ruff check .
@@ -174,8 +161,38 @@ npm test -- --run
 npm run build
 ```
 
-Definition 第二次同步必须 `created=0 / updated=0 / failed=0`。M3 concurrent regression、offline engineering evaluation、performance baseline 继续作为全量 CI Gate；所有 AI 测试 offline only。
+Definition 第二次同步必须 `created=0 / updated=0 / failed=0`。M3 concurrent regression、offline engineering evaluation、performance baseline 继续作为全量 CI Gate。
 
-## 下一阶段
+## M5-D 真实验证边界
 
-M5-C 在 PR #22 等待人工审查；**M5-D NOT STARTED**，M5 Overall 仍为 `NOT COMPLETE`。
+真实平台与真实 Provider 不在普通 GitHub Actions 中运行。Phase 1 Engineering exact-head CI 绿色后，受控本地从同一绿色 HEAD 按 `docs/MVP_RUNBOOK.md` 执行：
+
+```text
+M5-D Preflight
+→ Human confirmation
+→ Bilibili（首选）或 Zhihu 低量 Real Smoke
+→ Provider Connection Test
+→ real AIGateway business Invocation
+→ real Event / Evidence / Trend / AI Score
+→ Candidate Pool
+→ Human Workbench review + Adopt
+→ Card / Pack
+→ real AI Draft
+→ read-only E2E verifier
+→ sanitized validation report
+```
+
+出现 403/406/429、CAPTCHA、automation detection、账号异常、login invalidation、`REVIEW_REQUIRED`、`RESTRICTED` 或现有 Risk Guard stop 条件时必须立即停止，不 retry 到成功、不换号、不换代理、不重开 Profile 绕过。
+
+## 当前下一步
+
+当前只推进 **M5-D Engineering Hardening / PR #23**。在 Real Platform、Production Provider 与 Full Human-in-loop E2E 尚未真实通过前：
+
+```text
+M5 Overall NOT COMPLETE
+M2 Real Smoke Validation DEFERRED / NOT_TESTED
+M2 Real-world Validation NOT COMPLETE
+Production AI Provider Validation NOT_TESTED
+```
+
+M5-D 不开始 M6/V1 下一阶段，不自动发布，也不接平台发布 API。
