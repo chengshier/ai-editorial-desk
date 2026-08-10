@@ -7,7 +7,7 @@
 - **M5-A Editorial Workbench：COMPLETE / MERGED**
 - **M5-B Daily Candidates / Editorial Workflow：COMPLETE / MERGED**
 - **M5-C Publication / Performance Feedback：COMPLETE / MERGED**
-- **M5-D Engineering Hardening：IN PROGRESS / PR #23 OPEN**
+- **M5-D Engineering Hardening：COMPLETE / PR #23 OPEN**
 - **M5-D Real Platform Smoke：PENDING / NOT_RUN**
 - **M5-D Production AI Provider Validation：PENDING / NOT_TESTED**
 - **M5-D Full Human-in-loop E2E：PENDING / NOT_RUN**
@@ -110,11 +110,11 @@ M5-C 新增 migration：
 
 `20260810_0015_m5c_publication_performance`
 
-M5-D 默认 **NO NEW MIGRATION**，当前 Alembic head 继续为 `20260810_0015`。M5-D 的 Harness/Doctor/Verifier/Report 组合现有 Run/Risk/Checkpoint/Provider/Invocation/Artifact 证据，不新建 Validation 真相表。
+M5-D **NO NEW MIGRATION**，当前 Alembic head 继续为 `20260810_0015`。M5-D 的 Harness/Doctor/Verifier/Report 组合现有 Run/Risk/Checkpoint/Provider/Invocation/Artifact 证据，不新建 Validation 真相表。
 
 ## M5-D A. Engineering Hardening
 
-当前 Phase 1 在 PR #23 中实现：
+Phase 1 Engineering Hardening 已完成：
 
 - `M5DPreflightService`：read-only 检查 DB、migration、Connector/Source、Account/Profile、Collection Budget、Checkpoint、Risk、Provider credential ref、Provider validation、AI Route、AI Budget；
 - `MVPDoctorService`：read-only PASS/WARN/BLOCK 运行诊断；
@@ -124,8 +124,9 @@ M5-D 默认 **NO NEW MIGRATION**，当前 Alembic head 继续为 `20260810_0015`
 - MediaCrawler real smoke 薄 wrapper，仍调用现有 M2 smoke/CollectorRuntime 主链；
 - Production Provider validation CLI，要求显式 `--confirm-paid-call`，Connection Test 单独成功仍不是 Production Validation PASS；
 - AIConnectionTester hardening：注入 ProviderFactory/MockTransport 的 Engineering Test 不具备提升 Provider `validation_status` 的资格；
+- E2E verifier 防伪回归：Fake/Mock Provider Invocation 必须 FAIL，Decision 非 `adopt` 的错误 provenance 必须 FAIL；
 - `docs/MVP_RUNBOOK.md`；
-- `docs/M5D_REAL_VALIDATION_REPORT.md`，初始状态 `NOT_RUN`。
+- `docs/M5D_REAL_VALIDATION_REPORT.md`，真实验证状态仍为 `NOT_RUN`。
 
 ### Engineering Hardening 不能证明
 
@@ -154,7 +155,7 @@ M5-D 默认 **NO NEW MIGRATION**，当前 Alembic head 继续为 `20260810_0015`
 
 ## M5-D C. Production AI Provider Validation
 
-当前：**NOT_TESTED**。
+当前：**PENDING / NOT_TESTED**。
 
 PASS 必须同时具有：
 
@@ -223,7 +224,7 @@ M5 Overall COMPLETE
 
 ## Engineering Gate
 
-M5-D Phase 1 继续要求：
+M5-D Phase 1 要求：
 
 ```bash
 ruff check .
@@ -240,7 +241,7 @@ pytest
 - Definition sync ×2，第二次 `created=0 / updated=0 / failed=0`；
 - Web `lint / typecheck / test -- --run / build`。
 
-最终 Engineering Hardening 状态只能在 PR #23 的 final exact-head CI 全绿后更新为 COMPLETE。
+Engineering Hardening 工程 Gate 已全部通过；文档同步后的 final exact-head CI 仍必须保持 Python/Web success，才能对外报告 `AWAITING HUMAN REAL VALIDATION`。
 
 ## 当前结论
 
@@ -248,11 +249,13 @@ pytest
 
 ```text
 M5-C COMPLETE / MERGED
-M5-D Engineering Hardening IN PROGRESS
+M5-D Engineering Hardening COMPLETE
 Real Platform Smoke PENDING / NOT_RUN
-Production AI Provider Validation NOT_TESTED
+Production AI Provider Validation NOT_TESTED / PENDING
 Full Human-in-loop MVP E2E PENDING / NOT_RUN
 M5 Overall NOT COMPLETE
 M2 Real Smoke Validation DEFERRED / NOT_TESTED
 M2 Real-world Validation NOT COMPLETE
 ```
+
+当前阶段仅允许进入 `AWAITING HUMAN REAL VALIDATION`，不代表真实 Gate 已执行。
