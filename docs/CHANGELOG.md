@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-08-10 - M5-B Daily Candidates / Editorial Workflow Engineering Closure
+
+### Added
+
+- 新增确定性 Daily Candidate snapshot、候选池读模型与人工 Editorial Decision history；Candidate Rank 与 Human Decision 明确分离；
+- Candidate Apply 覆盖 input idempotency、PostgreSQL concurrency safety、stale protection、risk/archive/restore/drop 与 evidence merge；
+- 新增 migration `20260810_0014_m5b_daily_candidates`，并在全新独立 PostgreSQL 测试库完成 Alembic 五步往返验证；
+- 修正 M5-B fixture 历史时间与 test cleanup，使候选窗口和并发断言在真实语义下稳定执行；
+- 修正 Web 测试中的过期 M5-A 文案断言与 lifecycle/decision 描述断言。
+
+### Status / Boundaries
+
+- `M5-A = COMPLETE / MERGED`；
+- `M5-B = COMPLETE / PR #21 OPEN`；
+- `M5-C = NOT STARTED`，`M5-D = NOT STARTED`，`M5 Overall = NOT COMPLETE`；
+- `Production AI Provider Validation = NOT_TESTED`；
+- `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`，`M2 Real-world Validation = NOT COMPLETE`；
+- Windows `WinError 1314` symlink privilege 仅记录为本地环境限制；不改变 Linux exact-head CI 的测试语义或验收责任。
+
 ## 2026-08-09 - M5-A Editorial Workbench Engineering
 
 ### Added

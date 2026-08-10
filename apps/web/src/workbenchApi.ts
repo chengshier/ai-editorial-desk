@@ -7,7 +7,7 @@ export type DraftRefInput={claim_id:string;section_key:string;usage:CitationUsag
 export class WorkbenchApi{
  constructor(private readonly api:AdminApi){}
  overview(){return this.api.request<WorkbenchOverview>('/api/v1/admin/workbench/overview')}
- events(query:EventQuery){return this.api.request<WorkbenchEventPage>(`/api/v1/admin/workbench/events${q({page:query.page,page_size:query.pageSize,status:query.status,category:query.category,include_merged:query.includeMerged,risk:query.risk,has_evidence:query.hasEvidence,has_score:query.hasScore,has_draft:query.hasDraft,updated_from:localToIso(query.updatedFrom),updated_to:localToIso(query.updatedTo),q:query.q,sort_by:query.sortBy,sort_direction:query.sortDirection})}`)}
+ events(query:EventQuery){return this.api.request<WorkbenchEventPage>(`/api/v1/admin/workbench/events${q({page:query.page,page_size:query.pageSize,status:query.status,category:query.category,include_merged:query.includeMerged,risk:query.risk,has_evidence:query.hasEvidence,has_score:query.hasScore,has_draft:query.hasDraft,decision:query.decision,updated_from:localToIso(query.updatedFrom),updated_to:localToIso(query.updatedTo),q:query.q,sort_by:query.sortBy,sort_direction:query.sortDirection})}`)}
  event(id:string){return this.api.request<WorkbenchEventDetail>(`/api/v1/admin/workbench/events/${id}`)}
  signals(id:string,page=1,pageSize=50){return this.api.request<WorkbenchSignalPage>(`/api/v1/admin/workbench/events/${id}/signals${q({page,page_size:pageSize})}`)}
  evidence(id:string){return this.api.request<EventEvidence>(`/api/v1/admin/events/${id}/evidence`)}

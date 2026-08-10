@@ -10,6 +10,7 @@ from apps.api.routers.admin.connector_instances import router as instances_route
 from apps.api.routers.admin.connector_runs import router as runs_router
 from apps.api.routers.admin.drafts import router as drafts_router
 from apps.api.routers.admin.editorial import router as editorial_router
+from apps.api.routers.admin.editorial_workflow import router as editorial_workflow_router
 from apps.api.routers.admin.embeddings import router as embeddings_router
 from apps.api.routers.admin.events import router as events_router
 from apps.api.routers.admin.evidence import router as evidence_router
@@ -31,6 +32,7 @@ router.include_router(raw_signals_router)
 router.include_router(events_router)
 router.include_router(evidence_router)
 router.include_router(editorial_router)
+router.include_router(editorial_workflow_router)
 router.include_router(drafts_router)
 router.include_router(workbench_router)
 router.include_router(embeddings_router)

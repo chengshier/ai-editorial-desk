@@ -10,6 +10,15 @@ from packages.database.models.ai import (
     AITaskRouteRecord,
 )
 from packages.database.models.audit import ConfigurationChangeLog
+from packages.database.models.candidates import (
+    CandidateGroup,
+    CandidateRunMode,
+    CandidateRunStatus,
+    DailyCandidateRecord,
+    DailyCandidateRunRecord,
+    EditorialDecisionRecord,
+    EditorialDecisionType,
+)
 from packages.database.models.clustering import (
     MatchDecisionType,
     MatchOverrideDecision,
@@ -109,6 +118,9 @@ __all__ = [
     "AIModelRecord",
     "AIProviderRecord",
     "AITaskRouteRecord",
+    "CandidateGroup",
+    "CandidateRunMode",
+    "CandidateRunStatus",
     "ClusteringProcessingMode",
     "ClusteringProcessingRunRecord",
     "ClusteringProcessingStatus",
@@ -125,6 +137,8 @@ __all__ = [
     "ConnectorRunTriggerType",
     "ConnectorValidationRecord",
     "ConnectorValidationStatus",
+    "DailyCandidateRecord",
+    "DailyCandidateRunRecord",
     "DraftCitationUsage",
     "DraftClaimReferenceRecord",
     "DraftGenerationMode",
@@ -133,6 +147,8 @@ __all__ = [
     "DraftSourceType",
     "DraftStatus",
     "DraftType",
+    "EditorialDecisionRecord",
+    "EditorialDecisionType",
     "EditorialDraftRecord",
     "EditorialPackRecord",
     "EditorialRecommendedFormat",

@@ -57,6 +57,9 @@ EXPECTED_TABLES = {
     "draft_generation_runs",
     "editorial_drafts",
     "draft_claim_references",
+    "daily_candidate_runs",
+    "daily_candidates",
+    "editorial_decisions",
 }
 
 

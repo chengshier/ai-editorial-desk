@@ -188,3 +188,15 @@ M3 的 SignalEmbeddingRecord/version/input hash/recall 语义保持不变；M4-A
 12. **Markdown Export 是 deterministic / no-AI renderer。** Export 只读取已存在 Card/Pack/Draft，不能再次调用 AI、创建 Invocation 或修改 artifact；输出必须排除 raw_payload、credential、Authorization 与未受控 secret。
 13. **M4-D 不包含 M5 工作流。** DailyCandidate、今日候选池、采用/观察/放弃、Publication、Performance Feedback、自动调权与 M5 Editorial Workbench 均不属于 M4-D。
 14. **Mock/Fake Provider 不等于 Production Validation。** M4-D CI 的 Fake/Mock/MockTransport 只证明工程契约；`Production AI Provider Validation` 在没有真实 credential + network validation 前继续 `NOT_TESTED`。
+
+## D-028：M5-B Daily Candidate Rank 与 Human Editorial Decision 分离、快照化并保持人工优先
+
+日期：2026-08-10
+
+决定：
+
+1. **Daily Candidate 是可追溯快照，不是 Event 生命周期或发布指令。** Candidate Run 固化 as-of、输入、算法版本、排序理由与候选项；不能回写或替代 M3 Event lifecycle、M4 Trend/Score、Card、Pack、Draft 的既有真相。
+2. **Algorithmic Candidate Rank 与 Human Editorial Decision 独立。** 排名仅表达当前候选优先级；人工 `adopt/watch/drop/archive/restore` 以 append-only decision history 表达，不能被自动重跑静默覆盖。
+3. **Apply 必须 input-idempotent 且并发安全。** 相同输入复用既有 run；并发 Apply 由 PostgreSQL 约束与事务语义保证，不能依赖进程内锁或测试时序。
+4. **候选工作流不扩大自动化边界。** M5-B 不自动调用 AI、不自动发布、不自动改变风险、证据或人工决定；M5-C Publication/Feedback 与 M5-D Real E2E 继续不在本阶段范围。
+5. **本地 Windows symlink 权限不改变测试语义。** `WinError 1314` 仅作为本地环境限制记录；生产代码和 symlink 测试保持不变，Linux exact-head CI 继续承担该测试的验收。

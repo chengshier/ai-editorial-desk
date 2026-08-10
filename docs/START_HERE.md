@@ -14,14 +14,14 @@ M4-C Trend / Editorial Score COMPLETE / 已合并
 M4-D Event Card / Draft COMPLETE / 已合并
 M4 Overall Engineering COMPLETE
 Production AI Provider Validation NOT_TESTED
-M5-A Editorial Workbench Engineering COMPLETE / PR #20 OPEN
-M5-B Daily Candidates / Editorial Workflow NOT STARTED
+M5-A Editorial Workbench Engineering COMPLETE / MERGED
+M5-B Daily Candidates / Editorial Workflow COMPLETE / PR #21 OPEN
 M5-C Publication / Performance Feedback NOT STARTED
 M5-D Hardening / Real E2E / MVP Closeout NOT STARTED
 M5 Overall NOT COMPLETE
 ```
 
-M5-A 在 `feature/m5a-editorial-workbench` 完成工程实现并通过 PR #20 提交人工审查。PR 必须保持 Open，只有人工合并后才能开始 M5-B。M5-A 工程完成不改变 Production AI Provider 与 M2 真实验证状态。
+M5-A 已合并。M5-B 在 `feature/m5b-daily-candidates` 完成工程实现并通过 PR #21 提交人工审查，PR 保持 Open。M5-B 工程完成不改变 Production AI Provider 与 M2 真实验证状态。
 
 详细阶段验收见：
 
@@ -56,6 +56,7 @@ Connector Definition / Source / Schedule
 → Draft / Revision
 → Markdown Export
 → M5-A Editorial Workbench
+→ M5-B Daily Candidates / Editorial Workflow
 ```
 
 ## M5-A Workbench 能力
@@ -131,15 +132,19 @@ Production AI Provider Validation = NOT_TESTED
 
 M4/M5-A 工程完成、Mock/Fake CI 成功都不能把该状态改成 PASSED。只有后续使用真实 production credential 完成人工真实网络验证后才可单独更新。
 
+## M5-B Daily Candidates / Editorial Workflow
+
+M5-B 增加确定性 Daily Candidate snapshot、候选池读模型和人工 Editorial Decision history。候选排名与人工决定分离；Apply 保持 input idempotency / PostgreSQL concurrency safety，不自动调用 AI、自动发布或改写既有 Event、Evidence、Trend、Score、Card、Pack、Draft 语义。
+
 ## Migration
 
-M5-A **NO NEW MIGRATION**。当前 Alembic head 保持：
+M5-B 新增 migration。当前 Alembic head：
 
 ```text
-20260809_0013_m4d_editorial_pack_drafts
+20260810_0014_m5b_daily_candidates
 ```
 
-UI tab、筛选、排序、当前 Event 等状态属于前端状态，不持久化到数据库。
+0014 仅新增 Daily Candidate snapshot 与 Editorial Decision history，不修改既有 M1～M4 artifact 语义。
 
 ## 完整验收命令
 
@@ -168,12 +173,4 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`。M3 concurr
 
 ## 下一阶段
 
-下一阶段是 **M5-B Daily Candidates / Editorial Workflow**，当前 `NOT STARTED`。
-
-开始 M5-B 必须：
-
-1. 等待 PR #20 人工审查并合并；
-2. 重新确认当时最新 `main`；
-3. 从最新 `main` 创建独立 M5-B 分支；
-4. 不从 `feature/m5a-editorial-workbench` 或旧 feature 分支继续派生；
-5. 单独确认 M5-B 的 DailyCandidate / editorial decision 数据语义与 migration gate。
+下一阶段是 **M5-C Publication / Performance Feedback**，当前 `NOT STARTED`。在 PR #21 经人工审查并合并前，不开始 M5-C；M5 Overall 仍为 `NOT COMPLETE`。

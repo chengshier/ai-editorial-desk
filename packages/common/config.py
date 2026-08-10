@@ -1,4 +1,5 @@
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
     app_debug: bool = True
     app_host: str = "127.0.0.1"
     app_port: int = 8000
+    business_timezone: str = "Asia/Shanghai"
 
     database_url: SecretStr
     app_secret_key: SecretStr = Field(min_length=32)
@@ -44,6 +46,18 @@ class Settings(BaseSettings):
         if not url.database:
             raise ValueError("DATABASE_URL must include a database name")
         return value
+
+    @field_validator("business_timezone")
+    @classmethod
+    def validate_business_timezone(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("BUSINESS_TIMEZONE must not be empty")
+        try:
+            ZoneInfo(normalized)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("BUSINESS_TIMEZONE must be a valid IANA timezone") from exc
+        return normalized
 
     @property
     def database_url_value(self) -> str:
