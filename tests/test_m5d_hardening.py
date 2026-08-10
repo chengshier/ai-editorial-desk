@@ -159,7 +159,7 @@ async def _fake_provider_e2e_fixture(
         run_metadata={"validation_kind": "m5d-hardening"},
     )
     session.add(run)
-    await session.flush()
+    await session.commit()
 
     raw = RawSignal(
         platform="bilibili",
