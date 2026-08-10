@@ -18,6 +18,8 @@ from packages.database.models import (
     EditorialDecisionRecord,
     EditorialDecisionType,
     EditorialRiskLevel,
+    EventRecord,
+    EventStatus,
 )
 from packages.database.models.publication import (
     PerformanceHorizon,
@@ -42,7 +44,6 @@ from packages.editorial.publication_services import (
     PublicationService,
 )
 from packages.events.services import EventService
-from packages.database.models import EventRecord, EventStatus
 from tests.m4d_helpers import BASE_TIME, create_m4d_context
 
 pytestmark = pytest.mark.usefixtures("clean_database")
@@ -66,18 +67,17 @@ async def _simple_event(title: str) -> EventRecord:
 
 async def _backfill_publication(suffix: str) -> PublicationRecord:
     event_record = await _simple_event(f"Backfill {suffix}")
-    return (
-        await PublicationService().create(
-            event_id=event_record.id,
-            publication_mode=PublicationMode.MANUAL_BACKFILL,
-            platform_key="test.platform",
-            public_url=f"https://example.com/posts/{suffix}",
-            external_post_id=f"post-{suffix}",
-            published_at=BASE_TIME,
-            actor=ACTOR,
-            backfill_reason="Historical publication imported manually.",
-        )
-    ).publication
+    outcome = await PublicationService().create(
+        event_id=event_record.id,
+        publication_mode=PublicationMode.MANUAL_BACKFILL,
+        platform_key="test.platform",
+        public_url=f"https://example.com/posts/{suffix}",
+        external_post_id=f"post-{suffix}",
+        published_at=BASE_TIME,
+        actor=ACTOR,
+        backfill_reason="Historical publication imported manually.",
+    )
+    return outcome.publication
 
 
 async def _workflow_fixture() -> tuple[UUID, UUID, UUID, UUID]:
@@ -172,7 +172,6 @@ async def test_workflow_publication_freezes_exact_provenance() -> None:
     assert publication.editorial_decision_id == decision_id
     assert publication.editorial_decision_snapshot == EditorialDecisionType.ADOPT
     assert publication.public_url == "https://video.example/p/123"
-
     factory = get_async_sessionmaker()
     async with factory() as session:
         async with session.begin():
@@ -231,7 +230,6 @@ async def test_manual_backfill_and_merged_event_boundaries() -> None:
     assert publication.candidate_id is None
     assert publication.editorial_decision_id is None
     assert publication.backfill_reason
-
     target = await _simple_event("Canonical target")
     source = await _simple_event("Merged source")
     factory = get_async_sessionmaker()
@@ -282,11 +280,10 @@ async def test_publication_concurrent_identity_is_database_safe() -> None:
 @pytest.mark.asyncio
 async def test_performance_null_zero_signed_and_same_snapshot_idempotency() -> None:
     publication = await _backfill_publication("metrics")
-    service = PublicationPerformanceService()
     observed = BASE_TIME + timedelta(hours=1)
 
     async def submit() -> tuple[UUID, bool]:
-        outcome = await service.add_manual_snapshot(
+        outcome = await PublicationPerformanceService().add_manual_snapshot(
             publication_id=publication.id,
             observed_at=observed,
             horizon=PerformanceHorizon.H1,
@@ -411,7 +408,6 @@ async def test_csv_invalid_and_concurrent_apply() -> None:
         + f"{unknown_id},,,,2026-08-10T06:00:00,h1,10,,,,,,,\n"
     )
     assert any(error.code == "TIMEZONE_REQUIRED" for error in preview.errors)
-
     publication = await _backfill_publication("csv-concurrent")
     csv_text = (
         header
@@ -421,14 +417,13 @@ async def test_csv_invalid_and_concurrent_apply() -> None:
     )
 
     async def apply_once() -> UUID:
-        return (
-            await PerformanceImportService().apply(
-                csv_text=csv_text,
-                file_name="same.csv",
-                actor=ACTOR,
-                confirmation=True,
-            )
-        ).run.id
+        outcome = await PerformanceImportService().apply(
+            csv_text=csv_text,
+            file_name="same.csv",
+            actor=ACTOR,
+            confirmation=True,
+        )
+        return outcome.run.id
 
     first, second = await asyncio.gather(apply_once(), apply_once())
     assert first == second
