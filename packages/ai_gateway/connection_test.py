@@ -8,7 +8,12 @@ from uuid import UUID, uuid4
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from packages.ai_gateway.budget import AIBudgetGate, AIBudgetReservation
-from packages.ai_gateway.costs import approximate_input_tokens, estimate_cost, pricing_snapshot, reserve_estimate
+from packages.ai_gateway.costs import (
+    approximate_input_tokens,
+    estimate_cost,
+    pricing_snapshot,
+    reserve_estimate,
+)
 from packages.ai_gateway.domain import (
     AIMessage,
     AIModelTarget,
@@ -26,7 +31,7 @@ from packages.database.models import AIInvocationRecord, AIModelRecord, AIProvid
 
 
 class AIConnectionTester:
-    """Execute one tiny, explicit provider test without route fallback or production fixture shortcuts."""
+    """Execute one tiny, explicit provider test without route fallback shortcuts."""
 
     def __init__(
         self,
@@ -35,6 +40,7 @@ class AIConnectionTester:
         provider_factory: ProviderAdapterFactory | None = None,
     ) -> None:
         self.session_factory = session_factory
+        self.production_validation_eligible = provider_factory is None
         self.provider_factory = provider_factory or DefaultProviderAdapterFactory()
         self.budgets = AIBudgetGate(session_factory)
         self.invocations = AIInvocationStore(session_factory)
@@ -46,7 +52,10 @@ class AIConnectionTester:
         model_id: UUID,
         actor: str,
     ) -> tuple[UUID | None, str, str | None]:
-        target, capability = await self._target(provider_id=provider_id, model_id=model_id)
+        target, capability = await self._target(
+            provider_id=provider_id,
+            model_id=model_id,
+        )
         invocation_id = uuid4()
         started_at = datetime.now(UTC)
         input_hash = hashlib.sha256(b"provider-connection-test-v1:ping").hexdigest()
@@ -61,7 +70,12 @@ class AIConnectionTester:
                         capability=capability,
                         status="running",
                         input_hash=input_hash,
-                        metadata_json={"test": True},
+                        metadata_json={
+                            "test": True,
+                            "production_validation_eligible": (
+                                self.production_validation_eligible
+                            ),
+                        },
                         started_at=started_at,
                     )
                 )
@@ -81,8 +95,15 @@ class AIConnectionTester:
                 estimated_cost=reserve_cost,
                 estimated_tokens=reserve_tokens,
             )
-            usage, request_id = await self._call(target=target, capability=capability)
-            cost = estimate_cost(target=target, capability=capability, usage=usage)
+            usage, request_id = await self._call(
+                target=target,
+                capability=capability,
+            )
+            cost = estimate_cost(
+                target=target,
+                capability=capability,
+                usage=usage,
+            )
             actual_tokens = usage.total_tokens or usage.input_tokens
             await self.budgets.settle(
                 reservation,
@@ -108,7 +129,12 @@ class AIConnectionTester:
                 provider_request_id=request_id,
                 error_code=None,
                 error_message=None,
-                metadata={"test": True},
+                metadata={
+                    "test": True,
+                    "production_validation_eligible": (
+                        self.production_validation_eligible
+                    ),
+                },
             )
             await self.invocations.finish_success(
                 invocation_id=invocation_id,
@@ -128,7 +154,8 @@ class AIConnectionTester:
             if reservation is not None:
                 await self.budgets.settle(
                     reservation,
-                    completed=exc.code in {
+                    completed=exc.code
+                    in {
                         AIErrorCode.TIMEOUT,
                         AIErrorCode.NETWORK_ERROR,
                         AIErrorCode.INVALID_RESPONSE,
@@ -144,7 +171,11 @@ class AIConnectionTester:
                 fallback_index=0,
                 provider_key=target.provider_key,
                 model_name=target.model_name,
-                status="blocked" if exc.code is AIErrorCode.BUDGET_EXCEEDED else "failed",
+                status=(
+                    "blocked"
+                    if exc.code is AIErrorCode.BUDGET_EXCEEDED
+                    else "failed"
+                ),
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
                 usage=None,
@@ -154,7 +185,12 @@ class AIConnectionTester:
                 provider_request_id=None,
                 error_code=exc.code.value,
                 error_message=exc.message,
-                metadata={"test": True},
+                metadata={
+                    "test": True,
+                    "production_validation_eligible": (
+                        self.production_validation_eligible
+                    ),
+                },
             )
             await self.invocations.finish_failure(
                 invocation_id=invocation_id,
@@ -188,7 +224,12 @@ class AIConnectionTester:
             response = await adapter.generate_structured(
                 target=target,
                 request=StructuredProviderRequest(
-                    messages=(AIMessage(role="user", content="Return {\"ok\":true}."),),
+                    messages=(
+                        AIMessage(
+                            role="user",
+                            content='Return {"ok":true}.',
+                        ),
+                    ),
                     schema={
                         "type": "object",
                         "properties": {"ok": {"type": "boolean"}},
@@ -223,9 +264,15 @@ class AIConnectionTester:
             model = await session.get(AIModelRecord, model_id)
             provider = await session.get(AIProviderRecord, provider_id)
             if model is None or provider is None or model.provider_id != provider.id:
-                raise AIGatewayError(AIErrorCode.INVALID_REQUEST, "Connection test Model/Provider 无效")
+                raise AIGatewayError(
+                    AIErrorCode.INVALID_REQUEST,
+                    "Connection test Model/Provider 无效",
+                )
             if not provider.enabled or not model.enabled:
-                raise AIGatewayError(AIErrorCode.INVALID_REQUEST, "Connection test 要求 enabled Provider/Model")
+                raise AIGatewayError(
+                    AIErrorCode.INVALID_REQUEST,
+                    "Connection test 要求 enabled Provider/Model",
+                )
             if "embedding" in model.capabilities:
                 capability = "embedding"
             elif "text_generation" in model.capabilities:
@@ -233,7 +280,10 @@ class AIConnectionTester:
             elif "structured_output" in model.capabilities:
                 capability = "structured_output"
             else:
-                raise AIGatewayError(AIErrorCode.CAPABILITY_NOT_SUPPORTED, "没有可测试的 M4-A capability")
+                raise AIGatewayError(
+                    AIErrorCode.CAPABILITY_NOT_SUPPORTED,
+                    "没有可测试的 M4-A capability",
+                )
             return (
                 AIModelTarget(
                     model_id=model.id,
@@ -258,17 +308,30 @@ class AIConnectionTester:
                 capability,
             )
 
-    async def _validation_status(self, provider_id: UUID, status: str, actor: str) -> None:
+    async def _validation_status(
+        self,
+        provider_id: UUID,
+        status: str,
+        actor: str,
+    ) -> None:
+        if not self.production_validation_eligible:
+            return
         async with self.session_factory() as session:
             async with session.begin():
-                provider = await session.get(AIProviderRecord, provider_id, with_for_update=True)
+                provider = await session.get(
+                    AIProviderRecord,
+                    provider_id,
+                    with_for_update=True,
+                )
                 if provider is None:
                     return
                 before = {
                     "validation_status": provider.validation_status,
-                    "last_validated_at": provider.last_validated_at.isoformat()
-                    if provider.last_validated_at
-                    else None,
+                    "last_validated_at": (
+                        provider.last_validated_at.isoformat()
+                        if provider.last_validated_at
+                        else None
+                    ),
                 }
                 provider.validation_status = status
                 provider.last_validated_at = datetime.now(UTC)
