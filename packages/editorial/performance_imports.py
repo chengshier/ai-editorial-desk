@@ -165,7 +165,6 @@ class PerformanceImportService:
                         "CSV 存在 validation errors；Apply 已取消",
                         details=[item.as_dict() for item in analysis.errors[:100]],
                     )
-
                 run = PerformanceImportRunRecord(
                     source_type=PerformanceSourceType.CSV,
                     mapping_version=PERFORMANCE_CSV_VERSION,
@@ -187,8 +186,7 @@ class PerformanceImportService:
                         await session.flush()
                 except IntegrityError:
                     existing = await _successful_run(
-                        session,
-                        file_sha256=analysis.file_sha256,
+                        session, file_sha256=analysis.file_sha256
                     )
                     if existing is not None:
                         return PerformanceImportApplyOutcome(run=existing, reused=True)
@@ -216,9 +214,9 @@ class PerformanceImportService:
                         duplicate_count += 1
                     else:
                         unique_by_hash[row.snapshot_hash] = row
-
-                hashes = list(unique_by_hash)
-                existing_hashes = await _existing_hashes(session, hashes)
+                existing_hashes = await _existing_hashes(
+                    session, list(unique_by_hash)
+                )
                 duplicate_count += len(existing_hashes)
                 inserted = 0
                 for snapshot_hash, row in unique_by_hash.items():
@@ -240,7 +238,6 @@ class PerformanceImportService:
                         )
                     )
                     inserted += 1
-
                 run.inserted_count = inserted
                 run.duplicate_count = duplicate_count
                 run.status = PerformanceImportStatus.SUCCEEDED
@@ -305,16 +302,16 @@ async def _analyze(
             mapping_version=PERFORMANCE_CSV_VERSION,
             file_sha256=file_hash,
             total_rows=total_rows,
-            valid_rows=0 if not parsed else len(parsed),
+            valid_rows=len(parsed),
             invalid_rows=max(1, total_rows - len(parsed)),
             duplicate_rows=0,
             normalized_rows=(),
             errors=tuple(parse_errors),
         )
-
     rows, resolve_errors = await _resolve_rows(session, parsed)
-    hashes = [row.snapshot_hash for row in rows]
-    existing_hashes = await _existing_hashes(session, hashes)
+    existing_hashes = await _existing_hashes(
+        session, [row.snapshot_hash for row in rows]
+    )
     seen: set[str] = set()
     duplicate_rows = 0
     summaries: list[dict[str, object]] = []
@@ -325,7 +322,6 @@ async def _analyze(
         seen.add(row.snapshot_hash)
         if len(summaries) < 50:
             summaries.append(row.summary(duplicate=duplicate))
-
     return PerformanceImportPreview(
         mapping_version=PERFORMANCE_CSV_VERSION,
         file_sha256=file_hash,
@@ -338,9 +334,7 @@ async def _analyze(
     )
 
 
-async def _existing_hashes(
-    session: AsyncSession, hashes: list[str]
-) -> set[str]:
+async def _existing_hashes(session: AsyncSession, hashes: list[str]) -> set[str]:
     if not hashes:
         return set()
     return set(
@@ -375,8 +369,7 @@ async def _normalized_rows(
 def _validate_text_size(csv_text: str) -> None:
     if not csv_text.strip():
         raise PerformanceImportValidationError("csv_text 不能为空")
-    size = len(csv_text.encode("utf-8"))
-    if size > MAX_PERFORMANCE_CSV_BYTES:
+    if len(csv_text.encode("utf-8")) > MAX_PERFORMANCE_CSV_BYTES:
         raise PerformanceImportValidationError(
             f"CSV 最大允许 {MAX_PERFORMANCE_CSV_BYTES} bytes"
         )
@@ -394,19 +387,13 @@ def _parse_csv(
     if missing:
         errors.append(
             PerformanceImportError(
-                1,
-                "header",
-                "MISSING_COLUMNS",
-                f"missing: {', '.join(missing)}",
+                1, "header", "MISSING_COLUMNS", f"missing: {', '.join(missing)}"
             )
         )
     if extra:
         errors.append(
             PerformanceImportError(
-                1,
-                "header",
-                "UNKNOWN_COLUMNS",
-                f"unknown: {', '.join(extra)}",
+                1, "header", "UNKNOWN_COLUMNS", f"unknown: {', '.join(extra)}"
             )
         )
     if errors:
@@ -431,19 +418,13 @@ def _parse_csv(
         except _RowError as exc:
             errors.append(
                 PerformanceImportError(
-                    row_number,
-                    exc.field,
-                    exc.code,
-                    exc.message,
+                    row_number, exc.field, exc.code, exc.message
                 )
             )
         except (PerformanceValidationError, PublicationValidationError) as exc:
             errors.append(
                 PerformanceImportError(
-                    row_number,
-                    "metrics",
-                    "INVALID_VALUE",
-                    str(exc),
+                    row_number, "metrics", "INVALID_VALUE", str(exc)
                 )
             )
     if total_rows > MAX_PERFORMANCE_CSV_ROWS:
@@ -454,7 +435,9 @@ def _parse_csv(
 def _parse_row(raw: dict[str, str | None], row_number: int) -> _ParsedRow:
     publication_id = _optional_uuid(raw.get("publication_id"), row_number)
     platform_key = _optional_platform(raw.get("platform_key"), row_number)
-    external_post_id = _blank_to_none(raw.get("external_post_id"))
+    external_post_id = _optional_external_post_id(
+        raw.get("external_post_id"), row_number
+    )
     public_url = _optional_url(raw.get("public_url"), row_number)
     if (
         publication_id is None
@@ -472,9 +455,7 @@ def _parse_row(raw: dict[str, str | None], row_number: int) -> _ParsedRow:
         horizon = PerformanceHorizon(horizon_raw)
     except ValueError as exc:
         raise _RowError(
-            "horizon",
-            "INVALID_HORIZON",
-            "horizon 必须是 h1/h24/d7/custom",
+            "horizon", "INVALID_HORIZON", "horizon 必须是 h1/h24/d7/custom"
         ) from exc
     metrics = PerformanceMetrics(
         views=_parse_int(raw.get("views"), "views", signed=False),
@@ -489,9 +470,7 @@ def _parse_row(raw: dict[str, str | None], row_number: int) -> _ParsedRow:
         shares=_parse_int(raw.get("shares"), "shares", signed=False),
         favorites=_parse_int(raw.get("favorites"), "favorites", signed=False),
         follower_delta=_parse_int(
-            raw.get("follower_delta"),
-            "follower_delta",
-            signed=True,
+            raw.get("follower_delta"), "follower_delta", signed=True
         ),
     ).validate()
     return _ParsedRow(
@@ -507,29 +486,31 @@ def _parse_row(raw: dict[str, str | None], row_number: int) -> _ParsedRow:
 
 
 async def _resolve_rows(
-    session: AsyncSession,
-    parsed: list[_ParsedRow],
+    session: AsyncSession, parsed: list[_ParsedRow]
 ) -> tuple[list[NormalizedPerformanceImportRow], list[PerformanceImportError]]:
-    errors: list[PerformanceImportError] = []
-    ids = {row.publication_id for row in parsed if row.publication_id is not None}
-    external_keys = {
+    ids: set[UUID] = {
+        row.publication_id for row in parsed if row.publication_id is not None
+    }
+    external_keys: set[tuple[str, str]] = {
         (row.platform_key, row.external_post_id)
         for row in parsed
-        if row.publication_id is None and row.platform_key and row.external_post_id
+        if row.publication_id is None
+        and row.platform_key is not None
+        and row.external_post_id is not None
     }
-    urls = {
+    urls: set[str] = {
         row.public_url
         for row in parsed
         if row.publication_id is None
         and not (row.platform_key and row.external_post_id)
         and row.public_url is not None
     }
-
     by_id = await _publications_by_id(session, ids)
     by_external = await _publications_by_external(session, external_keys)
     by_url = await _publications_by_url(session, urls)
 
     rows: list[NormalizedPerformanceImportRow] = []
+    errors: list[PerformanceImportError] = []
     for row in parsed:
         publication, error = _match_publication(row, by_id, by_external, by_url)
         if error is not None:
@@ -550,13 +531,6 @@ async def _resolve_rows(
                 )
             )
             continue
-        snapshot_hash = performance_snapshot_hash(
-            publication_id=publication.id,
-            observed_at=row.observed_at,
-            horizon=row.horizon,
-            metrics=row.metrics,
-            source=PerformanceSourceType.CSV,
-        )
         rows.append(
             NormalizedPerformanceImportRow(
                 row_number=row.row_number,
@@ -567,37 +541,35 @@ async def _resolve_rows(
                 observed_at=row.observed_at,
                 horizon=row.horizon,
                 metrics=row.metrics,
-                snapshot_hash=snapshot_hash,
+                snapshot_hash=performance_snapshot_hash(
+                    publication_id=publication.id,
+                    observed_at=row.observed_at,
+                    horizon=row.horizon,
+                    metrics=row.metrics,
+                    source=PerformanceSourceType.CSV,
+                ),
             )
         )
     return rows, errors
 
 
 async def _publications_by_id(
-    session: AsyncSession,
-    ids: set[UUID | None],
+    session: AsyncSession, ids: set[UUID]
 ) -> dict[UUID, PublicationRecord]:
-    concrete = {item for item in ids if item is not None}
-    if not concrete:
+    if not ids:
         return {}
     records = (
         await session.scalars(
-            select(PublicationRecord).where(PublicationRecord.id.in_(concrete))
+            select(PublicationRecord).where(PublicationRecord.id.in_(ids))
         )
     ).all()
     return {item.id: item for item in records}
 
 
 async def _publications_by_external(
-    session: AsyncSession,
-    keys: set[tuple[str | None, str | None]],
+    session: AsyncSession, keys: set[tuple[str, str]]
 ) -> dict[tuple[str, str], PublicationRecord]:
-    concrete = {
-        (platform, external)
-        for platform, external in keys
-        if platform is not None and external is not None
-    }
-    if not concrete:
+    if not keys:
         return {}
     records = (
         await session.scalars(
@@ -605,7 +577,7 @@ async def _publications_by_external(
                 tuple_(
                     PublicationRecord.platform_key,
                     PublicationRecord.external_post_id,
-                ).in_(concrete)
+                ).in_(keys)
             )
         )
     ).all()
@@ -617,16 +589,14 @@ async def _publications_by_external(
 
 
 async def _publications_by_url(
-    session: AsyncSession,
-    urls: set[str | None],
+    session: AsyncSession, urls: set[str]
 ) -> dict[str, list[PublicationRecord]]:
-    concrete = {item for item in urls if item is not None}
     result: dict[str, list[PublicationRecord]] = {}
-    if not concrete:
+    if not urls:
         return result
     records = (
         await session.scalars(
-            select(PublicationRecord).where(PublicationRecord.public_url.in_(concrete))
+            select(PublicationRecord).where(PublicationRecord.public_url.in_(urls))
         )
     ).all()
     for item in records:
@@ -650,7 +620,7 @@ def _match_publication(
                 "publication_id 不存在",
             )
         return publication, None
-    if row.platform_key and row.external_post_id:
+    if row.platform_key is not None and row.external_post_id is not None:
         publication = by_external.get((row.platform_key, row.external_post_id))
         if publication is None:
             return None, _error(
@@ -684,8 +654,7 @@ def _match_publication(
 
 
 def _identity_mismatch(
-    row: _ParsedRow,
-    publication: PublicationRecord,
+    row: _ParsedRow, publication: PublicationRecord
 ) -> PerformanceImportError | None:
     if row.platform_key is not None and row.platform_key != publication.platform_key:
         return _error(
@@ -742,6 +711,17 @@ def _optional_platform(value: str | None, row_number: int) -> str | None:
     return normalized
 
 
+def _optional_external_post_id(value: str | None, row_number: int) -> str | None:
+    normalized = _blank_to_none(value)
+    if normalized is not None and len(normalized) > 255:
+        raise _RowError(
+            "external_post_id",
+            "VALUE_TOO_LONG",
+            f"row {row_number}: external_post_id 超过 255 字符",
+        )
+    return normalized
+
+
 def _optional_url(value: str | None, row_number: int) -> str | None:
     normalized = _blank_to_none(value)
     if normalized is None:
@@ -750,9 +730,7 @@ def _optional_url(value: str | None, row_number: int) -> str | None:
         return normalize_public_url(normalized)
     except PublicationValidationError as exc:
         raise _RowError(
-            "public_url",
-            "INVALID_URL",
-            f"row {row_number}: {exc}",
+            "public_url", "INVALID_URL", f"row {row_number}: {exc}"
         ) from exc
 
 
@@ -764,15 +742,11 @@ def _parse_time(value: str | None) -> datetime:
         parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
     except ValueError as exc:
         raise _RowError(
-            "observed_at",
-            "INVALID_DATETIME",
-            "observed_at 必须是 ISO 8601",
+            "observed_at", "INVALID_DATETIME", "observed_at 必须是 ISO 8601"
         ) from exc
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise _RowError(
-            "observed_at",
-            "TIMEZONE_REQUIRED",
-            "observed_at 必须包含 timezone",
+            "observed_at", "TIMEZONE_REQUIRED", "observed_at 必须包含 timezone"
         )
     return parsed.astimezone(UTC)
 
@@ -786,19 +760,12 @@ def _parse_int(value: str | None, field: str, *, signed: bool) -> int | None:
     except ValueError as exc:
         raise _RowError(field, "INVALID_INTEGER", f"{field} 必须是整数") from exc
     if not signed and parsed < 0:
-        raise _RowError(
-            field,
-            "NEGATIVE_NOT_ALLOWED",
-            f"{field} 不能小于 0",
-        )
+        raise _RowError(field, "NEGATIVE_NOT_ALLOWED", f"{field} 不能小于 0")
     return parsed
 
 
 def _parse_float(
-    value: str | None,
-    field: str,
-    *,
-    nonnegative: bool,
+    value: str | None, field: str, *, nonnegative: bool
 ) -> float | None:
     normalized = _blank_to_none(value)
     if normalized is None:
@@ -810,20 +777,12 @@ def _parse_float(
     if not math.isfinite(parsed):
         raise _RowError(field, "INVALID_NUMBER", f"{field} 必须是有限数字")
     if nonnegative and parsed < 0:
-        raise _RowError(
-            field,
-            "NEGATIVE_NOT_ALLOWED",
-            f"{field} 不能小于 0",
-        )
+        raise _RowError(field, "NEGATIVE_NOT_ALLOWED", f"{field} 不能小于 0")
     return parsed
 
 
 def _parse_percent(value: str | None) -> float | None:
-    parsed = _parse_float(
-        value,
-        "completion_rate_percent",
-        nonnegative=True,
-    )
+    parsed = _parse_float(value, "completion_rate_percent", nonnegative=True)
     if parsed is None:
         return None
     if parsed > 100:
@@ -843,9 +802,6 @@ def _blank_to_none(value: str | None) -> str | None:
 
 
 def _error(
-    row: _ParsedRow,
-    field: str,
-    code: str,
-    message: str,
+    row: _ParsedRow, field: str, code: str, message: str
 ) -> PerformanceImportError:
     return PerformanceImportError(row.row_number, field, code, message)
