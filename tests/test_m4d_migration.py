@@ -77,7 +77,7 @@ def test_m4d_migration_creates_versioned_card_pack_draft_schema() -> None:
 
 def test_m4d_downgrade_one_preserves_m4c_tables() -> None:
     config = Config("alembic.ini")
-    command.upgrade(config, "20260809_0013")
+    command.downgrade(config, "20260809_0013")
     try:
         command.downgrade(config, "-1")
         tables = asyncio.run(_tables())

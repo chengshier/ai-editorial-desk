@@ -88,6 +88,21 @@ class EditorialDecisionService:
                         or run.status is not CandidateRunStatus.SUCCEEDED
                     ):
                         raise ResourceNotFoundError("Daily Candidate Run 不存在")
+                    latest_run = await _latest_successful_run_for_day(
+                        session,
+                        business_date=run.business_date,
+                        timezone=run.timezone,
+                    )
+                    if latest_run is None or latest_run.id != run.id:
+                        raise CandidateRunStaleError(
+                            "旧 Candidate Run 只读，不能直接创建新的 Editorial Decision",
+                            details={
+                                "candidate_run_id": str(run.id),
+                                "latest_run_id": (
+                                    str(latest_run.id) if latest_run else None
+                                ),
+                            },
+                        )
 
                 ranking_version = (
                     run.ranking_version
@@ -142,23 +157,6 @@ class EditorialDecisionService:
                         decision=current,
                         reused=True,
                     )
-
-                if run is not None:
-                    latest_run = await _latest_successful_run_for_day(
-                        session,
-                        business_date=run.business_date,
-                        timezone=run.timezone,
-                    )
-                    if latest_run is None or latest_run.id != run.id:
-                        raise CandidateRunStaleError(
-                            "旧 Candidate Run 只读，不能直接创建新的 Editorial Decision",
-                            details={
-                                "candidate_run_id": str(run.id),
-                                "latest_run_id": (
-                                    str(latest_run.id) if latest_run else None
-                                ),
-                            },
-                        )
 
                 current_id = current.id if current is not None else None
                 if expected_previous_decision_id != current_id:
