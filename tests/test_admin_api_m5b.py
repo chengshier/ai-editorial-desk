@@ -36,6 +36,8 @@ async def test_m5b_admin_api_auth_safe_projection_and_no_automatic_ai(
         db_session,
         risk_level=EditorialRiskLevel.R3,
         title="M5-B API candidate",
+        event_last_updated_at=AS_OF,
+        trend_created_at=AS_OF,
     )
     before_ai = int(
         await db_session.scalar(select(func.count(AIInvocationRecord.id))) or 0
@@ -130,8 +132,18 @@ async def test_m5b_admin_api_auth_safe_projection_and_no_automatic_ai(
 async def test_candidate_list_decision_overlay_query_count_is_bounded(
     db_session,  # type: ignore[no-untyped-def]
 ) -> None:
-    await create_m4d_context(db_session, title="M5-B bounded one")
-    await create_m4d_context(db_session, title="M5-B bounded two")
+    await create_m4d_context(
+        db_session,
+        title="M5-B bounded one",
+        event_last_updated_at=AS_OF,
+        trend_created_at=AS_OF,
+    )
+    await create_m4d_context(
+        db_session,
+        title="M5-B bounded two",
+        event_last_updated_at=AS_OF,
+        trend_created_at=AS_OF,
+    )
     request = CandidateGenerationRequest(
         business_date=AS_OF.date(),
         timezone="UTC",

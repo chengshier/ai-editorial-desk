@@ -1,11 +1,11 @@
 # M5 Acceptance Report
 
-> 本文记录 M5 工程阶段状态。M5-A 完成不代表 M5 Overall 完成，也不改变历史真实验证状态。
+> 本文记录 M5 工程阶段状态。M5-A/M5-B 完成不代表 M5 Overall 完成，也不改变历史真实验证状态。
 
 ## 阶段状态
 
-- **M5-A Editorial Workbench：COMPLETE（PR Open，待人工合并）**
-- **M5-B Daily Candidates / Editorial Workflow：NOT STARTED**
+- **M5-A Editorial Workbench：COMPLETE / MERGED**
+- **M5-B Daily Candidates / Editorial Workflow：COMPLETE / PR #21 OPEN**
 - **M5-C Publication / Performance Feedback：NOT STARTED**
 - **M5-D Hardening / Real E2E / MVP Closeout：NOT STARTED**
 - **M5 Overall：NOT COMPLETE**
@@ -56,24 +56,30 @@ EventSignal 工作台投影仅返回可展示元数据与原始 URL，不返回 
 - R3/R4、stale context、citation validation、Human verification 等最终规则始终由原后端业务 Service/API 决定；
 - 不自动调用 AI、不自动创建 Card/Pack/Draft、不自动发布、不自动 fallback 到 Fake Provider。
 
+## M5-B 交付范围
+
+M5-B 新增确定性 Daily Candidate snapshot、候选池读模型和人工 Editorial Decision history。Candidate Rank 是可解释的算法结果，Human Editorial Decision 独立记录 `adopt/watch/drop/archive/restore`；二者不互相伪装，也不改变 Event lifecycle。
+
+Candidate Apply 对同一输入保持幂等，并使用 PostgreSQL 并发保护避免重复 run。M5-B 不自动调用 AI、不自动发布、不修改 M3/M4 frozen semantics；Web 只展示与调用既有安全边界内的管理能力。
+
 ## Migration
 
-M5-A **NO NEW MIGRATION**。
+M5-B 新增 migration。
 
 Alembic head 保持：
 
-`20260809_0013_m4d_editorial_pack_drafts`
+`20260810_0014_m5b_daily_candidates`
 
-UI tab、筛选、排序、当前 Event 等状态均为前端状态，不写数据库。
+已在全新、独立的本地 PostgreSQL 测试库完成 `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head` 往返，最终 revision 为 `20260810_0014`（迁移文件 `20260810_0014_m5b_daily_candidates`）。此前旧测试库的 downgrade 问题记录为 local stale test data，不作为 migration failure。
 
 ## 验收测试
 
-新增 PostgreSQL Workbench 聚合测试覆盖：分页/筛选、merged include/exclude、effective Human override、Evidence/Draft presence、latest artifact、detail aggregation、安全 EventSignal 投影与 bounded query 策略。
+M5-B 定向 PostgreSQL 测试覆盖 deterministic ranking、explainability、input idempotency、concurrent apply、decision risk/archive/restore/drop、stale protection、evidence merge、Admin safe projection、bounded query 与 Workbench read-only overlay。
 
 新增 Web Mock API 测试覆盖 Event Explorer、Evidence 分级、Source URL、Unavailable Trend、Original/Effective Score、Human Override、Card/Pack、AI/Human Draft version、R3 approval、stale context、Merge/Split、Actor 缺失、安全 URL 与原 M1～M4 导航保留。
 
-最终工程验收以本 PR exact-head GitHub Actions 为准：`ruff`、`mypy`、全量 `pytest`、M3 regression/evaluation/performance、Alembic 五步往返、Definition sync ×2、Web lint/typecheck/test/build。AI 测试继续 offline only。
+本地 M5-B 定向测试已通过；Web `lint`、`typecheck`、`test -- --run`、`build` 已通过。Windows 的 `test_browser_profile_resolver_rejects_missing_and_symlink` 受 `WinError 1314` symlink privilege 限制，未改变生产代码或测试语义；Linux exact-head GitHub Actions 仍是最终验收。AI 测试继续 offline only。
 
 ## 下一阶段
 
-下一阶段为 **M5-B Daily Candidates / Editorial Workflow**，但只有 M5-A PR 经人工审查并合并后才能开始。本 PR 不实现 M5-B。
+M5-B PR #21 保持 Open，等待人工审查与 exact-head CI。下一阶段为 **M5-C Publication / Performance Feedback**，当前 `NOT STARTED`；M5-D 也保持 `NOT STARTED`，M5 Overall 仍为 `NOT COMPLETE`。

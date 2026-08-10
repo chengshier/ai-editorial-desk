@@ -75,6 +75,8 @@ async def create_m4d_context(
         EditorialRecommendedFormat.QUICK_EXPLAINER
     ),
     title: str = "M4-D Editorial Event",
+    event_last_updated_at: datetime | None = None,
+    trend_created_at: datetime | None = None,
 ) -> M4DContext:
     event, signals = await _create_event_and_signals(session, title=title)
     evidence = EventEvidenceService()
@@ -198,6 +200,14 @@ async def create_m4d_context(
         event_id=event.id,
         event_card_id=card.id,
     )
+    if event_last_updated_at is not None or trend_created_at is not None:
+        async with session.begin():
+            if event_last_updated_at is not None:
+                event.last_updated_at = event_last_updated_at
+            if trend_created_at is not None:
+                trend_row = await session.get(EventTrendSnapshotRecord, trend.id)
+                assert trend_row is not None
+                trend_row.created_at = trend_created_at
     return M4DContext(
         event=event,
         signals=signals,

@@ -2,7 +2,7 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench Engineering COMPLETE / PR #20 OPEN；M5 Overall = NOT COMPLETE；M5-B / M5-C / M5-D = NOT STARTED。**
+**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench Engineering COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / PR #21 OPEN；M5-C / M5-D = NOT STARTED；M5 Overall = NOT COMPLETE。**
 
 > Production AI Provider Validation 继续 `NOT_TESTED`。CI Fake/Mock/MockTransport 只验证工程契约，不能替代真实生产 Provider Validation；M2 真实平台验证状态也不会因为 M3/M4/M5-A 工程完成而自动升级。
 
@@ -25,6 +25,7 @@ Connector / CollectorRuntime
 → Evidence-aware Draft / Human Revision
 → Deterministic Markdown Export
 → M5-A Editorial Workbench
+→ M5-B Daily Candidates / Editorial Workflow
 ```
 
 ## M5-A Editorial Workbench
@@ -92,13 +93,17 @@ Workbench API/UI 不展示 RawSignal `raw_payload`、credential、Authorization�
 
 Editorial Scoring 与 AI Draft 继续使用既有 `AIGateway.generate_structured(...)`，完整经过 Route / Budget / Retry / Fallback / Schema / Invocation / Attempt / Usage / Cost。Provider 调用位于数据库长事务之外。Preview 仍可能产生 Invocation/token/cost，但不会写对应正式业务 artifact。
 
+## M5-B Daily Candidates / Editorial Workflow
+
+M5-B 在 M5-A 的只读工作台上增加了确定性的 Daily Candidate snapshot、候选池查询和人工 Editorial Decision history。候选排名与人工 `adopt/watch/drop/archive/restore` 决定分离保存；Apply 具备输入幂等与并发安全，不能自动调用 AI、自动发布或改变 M3/M4 既有语义。
+
 ## 数据库迁移
 
-M5-A **NO NEW MIGRATION**。当前 migration head 保持：
+M5-B 新增 migration。当前 migration head：
 
-`20260809_0013_m4d_editorial_pack_drafts`
+`20260810_0014_m5b_daily_candidates`
 
-0013 未修改 0001～0012。M5-A 的 Tab、筛选、排序、当前 Event 等状态均为前端状态。
+0014 增加 Daily Candidate snapshot 与 Editorial Decision history；不修改既有 M1～M4 artifact 语义。
 
 ## 基础验收
 
@@ -127,4 +132,4 @@ Definition 第二次同步必须 `created=0 / updated=0 / failed=0`；M3 concurr
 
 ## 下一阶段边界
 
-M5-A PR #20 保持 Open，等待人工合并。**M5-B Daily Candidates / Editorial Workflow 尚未开始**；只有 M5-A PR 人工合并后，才能从当时最新 `main` 创建独立 M5-B 分支。
+M5-A 已合并。M5-B 已在 PR #21 提交人工审查，保持 Open。**M5-C Publication / Performance Feedback 尚未开始**；M5 Overall 仍未完成。

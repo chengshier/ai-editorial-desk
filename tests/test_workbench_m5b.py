@@ -20,7 +20,12 @@ AS_OF = datetime(2026, 8, 9, 9, 0, tzinfo=UTC)
 async def test_m5b_workbench_overlay_is_read_only_and_filters_current_decision(
     db_session,  # type: ignore[no-untyped-def]
 ) -> None:
-    context = await create_m4d_context(db_session, title="M5-B archived workbench event")
+    context = await create_m4d_context(
+        db_session,
+        title="M5-B archived workbench event",
+        event_last_updated_at=AS_OF,
+        trend_created_at=AS_OF,
+    )
     outcome = await DailyCandidateService().apply(
         CandidateGenerationRequest(
             business_date=AS_OF.date(),
