@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -396,24 +397,26 @@ async def _latest_card(
     session: AsyncSession,
     event_id: UUID,
 ) -> EventCardRecord | None:
-    return await session.scalar(
+    row = await session.scalar(
         select(EventCardRecord)
         .where(EventCardRecord.event_id == event_id)
         .order_by(EventCardRecord.created_at.desc())
         .limit(1)
     )
+    return cast(EventCardRecord | None, row)
 
 
 async def _latest_pack(
     session: AsyncSession,
     event_id: UUID,
 ) -> EditorialPackRecord | None:
-    return await session.scalar(
+    row = await session.scalar(
         select(EditorialPackRecord)
         .where(EditorialPackRecord.event_id == event_id)
         .order_by(EditorialPackRecord.created_at.desc())
         .limit(1)
     )
+    return cast(EditorialPackRecord | None, row)
 
 
 async def _artifact_invocation(
