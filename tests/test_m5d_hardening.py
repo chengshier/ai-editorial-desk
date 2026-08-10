@@ -18,15 +18,20 @@ from packages.database.models import (
 )
 from packages.database.session import get_async_sessionmaker
 from packages.risk_guard.models import AccountStatus
-from packages.validation import CheckLevel, M5DPreflightService, verify_business_invocation
+from packages.validation import (
+    CheckLevel,
+    M5DPreflightService,
+    ValidationCheck,
+    ValidationSummary,
+    verify_business_invocation,
+)
 from packages.validation.redaction import sanitize_validation_payload
 
 pytestmark = pytest.mark.usefixtures("clean_database")
 
 
-def _check(result: object, key: str) -> object:
-    checks = getattr(result, "checks")
-    return next(item for item in checks if item.key == key)
+def _check(result: ValidationSummary, key: str) -> ValidationCheck:
+    return next(item for item in result.checks if item.key == key)
 
 
 async def _platform_fixture(
