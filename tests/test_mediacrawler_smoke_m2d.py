@@ -32,6 +32,7 @@ from packages.connectors.mediacrawler_adapter.smoke_entry.main import (
     _BlockedInteractiveLogin,
     _enforce_safe_config,
 )
+from scripts.mediacrawler_smoke import _failure_diagnostic_summary
 
 
 def _invocation() -> MediaCrawlerInvocation:
@@ -231,3 +232,19 @@ def test_only_first_batch_is_enabled_by_default_on_fresh_definition_sync() -> No
         assert definitions[platform].is_enabled_default is False
         assert definitions[platform].capabilities["homefeed"] is False
         assert definitions[platform].capabilities["hotlist"] is False
+
+
+def test_smoke_cli_failure_summary_exposes_only_safe_diagnostic_fields() -> None:
+    summary = _failure_diagnostic_summary(
+        {
+            "failure_category": "CDP",
+            "failure_code": "CDP_CONNECT_FAILED",
+            "platform_risk_detected": False,
+            "stderr": "SESSDATA=SECRET",
+        }
+    )
+    assert summary == {
+        "category": "CDP",
+        "code": "CDP_CONNECT_FAILED",
+        "risk_stop_required": False,
+    }

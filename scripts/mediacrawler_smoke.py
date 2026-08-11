@@ -38,6 +38,22 @@ from packages.database.session import dispose_database, get_async_sessionmaker
 _CONFIRMATION = "M2D_REAL_SMOKE"
 
 
+def _failure_diagnostic_summary(metadata: object) -> dict[str, object] | None:
+    """Return the CLI-safe projection; never echo arbitrary run metadata."""
+    if not isinstance(metadata, dict):
+        return None
+    category = metadata.get("failure_category")
+    code = metadata.get("failure_code")
+    risk_stop_required = metadata.get("platform_risk_detected")
+    if not isinstance(category, str) or not isinstance(code, str):
+        return None
+    return {
+        "category": category,
+        "code": code,
+        "risk_stop_required": bool(risk_stop_required),
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="M2-D MediaCrawler low-volume real-smoke harness"
@@ -195,16 +211,22 @@ async def _execute(args: argparse.Namespace) -> int:
             created_at=datetime.now(UTC),
         )
     )
-    _print(
-        {
-            "run_id": str(result.run_id),
-            "status": result.status.value,
-            "collected": result.collected_count,
-            "inserted": result.inserted_count,
-            "duplicates": result.duplicate_count,
-            "failed": result.failed_count,
-        }
-    )
+    async with session_factory() as session:
+        run = await session.get(ConnectorRun, result.run_id)
+        diagnostic = _failure_diagnostic_summary(
+            run.run_metadata.get("subprocess_diagnostic") if run is not None else None
+        )
+    payload: dict[str, object] = {
+        "run_id": str(result.run_id),
+        "status": result.status.value,
+        "collected": result.collected_count,
+        "inserted": result.inserted_count,
+        "duplicates": result.duplicate_count,
+        "failed": result.failed_count,
+    }
+    if diagnostic is not None:
+        payload["failure_diagnostic"] = diagnostic
+    _print(payload)
     return 0
 
 

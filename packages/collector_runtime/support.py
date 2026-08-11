@@ -270,6 +270,13 @@ class CollectorRuntimeSupport:
         return "采集执行失败"
 
     @staticmethod
+    def failure_diagnostic_metadata(error: BaseException) -> dict[str, object]:
+        diagnostic = getattr(error, "failure_diagnostic", None)
+        if not isinstance(diagnostic, dict):
+            diagnostic = getattr(error, "subprocess_diagnostic", None)
+        return {"subprocess_diagnostic": diagnostic} if isinstance(diagnostic, dict) else {}
+
+    @staticmethod
     def log_result(
         *,
         context: PreflightContext,

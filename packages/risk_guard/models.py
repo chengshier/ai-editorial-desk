@@ -64,3 +64,4 @@ class PlatformRiskError(RuntimeError):
     def __init__(self, event: RiskEvent) -> None:
         super().__init__(f"{event.platform}:{event.code}: {event.message}")
         self.event = event
+        self.subprocess_diagnostic: object | None = None

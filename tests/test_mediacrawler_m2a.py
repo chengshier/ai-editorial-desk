@@ -16,6 +16,7 @@ from packages.connectors.mediacrawler_adapter.connector import MediaCrawlerConne
 from packages.connectors.mediacrawler_adapter.errors import (
     MediaCrawlerAdapterError,
     MediaCrawlerErrorCode,
+    build_subprocess_failure_diagnostic,
     classify_subprocess_failure,
 )
 from packages.connectors.mediacrawler_adapter.protocol import (
@@ -361,6 +362,50 @@ def test_error_mapping_fixtures(
     expected: MediaCrawlerErrorCode,
 ) -> None:
     assert classify_subprocess_failure(exit_code=1, stderr=diagnostic) is expected
+
+
+@pytest.mark.parametrize(
+    ("stderr", "category", "code", "risk"),
+    [
+        ("AUTH_REQUIRED SESSDATA=SECRET", "AUTH", "AUTH_REQUIRED", True),
+        ("connect_over_cdp failure: ECONNREFUSED", "CDP", "CDP_CONNECT_FAILED", False),
+        (
+            "M2D_SMOKE_CONFIGURATION_ERROR: bad setting",
+            "CONFIGURATION",
+            "SMOKE_CONFIGURATION_ERROR",
+            False,
+        ),
+        (
+            "ModuleNotFoundError: No module named 'playwright' at C:\\secret\\path",
+            "DEPENDENCY",
+            "DEPENDENCY_IMPORT_ERROR",
+            False,
+        ),
+        ("HTTP 403 Authorization: Bearer SECRET", "PLATFORM_RISK", "PERMISSION_DENIED", True),
+        ("HTTP 429 cookie=SECRET", "PLATFORM_RISK", "RATE_LIMITED", True),
+        ("CAPTCHA token=SECRET", "PLATFORM_RISK", "CAPTCHA_REQUIRED", True),
+        ("unclassified error password=SECRET", "UNKNOWN", "NON_ZERO_EXIT", False),
+    ],
+)
+def test_subprocess_failure_diagnostic_is_normalized_and_never_retains_output(
+    stderr: str,
+    category: str,
+    code: str,
+    risk: bool,
+) -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stdout="cookie=SECRET Authorization: Bearer SECRET",
+        stderr=stderr,
+    )
+
+    assert diagnostic["exit_code"] == 1
+    assert diagnostic["failure_category"] == category
+    assert diagnostic["failure_code"] == code
+    assert diagnostic["platform_risk_detected"] is risk
+    assert "SECRET" not in json.dumps(diagnostic)
+    assert "stdout" not in diagnostic
+    assert "stderr" not in diagnostic
 
 
 class StaticRunner:

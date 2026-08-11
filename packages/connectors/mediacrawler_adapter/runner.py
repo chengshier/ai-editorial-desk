@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from packages.connectors.mediacrawler_adapter.errors import (
     MediaCrawlerAdapterError,
     MediaCrawlerErrorCode,
+    build_subprocess_failure_diagnostic,
     classify_subprocess_failure,
 )
 from packages.connectors.mediacrawler_adapter.protocol import (
@@ -235,6 +236,11 @@ class MediaCrawlerSubprocessRunner:
                     MediaCrawlerErrorCode.SUBPROCESS_TIMEOUT,
                     "MediaCrawler subprocess timed out",
                     retryable=True,
+                    failure_diagnostic=build_subprocess_failure_diagnostic(
+                        exit_code=None,
+                        output_truncated=False,
+                        timed_out=True,
+                    ),
                 ) from exc
             except asyncio.CancelledError as exc:
                 await self._kill(process)
@@ -247,6 +253,10 @@ class MediaCrawlerSubprocessRunner:
                 raise MediaCrawlerAdapterError(
                     MediaCrawlerErrorCode.SUBPROCESS_OUTPUT_TOO_LARGE,
                     "MediaCrawler diagnostic output exceeded the configured limit",
+                    failure_diagnostic=build_subprocess_failure_diagnostic(
+                        exit_code=process.returncode,
+                        output_truncated=True,
+                    ),
                 ) from exc
 
             exit_code = process.returncode
@@ -258,10 +268,18 @@ class MediaCrawlerSubprocessRunner:
                     stdout=diagnostic_stdout,
                     stderr=diagnostic_stderr,
                 )
+                failure_diagnostic = build_subprocess_failure_diagnostic(
+                    exit_code=exit_code,
+                    stdout=diagnostic_stdout,
+                    stderr=diagnostic_stderr,
+                )
+                if failure_diagnostic["platform_risk_detected"]:
+                    code = MediaCrawlerErrorCode(failure_diagnostic["failure_code"])
                 raise MediaCrawlerAdapterError(
                     code,
-                    self._safe_failure_message(code, exit_code),
+                    failure_diagnostic["safe_message"],
                     retryable=code is MediaCrawlerErrorCode.NETWORK_TIMEOUT,
+                    failure_diagnostic=failure_diagnostic,
                 )
 
             finished_at = datetime.now(UTC)
