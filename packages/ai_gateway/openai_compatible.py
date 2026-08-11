@@ -455,6 +455,13 @@ class OpenAICompatibleProvider(AIProviderAdapter):
                 AIErrorCode.STRUCTURED_OUTPUT_INVALID,
                 "Provider structured output 不是合法 JSON",
                 retryable=True,
+                provider_response_detail=self._structured_response_detail(
+                    payload=payload,
+                    provider_request_id=request_id,
+                    content=content,
+                ),
+                provider_usage=_usage(payload.get("usage")),
+                provider_request_id=request_id,
             ) from exc
         if not isinstance(structured, dict):
             raise AIProviderError(
@@ -467,6 +474,39 @@ class OpenAICompatibleProvider(AIProviderAdapter):
             usage=_usage(payload.get("usage")),
             provider_request_id=request_id,
         )
+
+    @staticmethod
+    def _structured_response_detail(
+        *,
+        payload: dict[str, Any],
+        provider_request_id: str | None,
+        content: str,
+    ) -> dict[str, object]:
+        detail: dict[str, object] = {
+            "content_empty": not content,
+            "content_length": len(content),
+        }
+        if provider_request_id is not None:
+            detail["provider_request_id"] = provider_request_id
+        choices = payload.get("choices")
+        choice = choices[0] if isinstance(choices, list) and choices else None
+        if isinstance(choice, dict) and isinstance(choice.get("finish_reason"), str):
+            detail["finish_reason"] = choice["finish_reason"][:120]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        reasoning_content = (
+            message.get("reasoning_content") if isinstance(message, dict) else None
+        )
+        detail["reasoning_content_present"] = isinstance(reasoning_content, str)
+        if isinstance(reasoning_content, str):
+            detail["reasoning_content_length"] = len(reasoning_content)
+        usage = _usage(payload.get("usage"))
+        if usage.input_tokens is not None:
+            detail["input_tokens"] = usage.input_tokens
+        if usage.output_tokens is not None:
+            detail["output_tokens"] = usage.output_tokens
+        if usage.total_tokens is not None:
+            detail["total_tokens"] = usage.total_tokens
+        return detail
 
     @staticmethod
     def _message_content(payload: dict[str, Any]) -> str:

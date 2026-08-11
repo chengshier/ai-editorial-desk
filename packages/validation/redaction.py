@@ -18,10 +18,13 @@ _SENSITIVE_KEY_PARTS = (
     "profile_path",
     "home_path",
 )
+_SAFE_TOKEN_COUNT_KEYS = frozenset({"input_tokens", "output_tokens", "total_tokens"})
 
 
 def _sensitive_key(key: object) -> bool:
     normalized = str(key).strip().casefold().replace("-", "_")
+    if normalized in _SAFE_TOKEN_COUNT_KEYS:
+        return False
     return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
 
 

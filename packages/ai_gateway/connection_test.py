@@ -157,17 +157,26 @@ class AIConnectionTester:
             await self._validation_status(provider_id, "PASSED", actor)
             return invocation_id, "succeeded", None
         except AIGatewayError as exc:
+            usage = exc.provider_usage
+            cost = (
+                estimate_cost(target=target, capability=capability, usage=usage)
+                if usage is not None
+                else None
+            )
             if reservation is not None:
                 await self.budgets.settle(
                     reservation,
-                    completed=exc.code
-                    in {
-                        AIErrorCode.TIMEOUT,
-                        AIErrorCode.NETWORK_ERROR,
-                        AIErrorCode.INVALID_RESPONSE,
-                    },
-                    actual_cost=None,
-                    actual_tokens=None,
+                    completed=(
+                        exc.code
+                        in {
+                            AIErrorCode.TIMEOUT,
+                            AIErrorCode.NETWORK_ERROR,
+                            AIErrorCode.INVALID_RESPONSE,
+                        }
+                        or usage is not None
+                    ),
+                    actual_cost=cost,
+                    actual_tokens=(usage.total_tokens or usage.input_tokens) if usage else None,
                 )
             latency_ms = max(0, round((perf_counter() - attempt_started) * 1000))
             await self.invocations.add_attempt(
@@ -184,11 +193,11 @@ class AIConnectionTester:
                 ),
                 started_at=started_at,
                 finished_at=datetime.now(UTC),
-                usage=None,
-                estimated_cost=None,
+                usage=usage,
+                estimated_cost=cost,
                 pricing_snapshot=pricing_snapshot(target),
                 latency_ms=latency_ms,
-                provider_request_id=None,
+                provider_request_id=exc.provider_request_id,
                 error_code=exc.code.value,
                 error_message=exc.message,
                 metadata={
@@ -207,6 +216,10 @@ class AIConnectionTester:
                 latency_ms=latency_ms,
                 retry_count=0,
                 fallback_index=0,
+                usage=usage,
+                estimated_cost=cost,
+                pricing_snapshot=pricing_snapshot(target),
+                provider_request_id=exc.provider_request_id,
             )
             if exc.code is not AIErrorCode.CREDENTIAL_NOT_CONFIGURED:
                 await self._validation_status(provider_id, "FAILED", actor)
@@ -235,10 +248,45 @@ class AIConnectionTester:
                 "provider_error_param",
                 "provider_error_message",
             }
-            detail = {
+            detail: dict[str, str] = {
                 key: item
                 for key, item in value.items()
                 if key in allowed and isinstance(item, str)
+            }
+            return detail or None
+
+    async def response_detail(self, invocation_id: UUID | None) -> dict[str, object] | None:
+        """Return only persisted, non-content diagnostics for validation output."""
+
+        if invocation_id is None:
+            return None
+        async with self.session_factory() as session:
+            attempt = await session.scalar(
+                select(AIInvocationAttemptRecord)
+                .where(AIInvocationAttemptRecord.invocation_id == invocation_id)
+                .order_by(AIInvocationAttemptRecord.attempt_no.desc())
+                .limit(1)
+            )
+            if attempt is None:
+                return None
+            value = attempt.metadata_json.get("provider_response_detail")
+            if not isinstance(value, dict):
+                return None
+            allowed = {
+                "provider_request_id",
+                "finish_reason",
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "content_empty",
+                "content_length",
+                "reasoning_content_present",
+                "reasoning_content_length",
+            }
+            detail: dict[str, object] = {
+                key: item
+                for key, item in value.items()
+                if key in allowed and isinstance(item, (str, int, bool))
             }
             return detail or None
 

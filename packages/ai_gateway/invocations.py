@@ -162,6 +162,10 @@ class AIInvocationStore:
         latency_ms: int,
         retry_count: int,
         fallback_index: int,
+        usage: AIUsage | None = None,
+        estimated_cost: Decimal | None = None,
+        pricing_snapshot: dict[str, object] | None = None,
+        provider_request_id: str | None = None,
     ) -> None:
         async with self.session_factory() as session:
             async with session.begin():
@@ -176,3 +180,10 @@ class AIInvocationStore:
                 invocation.fallback_index = fallback_index
                 invocation.finished_at = datetime.now(UTC)
                 invocation.error_code = error_code
+                if usage is not None:
+                    invocation.input_tokens = usage.input_tokens
+                    invocation.output_tokens = usage.output_tokens
+                    invocation.total_tokens = usage.total_tokens
+                    invocation.estimated_cost = estimated_cost
+                    invocation.pricing_snapshot = pricing_snapshot or {}
+                    invocation.provider_request_id = provider_request_id

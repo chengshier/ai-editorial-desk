@@ -171,6 +171,95 @@ async def test_openai_compatible_422_is_invalid_request_with_redacted_diagnostic
     assert "[REDACTED]" in detail["provider_error_message"]
 
 
+async def test_structured_parse_failure_keeps_safe_response_diagnostic_and_usage() -> None:
+    response_content = '{"ok":'
+    reasoning_content = "private chain of thought"
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                headers={"x-request-id": "req-structured-invalid"},
+                json={
+                    "choices": [
+                        {
+                            "finish_reason": "length",
+                            "message": {
+                                "content": response_content,
+                                "reasoning_content": reasoning_content,
+                            },
+                        }
+                    ],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 2,
+                        "total_tokens": 12,
+                    },
+                },
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_structured(
+            target=target(structured_output_mode="json_object"),
+            request=StructuredProviderRequest(
+                messages=(AIMessage(role="user", content="x"),),
+                schema={"type": "object"},
+                schema_name="test_schema",
+            ),
+            timeout_seconds=1,
+        )
+
+    error = caught.value
+    assert error.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
+    assert error.provider_request_id == "req-structured-invalid"
+    assert error.provider_usage is not None
+    assert error.provider_usage.total_tokens == 12
+    assert error.provider_response_detail == {
+        "provider_request_id": "req-structured-invalid",
+        "finish_reason": "length",
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "content_empty": False,
+        "content_length": len(response_content),
+        "reasoning_content_present": True,
+        "reasoning_content_length": len(reasoning_content),
+    }
+    assert response_content not in repr(error.provider_response_detail)
+    assert reasoning_content not in repr(error.provider_response_detail)
+
+
+async def test_structured_empty_content_keeps_only_empty_response_diagnostic() -> None:
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": ""}}]},
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_structured(
+            target=target(),
+            request=StructuredProviderRequest(
+                messages=(AIMessage(role="user", content="x"),),
+                schema={"type": "object"},
+                schema_name="test_schema",
+            ),
+            timeout_seconds=1,
+        )
+
+    assert caught.value.provider_response_detail == {
+        "content_empty": True,
+        "content_length": 0,
+        "reasoning_content_present": False,
+    }
+
+
 async def test_openai_compatible_malformed_error_body_never_becomes_diagnostic() -> None:
     raw_body = "Authorization: Bearer super-secret-test-key"
     adapter = OpenAICompatibleProvider(

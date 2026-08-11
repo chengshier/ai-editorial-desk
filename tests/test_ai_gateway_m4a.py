@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import httpx
@@ -260,6 +261,78 @@ async def test_structured_output_valid_schema_returns_data(db_session) -> None: 
         context=InvocationContext(schema_version="schema-v1"),
     )
     assert result.data == {"name": "ok"}
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_structured_parse_failure_persists_known_usage_cost_and_safe_detail(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
+    await create_ai_stack(
+        db_session,
+        task_key="evidence_extraction",
+        capability="structured_output",
+        structured_output_mode="json_object",
+    )
+    response_content = '{"ok":'
+    reasoning_content = "private chain of thought"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "req-persisted-invalid"},
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {
+                            "content": response_content,
+                            "reasoning_content": reasoning_content,
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+            },
+        )
+
+    gateway = AIGateway(
+        session_factory=get_async_sessionmaker(),
+        provider_factory=mock_factory(httpx.MockTransport(handler)),
+    )
+    with pytest.raises(AIGatewayError) as caught:
+        await gateway.generate_structured(
+            task_key="evidence_extraction",
+            messages=(AIMessage(role="user", content="test"),),
+            schema={"type": "object"},
+            schema_name="generic_test",
+        )
+    assert caught.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
+
+    invocation = await db_session.scalar(select(AIInvocationRecord))
+    assert invocation is not None
+    assert invocation.status == "failed"
+    assert (invocation.input_tokens, invocation.output_tokens, invocation.total_tokens) == (10, 2, 12)
+    assert invocation.estimated_cost == Decimal("0.00001400")
+    assert invocation.provider_request_id == "req-persisted-invalid"
+    attempt = await db_session.scalar(select(AIInvocationAttemptRecord))
+    assert attempt is not None
+    assert attempt.status == "failed"
+    assert (attempt.input_tokens, attempt.output_tokens, attempt.total_tokens) == (10, 2, 12)
+    assert attempt.estimated_cost == Decimal("0.00001400")
+    assert attempt.provider_request_id == "req-persisted-invalid"
+    assert attempt.metadata_json["provider_response_detail"] == {
+        "provider_request_id": "req-persisted-invalid",
+        "finish_reason": "length",
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "content_empty": False,
+        "content_length": len(response_content),
+        "reasoning_content_present": True,
+        "reasoning_content_length": len(reasoning_content),
+    }
+    rendered = repr(attempt.metadata_json)
+    assert response_content not in rendered
+    assert reasoning_content not in rendered
 
 
 @pytest.mark.usefixtures("clean_database")

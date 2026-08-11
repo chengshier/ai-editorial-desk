@@ -61,6 +61,9 @@ async def _run(args: argparse.Namespace) -> int:
             detail = await tester.error_detail(invocation_id)
             if detail is not None:
                 payload["connection_test_error_detail"] = detail
+            response_detail = await tester.response_detail(invocation_id)
+            if response_detail is not None:
+                payload["connection_test_response_detail"] = response_detail
             print(json.dumps(sanitize_validation_payload(payload), indent=2))
             return 2
         if args.business_invocation_id is None:

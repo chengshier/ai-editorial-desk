@@ -31,6 +31,19 @@ def test_validation_cli_emits_only_sanitized_connection_error_detail(
                 "provider_error_message": "value must be positive [REDACTED]",
             }
 
+        async def response_detail(self, value):
+            assert value == invocation_id
+            return {
+                "provider_request_id": "req-safe-detail",
+                "finish_reason": "length",
+                "input_tokens": 10,
+                "output_tokens": 2,
+                "total_tokens": 12,
+                "content_empty": False,
+                "content_length": 6,
+                "reasoning_content_present": True,
+            }
+
     async def dispose() -> None:
         return None
 
@@ -57,5 +70,15 @@ def test_validation_cli_emits_only_sanitized_connection_error_detail(
         "provider_error_type": "invalid_request_error",
         "provider_error_param": "max_tokens",
         "provider_error_message": "value must be positive [REDACTED]",
+    }
+    assert payload["connection_test_response_detail"] == {
+        "provider_request_id": "req-safe-detail",
+        "finish_reason": "length",
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "content_empty": False,
+        "content_length": 6,
+        "reasoning_content_present": True,
     }
     assert "Authorization" not in json.dumps(payload)
