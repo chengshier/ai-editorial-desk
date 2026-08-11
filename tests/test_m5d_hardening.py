@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from packages.ai_gateway.connection_test import AIConnectionTester
+from packages.ai_gateway.domain import (
+    AIModelTarget,
+    AIUsage,
+    EmbeddingProviderResponse,
+    StructuredProviderResponse,
+    TextProviderResponse,
+)
 from packages.connectors.base import RawSignal
 from packages.database.models import (
     AIInvocationAttemptRecord,
@@ -508,6 +516,66 @@ async def test_injected_provider_factory_cannot_promote_validation_status(
     await db_session.refresh(provider)
     assert provider.validation_status == "NOT_TESTED"
     assert provider.last_validated_at is None
+
+
+@pytest.mark.asyncio
+async def test_connection_test_uses_larger_budget_only_for_structured_output() -> None:
+    class Adapter:
+        structured_max_output_tokens: int | None = None
+        text_max_output_tokens: int | None = None
+        embedding_texts: tuple[str, ...] | None = None
+
+        async def generate_structured(self, *, target, request, timeout_seconds):
+            del target, timeout_seconds
+            self.structured_max_output_tokens = request.max_output_tokens
+            return StructuredProviderResponse(data={"ok": True}, usage=AIUsage())
+
+        async def generate_text(self, *, target, request, timeout_seconds):
+            del target, timeout_seconds
+            self.text_max_output_tokens = request.max_output_tokens
+            return TextProviderResponse(text="ok", usage=AIUsage())
+
+        async def embed(self, *, target, request, timeout_seconds):
+            del target, timeout_seconds
+            self.embedding_texts = request.texts
+            return EmbeddingProviderResponse(vectors=((1.0,),), usage=AIUsage())
+
+    adapter = Adapter()
+
+    class Factory:
+        def build(self, provider_type: str) -> Adapter:
+            assert provider_type == "openai_compatible"
+            return adapter
+
+    target = AIModelTarget(
+        model_id=uuid4(),
+        provider_id=uuid4(),
+        provider_key="connection-test-provider",
+        provider_type="openai_compatible",
+        base_url="https://provider.example/v1",
+        credential_ref=None,
+        provider_timeout_seconds=5,
+        provider_retry_limit=0,
+        provider_config={},
+        model_key="connection-test-model",
+        model_name="connection-test-model",
+        capabilities=("structured_output",),
+        dimensions=None,
+        input_price_per_million=Decimal("1"),
+        output_price_per_million=Decimal("1"),
+        embedding_price_per_million=None,
+        pricing_version="test",
+        model_config={},
+    )
+    tester = AIConnectionTester(get_async_sessionmaker(), provider_factory=Factory())
+
+    await tester._call(target=target, capability="structured_output")
+    await tester._call(target=target, capability="text_generation")
+    await tester._call(target=target, capability="embedding")
+
+    assert adapter.structured_max_output_tokens == 128
+    assert adapter.text_max_output_tokens == 1
+    assert adapter.embedding_texts == ("ping",)
 
 
 @pytest.mark.asyncio

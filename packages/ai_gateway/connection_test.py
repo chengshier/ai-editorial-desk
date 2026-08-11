@@ -322,7 +322,7 @@ class AIConnectionTester:
                         "additionalProperties": False,
                     },
                     schema_name="connection_test",
-                    max_output_tokens=8,
+                    max_output_tokens=128,
                     temperature=0,
                 ),
                 timeout_seconds=timeout,
