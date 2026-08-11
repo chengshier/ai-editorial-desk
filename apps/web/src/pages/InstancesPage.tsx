@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AdminApi } from '../api'
-import { ErrorBanner, Panel } from '../components/common'
+import { Empty, ErrorBanner, Panel } from '../components/common'
+import { enabledLabel, sourceStatusLabel } from '../uiLabels'
 import { SchemaForm, validateSchemaValue } from '../components/SchemaForm'
 import type { Definition, Instance, Source } from '../types'
 
@@ -49,7 +50,7 @@ export function InstancesPage({ api }: { api: AdminApi }) {
   }
 
   const save = async () => {
-    if (!selected || !name.trim()) return setError('请选择 Definition 并填写实例名称')
+    if (!selected || !name.trim()) return setError('请选择连接器类型并填写实例名称')
     if (Object.keys(validateSchemaValue(selected.config_schema, config)).length) {
       return setError('配置未通过表单校验')
     }
@@ -93,13 +94,13 @@ export function InstancesPage({ api }: { api: AdminApi }) {
 
   const run = async (instance: Instance, dryRun: boolean) => {
     const source = sources.find((item) => item.connector_instance_id === instance.id && item.enabled)
-    if (!source) return setError('该实例没有可运行的启用 Source')
+    if (!source) return setError('该实例没有可运行的已启用信源')
     try {
       const result = await api.post<{ run_id: string; status: string }>(
         `/api/v1/admin/connector-instances/${instance.id}/test-runs`,
         { source_id: source.id, requested_limit: 5, dry_run: dryRun },
       )
-      setMessage(`${dryRun ? 'Test Run' : 'Run Now'} 已完成：${result.status} / ${result.run_id}`)
+      setMessage(`${dryRun ? '测试运行' : '立即执行'}已完成：${result.status} / ${result.run_id}`)
       await load()
     } catch (e) {
       setError((e as Error).message)
@@ -107,15 +108,16 @@ export function InstancesPage({ api }: { api: AdminApi }) {
   }
 
   return <>
-    <Panel title={editingId ? '编辑 Connector Instance' : 'Connector Instances'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
+    <Panel title={editingId ? '编辑连接器实例' : '新建连接器实例'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
+      <div className="page-intro"><p>管理各平台连接器的采集配置与运行方式。</p></div>
       <ErrorBanner error={error}/>
       {message && <p className="notice">{message}</p>}
       <div className="form-grid">
-        <label>Definition<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name}</option>)}</select></label>
+        <label>连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label>
         <label>实例名称<input value={name} onChange={(event) => setName(event.target.value)}/></label>
       </div>
-      {selected && <SchemaForm schema={selected.config_schema} uiSchema={selected.ui_schema} value={config} onChange={setConfig}/>}<button onClick={save}>{editingId ? '保存修改' : '新建实例'}</button>
+      {selected && <><h3 className="section-title">采集配置</h3><SchemaForm schema={selected.config_schema} uiSchema={selected.ui_schema} value={config} onChange={setConfig}/></>}<button className="primary" onClick={save}>{editingId ? '保存修改' : '新建连接器实例'}</button>
     </Panel>
-    <Panel title="实例列表" actions={<button onClick={load}>刷新</button>}><div className="table-wrap"><table><thead><tr><th>名称</th><th>状态</th><th>版本</th><th>操作</th></tr></thead><tbody>{instances.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.status} / {item.enabled ? '启用' : '停用'}</td><td>config v{item.config_version}</td><td className="actions"><button onClick={() => edit(item)}>编辑</button><button onClick={() => void action(item.id, item.enabled ? 'disable' : 'enable')}>{item.enabled ? '停用' : '启用'}</button><button onClick={() => void run(item, true)}>Test Run</button><button onClick={() => void run(item, false)}>Run Now</button><button className="danger" onClick={() => void action(item.id, 'archive')}>归档</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="实例列表" actions={<button onClick={load}>刷新</button>}>{instances.length===0?<Empty text="暂无连接器实例"/>:<div className="table-wrap"><table><thead><tr><th>实例名称</th><th>平台 / 类型</th><th>当前状态</th><th>配置版本</th><th>操作</th></tr></thead><tbody>{instances.map((item) => {const definition=definitions.find(d=>d.id===item.definition_id);return <tr key={item.id}><td>{item.name}</td><td>{definition?`${definition.platform} · ${definition.display_name}`:'未知连接器'}</td><td>{item.enabled?enabledLabel(true):(sourceStatusLabel[item.status]||enabledLabel(false))}</td><td>v{item.config_version}</td><td className="actions"><button onClick={() => edit(item)}>编辑</button><button onClick={() => void run(item, true)} title="使用少量数据进行无副作用验证">测试运行</button><button className="primary" onClick={() => void run(item, false)} title="使用当前配置立即创建一次真实运行">立即执行</button><details className="more-actions"><summary>更多</summary><button onClick={() => void action(item.id, item.enabled ? 'disable' : 'enable')}>{item.enabled ? '停用' : '启用'}</button><button className="danger" onClick={() => void action(item.id, 'archive')}>归档</button></details></td></tr>})}</tbody></table></div>}</Panel>
   </>
 }

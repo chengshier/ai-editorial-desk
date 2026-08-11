@@ -10,6 +10,6 @@ it('opens run detail with checkpoint, budget and retry action', async()=>{
   render(<RunsPage api={new AdminApi({apiBaseUrl:'http://api',adminToken:'t',actorId:'a'})}/>)
   await userEvent.click(await screen.findByText('12345678'))
   expect(await screen.findByText(/请求超时/)).toBeInTheDocument()
-  expect(screen.getByText('Checkpoint Before')).toBeInTheDocument()
+  expect(screen.getByText('运行前检查点')).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'人工重试'})).toBeInTheDocument()
 })

@@ -68,13 +68,13 @@ export function AIRoutesPage({ api }: Props) {
   }
 
   return <section className="panel">
-    <div className="panel-head"><div><h2>AI Routes</h2><small>每次保存创建新版本，仅影响新 Invocation。</small></div><button onClick={() => void load()}>刷新</button></div>
+    <div className="panel-head"><div><h2>AI 路由</h2><small>为不同 AI 任务选择主模型、备用链和执行策略；每次保存创建新版本，仅影响新的调用。</small></div><button onClick={() => void load()}>刷新</button></div>
     {error && <div className="error-banner">{error}</div>}
-    <div className="table-wrap"><table><thead><tr><th>Task</th><th>Version</th><th>Primary Model</th><th>Fallback Chain</th><th>Timeout</th><th>Retry</th><th>Enabled</th><th>操作</th></tr></thead><tbody>{routes.map(route => {
+    <div className="table-wrap"><table><thead><tr><th>任务类型</th><th>版本</th><th>主模型</th><th>备用模型链</th><th>超时（秒）</th><th>重试次数</th><th>已启用</th><th>操作</th></tr></thead><tbody>{routes.map(route => {
       const draft = drafts[route.task_key]
       if (!draft) return null
-      return <tr key={route.id}><td><strong>{route.task_key}</strong></td><td>v{route.version}</td><td><select value={draft.primary} onChange={e => updateDraft(route.task_key, { primary: e.target.value })}><option value="">未配置</option>{models.map(model => <option key={model.id} value={model.id}>{model.model_key} · {model.model_name}</option>)}</select></td><td><input style={{ minWidth: 260 }} value={draft.fallback} placeholder="model UUID, model UUID" onChange={e => updateDraft(route.task_key, { fallback: e.target.value })} /></td><td><input style={{ width: 70 }} value={draft.timeout} onChange={e => updateDraft(route.task_key, { timeout: e.target.value })} /></td><td><input style={{ width: 55 }} value={draft.retry} onChange={e => updateDraft(route.task_key, { retry: e.target.value })} /></td><td><input type="checkbox" checked={draft.enabled} onChange={e => updateDraft(route.task_key, { enabled: e.target.checked })} /></td><td><button onClick={() => void save(route)}>保存为 v{route.version + 1}</button></td></tr>
+      return <tr key={route.id}><td><strong>{route.task_key}</strong></td><td>v{route.version}</td><td><select value={draft.primary} onChange={e => updateDraft(route.task_key, { primary: e.target.value })}><option value="">未配置</option>{models.map(model => <option key={model.id} value={model.id}>{model.model_key} · {model.model_name}</option>)}</select></td><td><input style={{ minWidth: 260 }} value={draft.fallback} placeholder="模型 UUID，多个值用逗号分隔" onChange={e => updateDraft(route.task_key, { fallback: e.target.value })} /></td><td><input style={{ width: 70 }} value={draft.timeout} onChange={e => updateDraft(route.task_key, { timeout: e.target.value })} /></td><td><input style={{ width: 55 }} value={draft.retry} onChange={e => updateDraft(route.task_key, { retry: e.target.value })} /></td><td><input aria-label={`${route.task_key} 是否启用`} type="checkbox" checked={draft.enabled} onChange={e => updateDraft(route.task_key, { enabled: e.target.checked })} /></td><td><button className="primary" onClick={() => void save(route)}>保存为 v{route.version + 1}</button></td></tr>
     })}</tbody></table></div>
-    <p className="notice">M4-A 仅建立 route 能力；Evidence、Editorial、Draft 任务目前不会被业务层消费。</p>
+    <p className="notice">当前仅建立路由配置能力；尚未接入业务消费的任务会保持配置态，不会自动触发 AI 调用。</p>
   </section>
 }

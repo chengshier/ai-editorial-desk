@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AdminApi } from '../api'
-import { ErrorBanner, Panel } from '../components/common'
+import { Empty, ErrorBanner, Panel } from '../components/common'
+import { enabledLabel, sourceModeLabel, sourceStatusLabel } from '../uiLabels'
 import type { Instance, Source } from '../types'
 
 export function SourcesPage({ api }: { api: AdminApi }) {
@@ -53,7 +54,7 @@ export function SourcesPage({ api }: { api: AdminApi }) {
           name: form.name,
           external_ref: form.external_ref || null,
         })
-        setMessage('Source 已更新。')
+        setMessage('信源已更新。')
       } else {
         await api.post('/api/v1/admin/sources', {
           ...form,
@@ -61,7 +62,7 @@ export function SourcesPage({ api }: { api: AdminApi }) {
           config: {},
           enabled: true,
         })
-        setMessage('Source 已创建。')
+        setMessage('信源已创建。')
       }
       resetForm()
       await load()
@@ -99,18 +100,19 @@ export function SourcesPage({ api }: { api: AdminApi }) {
         `/api/v1/admin/connector-instances/${source.connector_instance_id}/test-runs`,
         { source_id: source.id, requested_limit: 5, dry_run: true },
       )
-      setMessage(`Source Test Run：${result.status} / ${result.run_id}`)
+      setMessage(`测试运行已完成：${result.status} / ${result.run_id}`)
     } catch (e) {
       setError((e as Error).message)
     }
   }
 
   return <>
-    <Panel title={editingId ? '编辑 Source' : 'Sources'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
+    <Panel title={editingId ? '编辑信源' : '新建信源'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
+      <div className="page-intro"><p>管理用于采集和编辑判断的数据来源。</p></div>
       <ErrorBanner error={error}/>{message && <p className="notice">{message}</p>}<div className="form-grid">
-      <label>实例<select disabled={Boolean(editingId)} value={form.connector_instance_id} onChange={(event) => setForm({ ...form, connector_instance_id: event.target.value })}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name}</option>)}</select></label>
-      <label>名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label>类型<input disabled={Boolean(editingId)} value={form.source_type} onChange={(event) => setForm({ ...form, source_type: event.target.value })}/></label><label>模式<input disabled={Boolean(editingId)} value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}/></label><label>Scope Key<input disabled={Boolean(editingId)} value={form.scope_key} onChange={(event) => setForm({ ...form, scope_key: event.target.value })}/></label><label>External Ref<input value={form.external_ref} onChange={(event) => setForm({ ...form, external_ref: event.target.value })}/></label>
-    </div><button onClick={save}>{editingId ? '保存修改' : '新建 Source'}</button></Panel>
-    <Panel title="Source 列表" actions={<button onClick={load}>刷新</button>}><div className="table-wrap"><table><thead><tr><th>名称</th><th>类型/模式</th><th>Scope</th><th>状态</th><th>操作</th></tr></thead><tbody>{sources.map((source) => <tr key={source.id}><td>{source.name}</td><td>{source.source_type}/{source.mode}</td><td>{source.scope_key}</td><td>{source.status} / {source.enabled ? '启用' : '停用'}</td><td className="actions"><button onClick={() => edit(source)}>编辑</button><button onClick={() => void toggle(source)}>{source.enabled ? '停用' : '启用'}</button><button onClick={() => void testRun(source)}>Test Run</button><button className="danger" onClick={async () => { if (confirm('归档 Source？历史 Raw Signal 不会删除。')) { await api.post(`/api/v1/admin/sources/${source.id}/archive`); await load() } }}>归档</button></td></tr>)}</tbody></table></div></Panel>
+      <label>所属实例<select disabled={Boolean(editingId)} value={form.connector_instance_id} onChange={(event) => setForm({ ...form, connector_instance_id: event.target.value })}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name}</option>)}</select></label>
+      <label>信源名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label>来源类型<input disabled={Boolean(editingId)} value={form.source_type} onChange={(event) => setForm({ ...form, source_type: event.target.value })}/></label><label>采集模式<select disabled={Boolean(editingId)} value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{Object.entries(sourceModeLabel).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label>作用范围<input disabled={Boolean(editingId)} value={form.scope_key} onChange={(event) => setForm({ ...form, scope_key: event.target.value })}/></label><label>外部引用<input value={form.external_ref} onChange={(event) => setForm({ ...form, external_ref: event.target.value })}/></label>
+    </div><button className="primary" onClick={save}>{editingId ? '保存修改' : '新建信源'}</button></Panel>
+    <Panel title="信源列表" actions={<button onClick={load}>刷新</button>}>{sources.length===0?<Empty text="暂无信源"/>:<div className="table-wrap"><table><thead><tr><th>名称</th><th>来源类型</th><th>采集模式</th><th>状态</th><th>操作</th></tr></thead><tbody>{sources.map((source) => <tr key={source.id}><td><strong>{source.name}</strong><small className="technical-meta">{source.scope_key}</small></td><td>{source.source_type}</td><td>{sourceModeLabel[source.mode]||source.mode}</td><td>{source.enabled?enabledLabel(true):(sourceStatusLabel[source.status]||enabledLabel(false))}</td><td className="actions"><button onClick={() => edit(source)}>编辑</button><button onClick={() => void testRun(source)}>测试运行</button><details className="more-actions"><summary>更多</summary><button onClick={() => void toggle(source)}>{source.enabled ? '停用' : '启用'}</button><button className="danger" onClick={async () => { if (confirm('归档信源？历史原始信号不会删除。')) { await api.post(`/api/v1/admin/sources/${source.id}/archive`); await load() } }}>归档</button></details></td></tr>)}</tbody></table></div>}</Panel>
   </>
 }

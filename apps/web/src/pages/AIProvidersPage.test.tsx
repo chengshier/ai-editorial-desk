@@ -24,11 +24,11 @@ it('sends the selected structured output mode in model config', async () => {
   const api = new AdminApi({ apiBaseUrl: 'http://api', adminToken: 'token', actorId: 'human' })
   render(<AIProvidersPage api={api} />)
   await screen.findByText('Provider')
-  await userEvent.selectOptions(screen.getByLabelText('Provider'), 'provider-1')
-  await userEvent.type(screen.getByLabelText('Model Key'), 'structured-model')
-  await userEvent.type(screen.getByLabelText('供应商 Model Name'), 'vendor-model')
-  await userEvent.selectOptions(screen.getByLabelText('Structured Output Mode'), 'json_object')
-  await userEvent.click(screen.getByRole('button', { name: '创建 Model' }))
+  await userEvent.selectOptions(screen.getByLabelText('所属服务商'), 'provider-1')
+  await userEvent.type(screen.getByLabelText('模型标识'), 'structured-model')
+  await userEvent.type(screen.getByLabelText('服务商模型名称'), 'vendor-model')
+  await userEvent.selectOptions(screen.getByLabelText('结构化输出方式'), 'json_object')
+  await userEvent.click(screen.getByRole('button', { name: '创建模型' }))
   expect(bodies).toContainEqual(expect.objectContaining({
     config: { structured_output_mode: 'json_object' },
   }))
