@@ -47,11 +47,16 @@ def _failure_diagnostic_summary(metadata: object) -> dict[str, object] | None:
     risk_stop_required = metadata.get("platform_risk_detected")
     if not isinstance(category, str) or not isinstance(code, str):
         return None
-    return {
+    summary: dict[str, object] = {
         "category": category,
         "code": code,
         "risk_stop_required": bool(risk_stop_required),
     }
+    if category == "DEPENDENCY":
+        for key in ("dependency_module", "dependency_reason"):
+            if isinstance(metadata.get(key), str):
+                summary[key] = metadata[key]
+    return summary
 
 
 def _parser() -> argparse.ArgumentParser:

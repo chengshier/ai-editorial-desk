@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from typing import TypedDict
 
@@ -49,6 +50,16 @@ RISK_ERROR_CODES = frozenset(
         MediaCrawlerErrorCode.AUTOMATION_DETECTED,
     }
 )
+_SAFE_MODULE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
+_SAFE_IMPORT_MARKER = re.compile(
+    r"AI_EDITORIAL_SAFE_IMPORT_ERROR\s+"
+    r"exception_type=(ModuleNotFoundError|ImportError)\s+"
+    r"module=(.*?)\s+reason=(MODULE_NOT_FOUND|IMPORT_FAILED)"
+)
+_MODULE_NOT_FOUND = re.compile(
+    r"ModuleNotFoundError:\s+No module named "
+    r"['\"]([A-Za-z_][A-Za-z0-9_.]{0,127})['\"]"
+)
 
 
 class SubprocessFailureDiagnostic(TypedDict):
@@ -68,6 +79,8 @@ class SubprocessFailureDiagnostic(TypedDict):
     platform_risk_detected: bool
     platform_risk_type: str | None
     output_truncated: bool
+    dependency_module: str | None
+    dependency_reason: str | None
 
 
 def build_subprocess_failure_diagnostic(
@@ -86,6 +99,8 @@ def build_subprocess_failure_diagnostic(
     safe_code = code.value
     safe_message = "MediaCrawler subprocess exited unsuccessfully"
     exception_type: str | None = None
+    dependency_module: str | None = None
+    dependency_reason: str | None = None
 
     explicit_auth = "auth_required" in diagnostic
     if explicit_auth:
@@ -135,13 +150,27 @@ def build_subprocess_failure_diagnostic(
             "SMOKE_CONFIGURATION_ERROR",
             "MediaCrawler smoke configuration failed",
         )
-    elif "modulenotfounderror" in diagnostic or "importerror" in diagnostic:
+    elif marker := _SAFE_IMPORT_MARKER.search(f"{stdout}\n{stderr}"):
         category, safe_code, safe_message, exception_type = (
             "DEPENDENCY",
             "DEPENDENCY_IMPORT_ERROR",
             "MediaCrawler dependency import failed",
-            "ImportError",
+            marker.group(1),
         )
+        dependency_module = (
+            marker.group(2)
+            if _SAFE_MODULE_NAME.fullmatch(marker.group(2))
+            else "unknown"
+        )
+        dependency_reason = marker.group(3)
+    elif missing := _MODULE_NOT_FOUND.search(f"{stdout}\n{stderr}"):
+        category, safe_code, safe_message, exception_type = (
+            "DEPENDENCY",
+            "DEPENDENCY_IMPORT_ERROR",
+            "MediaCrawler dependency import failed",
+            "ModuleNotFoundError",
+        )
+        dependency_module, dependency_reason = missing.group(1), "MODULE_NOT_FOUND"
     elif timed_out or code is MediaCrawlerErrorCode.NETWORK_TIMEOUT:
         category, safe_code, safe_message = (
             "TIMEOUT",
@@ -177,6 +206,8 @@ def build_subprocess_failure_diagnostic(
         "platform_risk_detected": risk,
         "platform_risk_type": safe_code if risk else None,
         "output_truncated": output_truncated,
+        "dependency_module": dependency_module,
+        "dependency_reason": dependency_reason,
     }
 
 

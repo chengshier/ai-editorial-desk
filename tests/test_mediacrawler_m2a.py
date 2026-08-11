@@ -408,6 +408,58 @@ def test_subprocess_failure_diagnostic_is_normalized_and_never_retains_output(
     assert "stderr" not in diagnostic
 
 
+def test_import_diagnostic_requires_safe_marker_or_module_not_found() -> None:
+    missing = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr="ModuleNotFoundError: No module named 'playwright' Cookie=SECRET",
+    )
+    assert (
+        missing["failure_category"],
+        missing["dependency_module"],
+        missing["dependency_reason"],
+    ) == ("DEPENDENCY", "playwright", "MODULE_NOT_FOUND")
+    controlled = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr=(
+            "AI_EDITORIAL_SAFE_IMPORT_ERROR exception_type=ImportError "
+            "module=foo reason=IMPORT_FAILED"
+        ),
+    )
+    assert (
+        controlled["exception_type"],
+        controlled["dependency_module"],
+        controlled["dependency_reason"],
+    ) == ("ImportError", "foo", "IMPORT_FAILED")
+    generic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr="previous ImportError was handled",
+    )
+    assert generic["failure_code"] == "NON_ZERO_EXIT"
+    for unsafe_module in ("../../secret", r"C:\\Users\\unsafe", "foo token=SECRET"):
+        malicious = build_subprocess_failure_diagnostic(
+            exit_code=1,
+            stderr=(
+                "AI_EDITORIAL_SAFE_IMPORT_ERROR exception_type=ImportError "
+                f"module={unsafe_module} reason=IMPORT_FAILED"
+            ),
+        )
+        assert malicious["dependency_module"] == "unknown"
+        assert "SECRET" not in json.dumps(malicious)
+
+
+def test_platform_risk_marker_has_priority_over_import_marker() -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr=(
+            "HTTP 429 AI_EDITORIAL_SAFE_IMPORT_ERROR "
+            "exception_type=ModuleNotFoundError module=playwright "
+            "reason=MODULE_NOT_FOUND"
+        ),
+    )
+    assert diagnostic["failure_category"] == "PLATFORM_RISK"
+    assert diagnostic["platform_risk_detected"] is True
+
+
 class StaticRunner:
     def __init__(
         self,

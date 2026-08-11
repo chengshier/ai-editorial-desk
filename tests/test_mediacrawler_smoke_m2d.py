@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -31,6 +32,7 @@ from packages.connectors.mediacrawler_adapter.smoke import (
 from packages.connectors.mediacrawler_adapter.smoke_entry.main import (
     _BlockedInteractiveLogin,
     _enforce_safe_config,
+    _safe_import_error_marker,
 )
 from scripts.mediacrawler_smoke import _failure_diagnostic_summary
 
@@ -247,4 +249,59 @@ def test_smoke_cli_failure_summary_exposes_only_safe_diagnostic_fields() -> None
         "category": "CDP",
         "code": "CDP_CONNECT_FAILED",
         "risk_stop_required": False,
+    }
+
+
+def test_smoke_entry_import_marker_is_safe() -> None:
+    assert _safe_import_error_marker(ModuleNotFoundError(name="playwright")) == (
+        "AI_EDITORIAL_SAFE_IMPORT_ERROR exception_type=ModuleNotFoundError "
+        "module=playwright reason=MODULE_NOT_FOUND"
+    )
+    assert "SECRET" not in _safe_import_error_marker(ImportError(name="foo token=SECRET"))
+
+
+def test_smoke_entry_import_failure_writes_safe_marker_and_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    smoke_entry_main = importlib.import_module(
+        "packages.connectors.mediacrawler_adapter.smoke_entry.main"
+    )
+
+    async def raise_missing_module() -> None:
+        raise ModuleNotFoundError(name="playwright")
+
+    monkeypatch.setattr(smoke_entry_main, "_run", raise_missing_module)
+
+    with pytest.raises(SystemExit) as exc_info:
+        smoke_entry_main.main()
+
+    assert exc_info.value.code == 1
+
+    captured = capsys.readouterr()
+    assert captured.err == (
+        "AI_EDITORIAL_SAFE_IMPORT_ERROR "
+        "exception_type=ModuleNotFoundError module=playwright "
+        "reason=MODULE_NOT_FOUND\n"
+    )
+    assert "Traceback" not in captured.err
+
+
+def test_smoke_cli_dependency_summary_exposes_only_safe_fields() -> None:
+    summary = _failure_diagnostic_summary(
+        {
+            "failure_category": "DEPENDENCY",
+            "failure_code": "DEPENDENCY_IMPORT_ERROR",
+            "platform_risk_detected": False,
+            "dependency_module": "playwright",
+            "dependency_reason": "MODULE_NOT_FOUND",
+            "stderr": "Cookie=SECRET",
+        }
+    )
+    assert summary == {
+        "category": "DEPENDENCY",
+        "code": "DEPENDENCY_IMPORT_ERROR",
+        "risk_stop_required": False,
+        "dependency_module": "playwright",
+        "dependency_reason": "MODULE_NOT_FOUND",
     }

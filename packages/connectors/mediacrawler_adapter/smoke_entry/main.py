@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import os
+import re
 import sys
 from pathlib import Path
 from types import MethodType
@@ -13,6 +14,21 @@ _TARGET_LOGIN_PATCHES: dict[str, tuple[str, str]] = {
     "zhihu": ("media_platform.zhihu.core", "ZhiHuLogin"),
     "wb": ("media_platform.weibo.core", "WeiboLogin"),
 }
+_SAFE_MODULE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
+
+
+def _safe_import_error_marker(exc: ImportError) -> str:
+    module = getattr(exc, "name", None)
+    safe_module = (
+        module
+        if isinstance(module, str) and _SAFE_MODULE_NAME.fullmatch(module)
+        else "unknown"
+    )
+    reason = "MODULE_NOT_FOUND" if isinstance(exc, ModuleNotFoundError) else "IMPORT_FAILED"
+    return (
+        "AI_EDITORIAL_SAFE_IMPORT_ERROR "
+        f"exception_type={type(exc).__name__} module={safe_module} reason={reason}"
+    )
 
 
 class _BlockedInteractiveLogin:
@@ -97,7 +113,11 @@ async def _run() -> None:
 
 
 def main() -> None:
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except ImportError as exc:
+        print(_safe_import_error_marker(exc), file=sys.stderr)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":
