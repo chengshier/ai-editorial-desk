@@ -263,6 +263,43 @@ async def test_structured_output_valid_schema_returns_data(db_session) -> None: 
 
 
 @pytest.mark.usefixtures("clean_database")
+async def test_json_object_mode_still_rejects_business_schema_mismatch(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
+    await create_ai_stack(
+        db_session,
+        task_key="evidence_extraction",
+        capability="structured_output",
+        structured_output_mode="json_object",
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"name":42}'}}]},
+        )
+
+    gateway = AIGateway(
+        session_factory=get_async_sessionmaker(),
+        provider_factory=mock_factory(httpx.MockTransport(handler)),
+    )
+    with pytest.raises(AIGatewayError) as caught:
+        await gateway.generate_structured(
+            task_key="evidence_extraction",
+            messages=(AIMessage(role="user", content="test"),),
+            schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            schema_name="generic_test",
+        )
+    assert caught.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
+
+
+@pytest.mark.usefixtures("clean_database")
 async def test_auth_error_is_not_retried(db_session) -> None:  # type: ignore[no-untyped-def]
     await create_ai_stack(
         db_session,

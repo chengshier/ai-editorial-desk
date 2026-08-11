@@ -19,7 +19,7 @@ from packages.ai_gateway.openai_compatible import OpenAICompatibleProvider
 from tests.m4a_helpers import allow_test_host
 
 
-def target() -> AIModelTarget:
+def target(*, structured_output_mode: str | None = None) -> AIModelTarget:
     os.environ["M4A_TEST_KEY"] = "super-secret-test-key"
     return AIModelTarget(
         model_id=uuid4(),
@@ -39,7 +39,11 @@ def target() -> AIModelTarget:
         output_price_per_million=Decimal("2"),
         embedding_price_per_million=None,
         pricing_version="pricing-v1",
-        model_config={},
+        model_config=(
+            {"structured_output_mode": structured_output_mode}
+            if structured_output_mode is not None
+            else {}
+        ),
     )
 
 
@@ -168,7 +172,10 @@ async def test_openai_compatible_rejects_malformed_json_and_refusal() -> None:
     assert refusal_error.value.code is AIErrorCode.INVALID_RESPONSE
 
 
-async def test_openai_compatible_structured_invalid_json_is_explicit() -> None:
+@pytest.mark.parametrize("mode", [None, "json_object"])
+async def test_openai_compatible_structured_invalid_json_is_explicit(
+    mode: str | None,
+) -> None:
     adapter = OpenAICompatibleProvider(
         transport=httpx.MockTransport(
             lambda request: httpx.Response(
@@ -184,9 +191,93 @@ async def test_openai_compatible_structured_invalid_json_is_explicit() -> None:
         schema_name="test_schema",
     )
     with pytest.raises(AIProviderError) as caught:
-        await adapter.generate_structured(target=target(), request=request, timeout_seconds=1)
+        await adapter.generate_structured(
+            target=target(structured_output_mode=mode),
+            request=request,
+            timeout_seconds=1,
+        )
     assert caught.value.code is AIErrorCode.STRUCTURED_OUTPUT_INVALID
     assert caught.value.retryable is True
+
+
+async def test_structured_output_defaults_to_strict_json_schema_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["response_format"] == {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "test_schema",
+                "strict": True,
+                "schema": {"type": "object"},
+            },
+        }
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": "{}"}}]},
+        )
+
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(handler),
+        host_validator=allow_test_host,
+    )
+    result = await adapter.generate_structured(
+        target=target(),
+        request=StructuredProviderRequest(
+            messages=(AIMessage(role="user", content="x"),),
+            schema={"type": "object"},
+            schema_name="test_schema",
+        ),
+        timeout_seconds=1,
+    )
+    assert result.data == {}
+
+
+async def test_structured_output_json_object_payload_has_no_json_schema() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["response_format"] == {"type": "json_object"}
+        assert "json_schema" not in body["response_format"]
+        assert body["messages"][0]["role"] == "system"
+        assert "Return only a JSON object" in body["messages"][0]["content"]
+        assert '"required":["name"]' in body["messages"][0]["content"]
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"name":"ok"}'}}]},
+        )
+
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(handler),
+        host_validator=allow_test_host,
+    )
+    result = await adapter.generate_structured(
+        target=target(structured_output_mode="json_object"),
+        request=StructuredProviderRequest(
+            messages=(AIMessage(role="user", content="x"),),
+            schema={
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            schema_name="test_schema",
+        ),
+        timeout_seconds=1,
+    )
+    assert result.data == {"name": "ok"}
+
+
+async def test_structured_output_unknown_mode_fails_closed() -> None:
+    adapter = OpenAICompatibleProvider(host_validator=allow_test_host)
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_structured(
+            target=target(structured_output_mode="vendor_default"),
+            request=StructuredProviderRequest(
+                messages=(AIMessage(role="user", content="x"),),
+                schema={"type": "object"},
+                schema_name="test_schema",
+            ),
+            timeout_seconds=1,
+        )
+    assert caught.value.code is AIErrorCode.INVALID_REQUEST
 
 
 async def test_usage_can_be_unknown_without_fabricating_zero() -> None:

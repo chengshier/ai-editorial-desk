@@ -14,7 +14,7 @@ export function AIProvidersPage({ api }: Props) {
   })
   const [modelDraft, setModelDraft] = useState({
     provider_id: '', model_key: '', model_name: '', capabilities: 'text_generation',
-    pricing_version: 'unpriced-v1', dimensions: '',
+    pricing_version: 'unpriced-v1', dimensions: '', structured_output_mode: 'json_schema',
   })
 
   const load = useCallback(async () => {
@@ -61,7 +61,7 @@ export function AIProvidersPage({ api }: Props) {
         enabled: false,
         pricing_version: modelDraft.pricing_version,
         dimensions: modelDraft.dimensions ? Number(modelDraft.dimensions) : null,
-        config: {},
+        config: { structured_output_mode: modelDraft.structured_output_mode },
       })
       setModelDraft({ ...modelDraft, model_key: '', model_name: '', dimensions: '' })
       await load()
@@ -116,6 +116,7 @@ export function AIProvidersPage({ api }: Props) {
         <label>Model Key<input value={modelDraft.model_key} onChange={e => setModelDraft({ ...modelDraft, model_key: e.target.value })} /></label>
         <label>供应商 Model Name<input value={modelDraft.model_name} onChange={e => setModelDraft({ ...modelDraft, model_name: e.target.value })} /></label>
         <label>Capabilities<input placeholder="text_generation,structured_output" value={modelDraft.capabilities} onChange={e => setModelDraft({ ...modelDraft, capabilities: e.target.value })} /></label>
+        <label>Structured Output Mode<select value={modelDraft.structured_output_mode} onChange={e => setModelDraft({ ...modelDraft, structured_output_mode: e.target.value })}><option value="json_schema">json_schema</option><option value="json_object">json_object</option></select></label>
         <label>Pricing Version<input value={modelDraft.pricing_version} onChange={e => setModelDraft({ ...modelDraft, pricing_version: e.target.value })} /></label>
         <label>Dimensions<input value={modelDraft.dimensions} onChange={e => setModelDraft({ ...modelDraft, dimensions: e.target.value })} /></label>
       </div>

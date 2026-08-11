@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from packages.ai_gateway.structured_output import structured_output_mode
 from packages.connector_management.exceptions import (
     BusinessValidationError,
     ConflictError,
@@ -45,6 +46,15 @@ def _safe_config(config: dict[str, Any]) -> dict[str, Any]:
 
     inspect(config)
     return config
+
+
+def _safe_model_config(config: dict[str, Any]) -> dict[str, Any]:
+    safe_config = _safe_config(config)
+    try:
+        structured_output_mode(safe_config)
+    except ValueError as exc:
+        raise BusinessValidationError(str(exc)) from exc
+    return safe_config
 
 
 def _validate_credential_ref(value: str | None) -> str | None:
@@ -285,7 +295,7 @@ class AIManagementService:
 
     async def create_model(self, *, values: dict[str, Any], actor: str) -> AIModelRecord:
         capabilities = _validate_capabilities(values.get("capabilities"))
-        config = _safe_config(dict(values.get("config") or {}))
+        config = _safe_model_config(dict(values.get("config") or {}))
         async with self.session.begin():
             provider = await self.session.get(AIProviderRecord, values["provider_id"])
             if provider is None:
@@ -374,7 +384,7 @@ class AIManagementService:
             if "capabilities" in changes and changes["capabilities"] is not None:
                 model.capabilities = _validate_capabilities(changes["capabilities"])
             if "config" in changes and changes["config"] is not None:
-                model.config = _safe_config(dict(changes["config"]))
+                model.config = _safe_model_config(dict(changes["config"]))
             for field in (
                 "model_name",
                 "context_window",

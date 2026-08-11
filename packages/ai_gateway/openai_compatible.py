@@ -24,6 +24,7 @@ from packages.ai_gateway.domain import (
 )
 from packages.ai_gateway.errors import AIErrorCode, AIGatewayError, AIProviderError
 from packages.ai_gateway.providers import AIProviderAdapter
+from packages.ai_gateway.structured_output import structured_output_mode
 
 HostValidator = Callable[[str, bool], Awaitable[None]]
 
@@ -334,20 +335,49 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         request: StructuredProviderRequest,
         timeout_seconds: float,
     ) -> StructuredProviderResponse:
-        body: dict[str, Any] = {
-            "model": target.model_name,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
-            ],
-            "response_format": {
+        try:
+            mode = structured_output_mode(target.model_config)
+        except ValueError as exc:
+            raise AIProviderError(
+                AIErrorCode.INVALID_REQUEST,
+                "AI Model structured_output_mode 配置无效",
+            ) from exc
+        messages = [
+            {"role": message.role, "content": message.content}
+            for message in request.messages
+        ]
+        response_format: dict[str, Any]
+        if mode == "json_schema":
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": request.schema_name,
                     "strict": True,
                     "schema": request.schema,
                 },
-            },
+            }
+        else:
+            response_format = {"type": "json_object"}
+            messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": (
+                        "Return only a JSON object. Do not include Markdown or code fences. "
+                        "The JSON object must conform to this JSON Schema: "
+                        + json.dumps(
+                            request.schema,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    ),
+                },
+            )
+        body: dict[str, Any] = {
+            "model": target.model_name,
+            "messages": messages,
+            "response_format": response_format,
         }
         if request.max_output_tokens is not None:
             body["max_tokens"] = request.max_output_tokens
