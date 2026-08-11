@@ -5,7 +5,8 @@ export function Panel({ title, actions, children }: { title: string; actions?: R
 }
 
 export function ErrorBanner({ error }: { error: string | null }) {
-  return error ? <div className="error-banner" role="alert">{error}</div> : null
+  const message=error==='Failed to fetch'?'无法连接服务。请确认 API Base、后端服务和网络连接后重试。':error
+  return message ? <div className="error-banner" role="alert">{message}</div> : null
 }
 
 export function JsonView({ value }: { value: unknown }) {

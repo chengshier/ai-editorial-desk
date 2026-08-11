@@ -26,10 +26,10 @@ type PageKey='overview'|'candidates'|'events'|'publications'|'performance'|'sour
 type NavItem=readonly[PageKey,string]
 type NavGroup={label:string;items:readonly NavItem[]}
 const groups:readonly NavGroup[]=[
- {label:'Editorial',items:[['overview','Overview'],['candidates','Candidates'],['events','Events'],['publications','Publications'],['performance','Performance']]},
- {label:'Collection',items:[['sources','Sources'],['schedules','Schedules'],['runs','Runs'],['checkpoints','Checkpoints'],['risk','Accounts / Risk']]},
- {label:'Configuration',items:[['definitions','Definitions'],['instances','Instances']]},
- {label:'AI',items:[['ai-providers','AI Providers'],['ai-routes','AI Routes'],['ai-budgets','AI Budgets'],['ai-invocations','AI Invocations']]},
+ {label:'编辑工作',items:[['overview','今日总览'],['candidates','候选池'],['events','事件'],['publications','发布'],['performance','效果反馈']]},
+ {label:'内容资源',items:[['sources','信源'],['schedules','采集任务'],['runs','运行记录'],['checkpoints','检查点'],['risk','账号 / 风险']]},
+ {label:'系统配置',items:[['definitions','连接器定义'],['instances','连接器实例']]},
+ {label:'AI',items:[['ai-providers','AI 服务商'],['ai-routes','AI 路由'],['ai-budgets','AI 预算'],['ai-invocations','AI 调用记录']]},
 ]
 const allPages:NavItem[]=groups.flatMap(group=>[...group.items])
 const pageDescriptions:Record<PageKey,string>={overview:'优先处理高风险、需要人工判断的编辑事项',candidates:'浏览候选快照并记录人工编辑判断',events:'核验事件上下文并推进内容生产',publications:'只记录真实已发布结果',performance:'读取已录入的发布表现反馈',sources:'管理采集来源与运行状态',schedules:'安排和查看采集调度',runs:'检查采集任务执行情况',checkpoints:'查看采集进度与恢复点',risk:'管理平台账号与风险事件',definitions:'配置连接器定义',instances:'管理连接器实例','ai-providers':'管理 AI Provider 可用性','ai-routes':'管理 AI 路由与版本','ai-budgets':'查看 AI 预算约束','ai-invocations':'审计 AI 调用元数据'}
