@@ -12,6 +12,7 @@ def test_validation_cli_emits_only_sanitized_connection_error_detail(
     capsys,
 ) -> None:
     module = importlib.import_module("scripts.run_m5d_provider_validation")
+    monkeypatch.delenv("CI", raising=False)
     invocation_id = uuid4()
 
     class FakeTester:
