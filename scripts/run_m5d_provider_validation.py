@@ -43,7 +43,8 @@ async def _run(args: argparse.Namespace) -> int:
 
     factory = get_async_sessionmaker()
     try:
-        invocation_id, status, error_code = await AIConnectionTester(factory).test(
+        tester = AIConnectionTester(factory)
+        invocation_id, status, error_code = await tester.test(
             provider_id=args.provider_id,
             model_id=args.model_id,
             actor=actor,
@@ -57,6 +58,9 @@ async def _run(args: argparse.Namespace) -> int:
             "production_provider_validation": "PENDING_BUSINESS_INVOCATION",
         }
         if status != "succeeded":
+            detail = await tester.error_detail(invocation_id)
+            if detail is not None:
+                payload["connection_test_error_detail"] = detail
             print(json.dumps(sanitize_validation_payload(payload), indent=2))
             return 2
         if args.business_invocation_id is None:

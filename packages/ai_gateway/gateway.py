@@ -38,7 +38,12 @@ from packages.ai_gateway.domain import (
     TextProviderRequest,
     TextProviderResponse,
 )
-from packages.ai_gateway.errors import AIErrorCode, AIGatewayError, AIProviderError
+from packages.ai_gateway.errors import (
+    AIErrorCode,
+    AIGatewayError,
+    AIProviderError,
+    provider_error_metadata,
+)
 from packages.ai_gateway.invocations import AIInvocationStore
 from packages.ai_gateway.openai_compatible import DefaultProviderAdapterFactory
 from packages.ai_gateway.providers import AIProviderAdapter, ProviderAdapterFactory
@@ -432,6 +437,7 @@ class AIGateway:
                         provider_request_id=None,
                         error_code=exc.code.value,
                         error_message=exc.message,
+                        metadata=provider_error_metadata(exc),
                     )
                     can_retry = exc.retryable and retry_index < max_retries
                     if can_retry:

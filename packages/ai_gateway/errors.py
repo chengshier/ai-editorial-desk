@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 
 
@@ -32,12 +33,24 @@ class AIGatewayError(RuntimeError):
         *,
         retryable: bool = False,
         retry_after_seconds: float | None = None,
+        provider_error_detail: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = retryable
         self.retry_after_seconds = retry_after_seconds
+        self.provider_error_detail = (
+            dict(provider_error_detail) if provider_error_detail is not None else None
+        )
+
+
+def provider_error_metadata(error: AIGatewayError) -> dict[str, object]:
+    """Return already-sanitized provider diagnostic fields for invocation audit metadata."""
+
+    if error.provider_error_detail is None:
+        return {}
+    return {"provider_error_detail": dict(error.provider_error_detail)}
 
 
 class AIProviderError(AIGatewayError):

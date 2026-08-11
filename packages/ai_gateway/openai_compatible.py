@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import json
 import math
+import re
 import socket
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -131,6 +132,73 @@ def _retry_after(response: httpx.Response) -> float | None:
     return seconds if math.isfinite(seconds) and seconds >= 0 else None
 
 
+_MAX_PROVIDER_ERROR_FIELD_LENGTH = 120
+_MAX_PROVIDER_ERROR_MESSAGE_LENGTH = 500
+_PROVIDER_ERROR_BODY_MARKER = re.compile(
+    r"(?i)(authorization|credential_ref|request\s+body|messages\s*[:=]|response_format\s*[:=])"
+)
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
+_NAMED_SECRET_VALUE = re.compile(
+    r"(?i)\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password|"
+    r"authorization|credential)"
+    r"\s*(?:[:=]|is\s+)\s*[^\s,;]+"
+)
+_KEY_LIKE_VALUE = re.compile(r"\b(?:sk|pk|rk|ds|api)-[a-zA-Z0-9_-]{8,}\b")
+
+
+def _sanitize_provider_error_value(value: object, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or len(normalized) > limit or _PROVIDER_ERROR_BODY_MARKER.search(normalized):
+        return None
+    normalized = _BEARER_VALUE.sub("Bearer [REDACTED]", normalized)
+    normalized = _NAMED_SECRET_VALUE.sub(r"\1=[REDACTED]", normalized)
+    normalized = _KEY_LIKE_VALUE.sub("[REDACTED]", normalized)
+    return normalized
+
+
+def _provider_error_detail(response: httpx.Response) -> dict[str, str] | None:
+    """Extract a small diagnostic from standard OpenAI-style error JSON only."""
+
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None
+    detail: dict[str, str] = {}
+    for source, destination, limit in (
+        ("type", "provider_error_type", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("code", "provider_error_code", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("param", "provider_error_param", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("message", "provider_error_message", _MAX_PROVIDER_ERROR_MESSAGE_LENGTH),
+    ):
+        sanitized = _sanitize_provider_error_value(error.get(source), limit=limit)
+        if sanitized is not None:
+            detail[destination] = sanitized
+    return detail or None
+
+
+def _invalid_request_error(response: httpx.Response) -> AIProviderError:
+    detail = _provider_error_detail(response)
+    text = json.dumps(detail, ensure_ascii=True).casefold() if detail is not None else ""
+    if "context" in text and ("length" in text or "token" in text):
+        return AIProviderError(
+            AIErrorCode.CONTEXT_LENGTH_EXCEEDED,
+            "Provider 上下文长度超限",
+            provider_error_detail=detail,
+        )
+    return AIProviderError(
+        AIErrorCode.INVALID_REQUEST,
+        "Provider 拒绝了请求",
+        provider_error_detail=detail,
+    )
+
+
 def _http_error(response: httpx.Response) -> AIProviderError:
     status = response.status_code
     if status in {401, 403}:
@@ -153,18 +221,8 @@ def _http_error(response: httpx.Response) -> AIProviderError:
             AIErrorCode.MODEL_NOT_FOUND,
             "Provider 模型或端点不存在",
         )
-    if status == 400:
-        try:
-            body = response.json()
-        except ValueError:
-            body = None
-        text = json.dumps(body, ensure_ascii=True).casefold() if body is not None else ""
-        if "context" in text and ("length" in text or "token" in text):
-            return AIProviderError(
-                AIErrorCode.CONTEXT_LENGTH_EXCEEDED,
-                "Provider 上下文长度超限",
-            )
-        return AIProviderError(AIErrorCode.INVALID_REQUEST, "Provider 拒绝了请求")
+    if status in {400, 422}:
+        return _invalid_request_error(response)
     if 500 <= status < 600:
         return AIProviderError(
             AIErrorCode.PROVIDER_UNAVAILABLE,

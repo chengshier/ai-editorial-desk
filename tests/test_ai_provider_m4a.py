@@ -107,6 +107,88 @@ async def test_openai_compatible_maps_http_errors(
     assert caught.value.retryable is retryable
 
 
+async def test_openai_compatible_400_preserves_sanitized_provider_diagnostic() -> None:
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "type": "invalid_request_error",
+                        "code": "invalid_parameter",
+                        "param": "max_tokens",
+                        "message": "max_tokens must be greater than zero",
+                    }
+                },
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+
+    assert caught.value.code is AIErrorCode.INVALID_REQUEST
+    assert caught.value.provider_error_detail == {
+        "provider_error_type": "invalid_request_error",
+        "provider_error_code": "invalid_parameter",
+        "provider_error_param": "max_tokens",
+        "provider_error_message": "max_tokens must be greater than zero",
+    }
+
+
+async def test_openai_compatible_422_is_invalid_request_with_redacted_diagnostic() -> None:
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                422,
+                json={
+                    "error": {
+                        "type": "validation_error",
+                        "message": "Bearer ds-0123456789abcdef and token=abcdef0123456789 are invalid",
+                    }
+                },
+            )
+        ),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+
+    assert caught.value.code is AIErrorCode.INVALID_REQUEST
+    detail = caught.value.provider_error_detail
+    assert detail is not None
+    assert detail["provider_error_type"] == "validation_error"
+    assert "ds-0123456789abcdef" not in repr(detail)
+    assert "abcdef0123456789" not in repr(detail)
+    assert "[REDACTED]" in detail["provider_error_message"]
+
+
+async def test_openai_compatible_malformed_error_body_never_becomes_diagnostic() -> None:
+    raw_body = "Authorization: Bearer super-secret-test-key"
+    adapter = OpenAICompatibleProvider(
+        transport=httpx.MockTransport(lambda request: httpx.Response(400, text=raw_body)),
+        host_validator=allow_test_host,
+    )
+    with pytest.raises(AIProviderError) as caught:
+        await adapter.generate_text(
+            target=target(),
+            request=TextProviderRequest(messages=(AIMessage(role="user", content="x"),)),
+            timeout_seconds=1,
+        )
+
+    assert caught.value.code is AIErrorCode.INVALID_REQUEST
+    assert caught.value.provider_error_detail is None
+    assert raw_body not in str(caught.value)
+
+
 async def test_openai_compatible_timeout_and_network_are_retryable() -> None:
     def timeout_handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("slow", request=request)

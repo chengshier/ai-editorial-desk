@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from time import perf_counter
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from packages.ai_gateway.budget import AIBudgetGate, AIBudgetReservation
@@ -22,12 +23,17 @@ from packages.ai_gateway.domain import (
     StructuredProviderRequest,
     TextProviderRequest,
 )
-from packages.ai_gateway.errors import AIErrorCode, AIGatewayError
+from packages.ai_gateway.errors import AIErrorCode, AIGatewayError, provider_error_metadata
 from packages.ai_gateway.invocations import AIInvocationStore
 from packages.ai_gateway.openai_compatible import DefaultProviderAdapterFactory
 from packages.ai_gateway.providers import ProviderAdapterFactory
 from packages.connector_management.repositories import AuditLogRepository
-from packages.database.models import AIInvocationRecord, AIModelRecord, AIProviderRecord
+from packages.database.models import (
+    AIInvocationAttemptRecord,
+    AIInvocationRecord,
+    AIModelRecord,
+    AIProviderRecord,
+)
 
 
 class AIConnectionTester:
@@ -190,6 +196,7 @@ class AIConnectionTester:
                     "production_validation_eligible": (
                         self.production_validation_eligible
                     ),
+                    **provider_error_metadata(exc),
                 },
             )
             await self.invocations.finish_failure(
@@ -204,6 +211,36 @@ class AIConnectionTester:
             if exc.code is not AIErrorCode.CREDENTIAL_NOT_CONFIGURED:
                 await self._validation_status(provider_id, "FAILED", actor)
             return invocation_id, "failed", exc.code.value
+
+    async def error_detail(self, invocation_id: UUID | None) -> dict[str, str] | None:
+        """Return only persisted, sanitized provider diagnostics for validation output."""
+
+        if invocation_id is None:
+            return None
+        async with self.session_factory() as session:
+            attempt = await session.scalar(
+                select(AIInvocationAttemptRecord)
+                .where(AIInvocationAttemptRecord.invocation_id == invocation_id)
+                .order_by(AIInvocationAttemptRecord.attempt_no.desc())
+                .limit(1)
+            )
+            if attempt is None:
+                return None
+            value = attempt.metadata_json.get("provider_error_detail")
+            if not isinstance(value, dict):
+                return None
+            allowed = {
+                "provider_error_type",
+                "provider_error_code",
+                "provider_error_param",
+                "provider_error_message",
+            }
+            detail = {
+                key: item
+                for key, item in value.items()
+                if key in allowed and isinstance(item, str)
+            }
+            return detail or None
 
     async def _call(
         self,
