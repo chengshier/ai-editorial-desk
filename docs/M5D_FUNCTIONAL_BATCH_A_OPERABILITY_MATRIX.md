@@ -79,10 +79,10 @@
 | Human Decision | `POST /editorial/decisions` | Actor、reason、expected previous decision；R3/R4 acknowledgement；archive confirmation | append-only 决定并刷新历史 | 已有独立保存态、成功反馈与服务端刷新；未以审计身份写入 | WIRED_UNVERIFIED | 已补 |
 | Merge | `POST /events/{target}/merge` | Actor、source、reason、确认 | 合并状态持久化并刷新 | 已有确认、独立合并态、成功反馈与刷新，并降为低频展开操作；未人工写入 | WIRED_UNVERIFIED | 已补 |
 | Split | `POST /events/{id}/split` | Actor、signals、reason | 创建拆分事件 | 路由与调用一致；未人工写入 | WIRED_UNVERIFIED | 补 submitting/success |
-| Evidence：核验、备注、信源、Unknown | events evidence POST/PATCH/DELETE | Actor、必填理由或信号 | 持久化 Evidence 状态并 reload | 路由与调用一致；未人工写入 | WIRED_UNVERIFIED | 补 submitting/success |
-| Trend / Score / Override | editorial trend/scores endpoints | Actor、时间窗、评分上下文；AI Provider/Budget/Risk Gate | 创建快照/评分/覆盖并 reload | 路由与调用一致；AI 不自动执行 | WIRED_UNVERIFIED | 补 submitting/success |
-| Card / Pack | drafts card/pack POST | Actor、Card 选择 | 新 Artifact 并 reload | 路由与调用一致；未人工写入 | WIRED_UNVERIFIED | 补 submitting/success |
-| Draft Preview / Apply / Human Revision / Export | drafts endpoints | Actor、Card、Pack、Risk Gate、引用 | 预览或新版本并 reload | 路由与调用一致；AI 不自动执行 | WIRED_UNVERIFIED | 补 submitting/success |
+| Evidence：核验、备注、信源、Unknown | events evidence POST/PATCH/DELETE | Actor、必填理由或信号 | 持久化 Evidence 状态并 reload | 路由与调用一致；已增加 mutation guard、进行中状态与 reload；未人工写入 | WIRED_UNVERIFIED | 已补前端生命周期 |
+| Trend / Score / Override | editorial trend/scores endpoints | Actor、时间窗、评分上下文；AI Provider/Budget/Risk Gate | 创建快照/评分/覆盖并 reload | 路由与调用一致；已增加 mutation guard、进行中状态与 reload；AI 不自动执行 | WIRED_UNVERIFIED | 已补前端生命周期 |
+| Card / Pack | drafts card/pack POST | Actor、Card 选择 | 新 Artifact 并 reload | 路由与调用一致；已增加 mutation guard、进行中状态与 reload；未人工写入 | WIRED_UNVERIFIED | 已补前端生命周期 |
+| Draft Preview / Apply / Human Revision / Export | drafts endpoints | Actor、Card、Pack、Risk Gate、引用 | 预览或新版本并 reload | 路由与调用一致；已增加 mutation guard、进行中状态与 reload；AI 不自动执行 | WIRED_UNVERIFIED | 已补前端生命周期 |
 
 ## 真实 Smoke 结论
 

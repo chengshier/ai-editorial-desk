@@ -7,14 +7,14 @@ import { evidenceStateLabel,unknownStatusLabel } from '../../uiLabels'
 
 const states:EvidenceState[]=['confirmed','investigating','single_source','disputed','false']
 export function EventEvidenceSection({api,eventId,canWrite,onChanged}:{api:WorkbenchApi;eventId:string;canWrite:boolean;onChanged:()=>void}){
- const[data,setData]=useState<EventEvidence|null>(null);const[loading,setLoading]=useState(true);const[error,setError]=useState<string|null>(null);const[newUnknown,setNewUnknown]=useState('')
+ const[data,setData]=useState<EventEvidence|null>(null);const[loading,setLoading]=useState(true);const[error,setError]=useState<string|null>(null);const[newUnknown,setNewUnknown]=useState('');const[mutating,setMutating]=useState(false)
  const load=useCallback(async()=>{setLoading(true);setError(null);try{setData(await api.evidence(eventId))}catch(e){setError(FriendlyError(e))}finally{setLoading(false)}},[api,eventId])
  useEffect(()=>{void load()},[load])
- const mutate=async(fn:()=>Promise<unknown>)=>{try{setError(null);await fn();await load();onChanged()}catch(e){setError(FriendlyError(e))}}
+ const mutate=async(fn:()=>Promise<unknown>)=>{if(mutating)return;setMutating(true);try{setError(null);await fn();await load();onChanged()}catch(e){setError(FriendlyError(e))}finally{setMutating(false)}}
  const grouped=useMemo(()=>Object.fromEntries(states.map(s=>[s,data?.claims.filter(c=>c.verification_state===s)||[]])) as Record<EvidenceState,EvidenceClaim[]>,[data])
- return <Panel title="证据、事实主张与待确认点" actions={<button onClick={()=>void load()}>刷新</button>}>
+ return <Panel title="证据、事实主张与待确认点" actions={<button disabled={mutating} onClick={()=>void load()}>刷新</button>}>
   <div className="notice">核验状态是最终权威。<strong>单一信源不等于已确认</strong>；待确认点是问题，不能作为事实展示。后端核验规则仍是最终门槛。</div>
-  <SectionState loading={loading} error={error} empty={!data}>{data&&<>
+  {mutating&&<p className="notice" role="status">正在保存并从服务端刷新证据状态…</p>}<SectionState loading={loading} error={error} empty={!data}>{data&&<>
    {states.map(state=><section className="claim-group" key={state}><h3><EvidenceBadge value={state}/> <span>{grouped[state].length}</span></h3>{grouped[state].length===0?<Empty text={`暂无${evidenceStateLabel[state]}的事实主张`}/>:grouped[state].map(claim=><ClaimCard key={claim.id} claim={claim} canWrite={canWrite} onVerify={(s,r)=>mutate(()=>api.verifyClaim(eventId,claim.id,s,r))} onNote={note=>mutate(()=>api.updateClaimNote(eventId,claim.id,note))} onAttach={(sid,role)=>mutate(()=>api.attachClaimSource(eventId,claim.id,sid,role))} onRemove={sid=>mutate(()=>api.removeClaimSource(eventId,claim.id,sid))}/>)}</section>)}
    <section className="unknown-group"><h3>待确认点</h3><div className="badges"><Badge tone="warn">待确认 {data.unknowns.filter(x=>x.status==='open').length}</Badge><Badge>已解决 {data.unknowns.filter(x=>x.status==='resolved').length}</Badge><Badge>已忽略 {data.unknowns.filter(x=>x.status==='dismissed').length}</Badge></div>
     <div className="unknown-list">{data.unknowns.map(u=><UnknownCard key={u.id} item={u} canWrite={canWrite} update={(status,note)=>mutate(()=>api.updateUnknown(eventId,u.id,status,note))}/>)}</div>
