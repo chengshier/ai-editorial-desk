@@ -13,3 +13,20 @@ it('opens run detail with checkpoint, budget and retry action', async()=>{
   expect(screen.getByText('运行前检查点')).toBeInTheDocument()
   expect(screen.getByRole('button',{name:'人工重试'})).toBeInTheDocument()
 })
+
+it('surfaces retry failures and disables duplicate submission while retry is pending', async()=>{
+  let rejectRetry: ((reason?: unknown) => void) | undefined
+  vi.stubGlobal('fetch',vi.fn(async(url:string|URL|Request)=>{
+    const path=String(url)
+    if(path.endsWith(run.id)) return Response.json(run)
+    if(path.endsWith('/retry')) return await new Promise<Response>((_, reject) => { rejectRetry=reject })
+    return Response.json({items:[run],page:1,page_size:20,total:1,has_next:false})
+  }))
+  render(<RunsPage api={new AdminApi({apiBaseUrl:'http://api',adminToken:'t',actorId:'a'})}/>)
+  await userEvent.click(await screen.findByText('12345678'))
+  const retry = await screen.findByRole('button',{name:'人工重试'})
+  await userEvent.click(retry)
+  expect(retry).toBeDisabled()
+  rejectRetry?.(new Error('重试服务不可用'))
+  expect(await screen.findByRole('alert')).toHaveTextContent('重试服务不可用')
+})

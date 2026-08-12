@@ -4,7 +4,7 @@ import { Empty, ErrorBanner, Panel } from '../components/common'
 import { enabledLabel, sourceModeLabel, sourceStatusLabel } from '../uiLabels'
 import type { Instance, Source } from '../types'
 
-export function SourcesPage({ api }: { api: AdminApi }) {
+export function SourcesPage({ api, onNavigate }: { api: AdminApi; onNavigate?: (page: 'runs') => void }) {
   const [sources, setSources] = useState<Source[]>([])
   const [instances, setInstances] = useState<Instance[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -100,7 +100,7 @@ export function SourcesPage({ api }: { api: AdminApi }) {
         `/api/v1/admin/connector-instances/${source.connector_instance_id}/test-runs`,
         { source_id: source.id, requested_limit: 5, dry_run: true },
       )
-      setMessage(`测试运行已完成：${result.status} / ${result.run_id}`)
+      setMessage(`测试运行已创建：${result.status} / ${result.run_id}`)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -109,7 +109,7 @@ export function SourcesPage({ api }: { api: AdminApi }) {
   return <>
     <Panel title={editingId ? '编辑信源' : '新建信源'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
       <div className="page-intro"><p>管理用于采集和编辑判断的数据来源。</p></div>
-      <ErrorBanner error={error}/>{message && <p className="notice">{message}</p>}<div className="form-grid operations-form">
+      <ErrorBanner error={error}/>{message && <p className="notice">{message}{onNavigate && <button className="quiet-action" onClick={() => onNavigate('runs')}>查看运行记录</button>}</p>}<div className="form-grid operations-form">
       <label className="field-md">所属实例<select disabled={Boolean(editingId)} value={form.connector_instance_id} onChange={(event) => setForm({ ...form, connector_instance_id: event.target.value })}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name}</option>)}</select></label>
       <label className="field-md">信源名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label className="field-sm">来源类型<input disabled={Boolean(editingId)} value={form.source_type} onChange={(event) => setForm({ ...form, source_type: event.target.value })}/></label><label className="field-md">采集模式<select disabled={Boolean(editingId)} value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{Object.entries(sourceModeLabel).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label className="field-md">作用范围<input disabled={Boolean(editingId)} value={form.scope_key} onChange={(event) => setForm({ ...form, scope_key: event.target.value })}/></label><label className="field-lg">外部引用<input value={form.external_ref} onChange={(event) => setForm({ ...form, external_ref: event.target.value })}/></label>
     </div><button className="primary" onClick={save}>{editingId ? '保存修改' : '新建信源'}</button></Panel>

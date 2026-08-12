@@ -5,7 +5,7 @@ import { enabledLabel, sourceStatusLabel } from '../uiLabels'
 import { SchemaForm, validateSchemaValue } from '../components/SchemaForm'
 import type { Definition, Instance, Source } from '../types'
 
-export function InstancesPage({ api }: { api: AdminApi }) {
+export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?: (page: 'runs') => void }) {
   const [instances, setInstances] = useState<Instance[]>([])
   const [definitions, setDefinitions] = useState<Definition[]>([])
   const [sources, setSources] = useState<Source[]>([])
@@ -100,7 +100,7 @@ export function InstancesPage({ api }: { api: AdminApi }) {
         `/api/v1/admin/connector-instances/${instance.id}/test-runs`,
         { source_id: source.id, requested_limit: 5, dry_run: dryRun },
       )
-      setMessage(`${dryRun ? '测试运行' : '立即执行'}已完成：${result.status} / ${result.run_id}`)
+      setMessage(`${dryRun ? '运行已创建' : '立即执行已创建'}：${result.status} / ${result.run_id}`)
       await load()
     } catch (e) {
       setError((e as Error).message)
@@ -111,7 +111,7 @@ export function InstancesPage({ api }: { api: AdminApi }) {
     <Panel title={editingId ? '编辑连接器实例' : '新建连接器实例'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
       <div className="page-intro"><p>管理各平台连接器的采集配置与运行方式。</p></div>
       <ErrorBanner error={error}/>
-      {message && <p className="notice">{message}</p>}
+      {message && <p className="notice">{message}{onNavigate && <button className="quiet-action" onClick={() => onNavigate('runs')}>查看运行记录</button>}</p>}
       <div className="form-grid operations-form">
         <label className="field-md">连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label>
         <label className="field-md">实例名称<input value={name} onChange={(event) => setName(event.target.value)}/></label>

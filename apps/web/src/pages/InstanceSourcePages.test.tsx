@@ -105,3 +105,25 @@ it('edits a source and runs a dry test without exposing secret fields', async ()
   expect(testRun).toBeDefined()
   expect(JSON.parse(String(testRun?.init.body))).toMatchObject({ source_id: 'src1', requested_limit: 5, dry_run: true })
 })
+
+it('shows a run result and offers the next navigation step after an instance run', async () => {
+  const calls: Array<{ path: string; init: RequestInit }> = []
+  const onNavigate = vi.fn()
+  render(<InstancesPage api={apiWithCalls(calls)} onNavigate={onNavigate}/>)
+
+  await userEvent.click(await screen.findByRole('button', { name: '测试运行' }))
+  expect(await screen.findByText(/运行已创建：succeeded \/ run1/)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '查看运行记录' }))
+  expect(onNavigate).toHaveBeenCalledWith('runs')
+})
+
+it('shows a run result and offers the next navigation step after a source test', async () => {
+  const calls: Array<{ path: string; init: RequestInit }> = []
+  const onNavigate = vi.fn()
+  render(<SourcesPage api={apiWithCalls(calls)} onNavigate={onNavigate}/>)
+
+  await userEvent.click(await screen.findByRole('button', { name: '测试运行' }))
+  expect(await screen.findByText(/测试运行已创建：succeeded \/ run1/)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '查看运行记录' }))
+  expect(onNavigate).toHaveBeenCalledWith('runs')
+})
