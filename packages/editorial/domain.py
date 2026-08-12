@@ -61,7 +61,9 @@ Hard rules:
 - Verification states are database facts. Never reinterpret a false Claim as confirmed.
 - Feature unavailable/null means unavailable, not zero.
 - Score exactly seven semantic dimensions from 0 to 100 as integers.
-- risk_level must be one of R0,R1,R2,R3,R4.
+- risk_level MUST be selected from input.allowed_risk_levels. This is a hard backend
+  constraint derived from Evidence and Unknown state, not a recommendation. If R0 is
+  absent, including because unresolved Unknowns remain, never return R0.
 - recommended_format must be one allowed stable key.
 - traffic_total, if emitted, is advisory and will be ignored/recomputed by the service.
 - Explain the assessment briefly in model_reason, including evidence weakness
@@ -84,6 +86,7 @@ EDITORIAL_SCORE_SCHEMA_V1: dict[str, Any] = {
         "risk_level": {
             "type": "string",
             "enum": [item.value for item in EditorialRiskLevel],
+            "description": "Must be one of input.allowed_risk_levels.",
         },
         "recommended_format": {
             "type": "string",
@@ -135,6 +138,24 @@ class EvidenceStateSummary:
     disputed_count: int
     false_count: int
     open_unknown_count: int
+
+
+def allowed_editorial_risk_levels(
+    summary: EvidenceStateSummary,
+) -> tuple[EditorialRiskLevel, ...]:
+    """Return the risk levels permitted by deterministic Evidence state."""
+
+    r0_allowed = (
+        summary.claim_count > 0
+        and summary.confirmed_count > 0
+        and summary.single_source_count + summary.disputed_count
+        != summary.claim_count
+        and summary.open_unknown_count == 0
+    )
+    levels = tuple(EditorialRiskLevel)
+    if r0_allowed:
+        return levels
+    return tuple(item for item in levels if item is not EditorialRiskLevel.R0)
 
 
 def normalize_text(value: str) -> str:
