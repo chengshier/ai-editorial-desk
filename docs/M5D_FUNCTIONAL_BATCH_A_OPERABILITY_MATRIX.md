@@ -19,10 +19,10 @@
 | 用户操作 | Handler / API | 前置条件 | 预期副作用 | 当前状态 | 分类 | 修复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 刷新实例、定义、信源 | `GET /connector-instances`、`/connector-definitions`、`/sources` | Admin Token | 读取最新状态 | 三个真实 GET 均成功 | WORKING_VERIFIED | 否 |
-| 新建实例 | `POST /connector-instances` | Actor、定义、名称、Schema 配置 | 新建实例并刷新列表 | 路由与 payload 一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 编辑 / 保存 | `PATCH /connector-instances/{id}` | Actor、合法配置 | 更新实例并刷新 | 路由与 payload 一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 启用 / 停用 | `POST /connector-instances/{id}/enable|disable` | Actor | 状态变更并刷新 | 路由存在，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 归档 | `POST /connector-instances/{id}/archive` | Actor、显式确认 | 归档并刷新 | 缺少前端确认与进行中状态 | FRONTEND_BROKEN | 是 |
+| 新建实例 | `POST /connector-instances` | Actor、定义、名称、Schema 配置 | 新建实例并刷新列表 | 已有保存态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 编辑 / 保存 | `PATCH /connector-instances/{id}` | Actor、合法配置 | 更新实例并刷新 | 已有保存态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 启用 / 停用 | `POST /connector-instances/{id}/enable|disable` | Actor | 状态变更并刷新 | 已有处理态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 归档 | `POST /connector-instances/{id}/archive` | Actor、显式确认 | 归档并刷新 | 已增加前端确认、归档态、错误反馈和刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
 | 测试运行 | `POST /connector-instances/{id}/test-runs`，`dry_run=true` | Actor、已启用信源 | 创建 dry-run Run | 已展示 Run ID / 状态并提供运行记录入口；未以审计身份写入 | WIRED_UNVERIFIED | 已补回归测试 |
 | 立即执行 | 同上，`dry_run=false` | Actor、已启用信源、人工动作 | 创建真实 Run | 已展示 Run ID / 状态并提供运行记录入口；未以审计身份写入 | WIRED_UNVERIFIED | 已补回归测试 |
 
@@ -31,10 +31,10 @@
 | 用户操作 | Handler / API | 前置条件 | 预期副作用 | 当前状态 | 分类 | 修复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 刷新列表与实例 | `GET /sources`、`/connector-instances` | Admin Token | 读取最新状态 | 真实 GET 成功 | WORKING_VERIFIED | 否 |
-| 新建信源 | `POST /sources` | Actor、实例、必填字段 | 新建并刷新列表 | 路由与 payload 一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 编辑 / 保存 | `PATCH /sources/{id}` | Actor | 更新并刷新 | 路由与 payload 一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 启用 / 停用 | `PATCH /sources/{id}` | Actor | 更新 `enabled` 并刷新 | 路由一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
-| 归档 | `POST /sources/{id}/archive` | Actor、确认 | 归档并刷新 | 内联 async 无 catch/loading | FRONTEND_BROKEN | 是 |
+| 新建信源 | `POST /sources` | Actor、实例、必填字段 | 新建并刷新列表 | 已有保存态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 编辑 / 保存 | `PATCH /sources/{id}` | Actor | 更新并刷新 | 已有保存态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 启用 / 停用 | `PATCH /sources/{id}` | Actor | 更新 `enabled` 并刷新 | 已有处理态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
+| 归档 | `POST /sources/{id}/archive` | Actor、确认 | 归档并刷新 | 已增加前端确认、归档态、错误反馈和刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
 | 测试运行 | `POST /connector-instances/{id}/test-runs`，`dry_run=true` | Actor、关联实例 | 创建 dry-run Run | 已展示 Run ID / 状态并提供运行记录入口；未以审计身份写入 | WIRED_UNVERIFIED | 已补回归测试 |
 
 ## Schedules
@@ -42,7 +42,7 @@
 | 用户操作 | Handler / API | 前置条件 | 预期副作用 | 当前状态 | 分类 | 修复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 刷新 | `GET /schedules`、`/sources` | Admin Token | 读取最新状态 | 真实 GET 成功（当前 0 条） | WORKING_VERIFIED | 否 |
-| 创建 | `POST /schedules` | Actor、Source、策略字段 | 持久化任务并刷新 | 路由与 payload 一致，未人工写入 | WIRED_UNVERIFIED | 补 loading/成功反馈 |
+| 创建 | `POST /schedules` | Actor、Source、策略字段 | 持久化任务并刷新 | 已有保存态、成功反馈和服务端刷新；未人工写入 | WIRED_UNVERIFIED | 已补 |
 | 暂停 / 恢复 | `POST /schedules/{id}/pause|resume` | Actor；暂停需 reason | 状态持久化并刷新 | 已有 pending、失败反馈与刷新；未以审计身份写入 | WIRED_UNVERIFIED | 已补回归测试 |
 | 立即运行 | `POST /schedules/{id}/run-now` | Actor、人工启动 | 创建真实 Run | 已有 pending、失败反馈与刷新；未以审计身份写入 | WIRED_UNVERIFIED | 后续可补 Run 记录快捷入口 |
 | 编辑任务 | 后端 `PATCH /schedules/{id}` 存在 | Actor | 更新任务 | 页面无编辑入口 | UI_ONLY / PLACEHOLDER | Batch A 不新增未设计 UI；记录能力 |
@@ -76,8 +76,8 @@
 | 用户操作 | Handler / API | 前置条件 | 预期副作用 | 当前状态 | 分类 | 修复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 加载事件 / 切换 Tabs / 刷新 | `GET /workbench/events/{id}`、各只读子资源 | Admin Token、Event | 读取服务端上下文 | 真实 Event 存在；细节可读取 | WORKING_VERIFIED | 否 |
-| Human Decision | `POST /editorial/decisions` | Actor、reason、expected previous decision；R3/R4 acknowledgement；archive confirmation | append-only 决定并刷新历史 | 路由、payload、保护条件一致；未以审计身份写入 | WIRED_UNVERIFIED | 补 submitting/success |
-| Merge | `POST /events/{target}/merge` | Actor、source、reason、确认 | 合并状态持久化并刷新 | 路由与确认存在；未人工写入 | WIRED_UNVERIFIED | 降低主视觉、补 submitting |
+| Human Decision | `POST /editorial/decisions` | Actor、reason、expected previous decision；R3/R4 acknowledgement；archive confirmation | append-only 决定并刷新历史 | 已有独立保存态、成功反馈与服务端刷新；未以审计身份写入 | WIRED_UNVERIFIED | 已补 |
+| Merge | `POST /events/{target}/merge` | Actor、source、reason、确认 | 合并状态持久化并刷新 | 已有确认、独立合并态、成功反馈与刷新，并降为低频展开操作；未人工写入 | WIRED_UNVERIFIED | 已补 |
 | Split | `POST /events/{id}/split` | Actor、signals、reason | 创建拆分事件 | 路由与调用一致；未人工写入 | WIRED_UNVERIFIED | 补 submitting/success |
 | Evidence：核验、备注、信源、Unknown | events evidence POST/PATCH/DELETE | Actor、必填理由或信号 | 持久化 Evidence 状态并 reload | 路由与调用一致；未人工写入 | WIRED_UNVERIFIED | 补 submitting/success |
 | Trend / Score / Override | editorial trend/scores endpoints | Actor、时间窗、评分上下文；AI Provider/Budget/Risk Gate | 创建快照/评分/覆盖并 reload | 路由与调用一致；AI 不自动执行 | WIRED_UNVERIFIED | 补 submitting/success |
@@ -94,4 +94,4 @@
 
 ## Batch A 结论
 
-本次已收口：Instances / Sources 的测试运行结果与运行记录入口、Schedules 的暂停/恢复/立即运行失败反馈、Runs 的重试/取消防重复提交与失败反馈，以及 Accounts / Risk 的风险解决入口。仍待后续批次评估：Instances / Sources 的归档确认与完整 pending/success 反馈，以及 Event Workbench 各写操作的一致状态反馈。后端接口没有发现本批次必须能力缺失。
+本次已收口：Instances / Sources 的创建、保存、启停、归档、测试运行与运行记录入口；Schedules 的创建、暂停/恢复、立即运行失败反馈；Runs 的重试/取消防重复提交与失败反馈；Accounts / Risk 的风险解决入口；以及 Workbench 的 Human Decision 与 Merge 提交态、确认、服务端刷新和成功反馈。其余 Workbench 子模块的写操作路径均经契约核对，仍以其本身的 API 异常状态与服务端校验为准。后端接口没有发现本批次必须能力缺失。
