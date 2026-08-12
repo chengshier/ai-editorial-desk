@@ -23,6 +23,7 @@ from packages.database.session import get_async_sessionmaker
 from packages.editorial.domain import (
     EDITORIAL_PROMPT_VERSION,
     EDITORIAL_SCHEMA_VERSION,
+    EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
     EDITORIAL_SCORING_VERSION,
 )
 from packages.editorial.errors import EditorialRiskConflictError
@@ -76,6 +77,7 @@ async def test_ai_apply_recomputes_total_uses_gateway_and_is_idempotent(db_sessi
     assert len(calls) == 1
     request_body = json.loads(calls[0].content.decode())
     assert request_body["model"] == "model-primary"
+    assert request_body["max_tokens"] == EDITORIAL_SCORING_MAX_OUTPUT_TOKENS
     user_message = request_body["messages"][1]["content"]
     assert "BEGIN UNTRUSTED EVENT DATA" in user_message
     assert '"interaction_velocity":null' in user_message

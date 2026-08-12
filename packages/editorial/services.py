@@ -45,6 +45,7 @@ from packages.editorial.domain import (
     EDITORIAL_SCORE_SCHEMA_V1,
     EDITORIAL_SCORE_TEMPLATE,
     EDITORIAL_SCORE_TEMPLATE_VERSION,
+    EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
     EDITORIAL_SCORING_VERSION,
     GEOGRAPHY_UNAVAILABLE,
     INTERACTION_UNAVAILABLE,
@@ -380,7 +381,7 @@ class EditorialScoringService:
                 messages=snapshot.messages(),
                 schema=EDITORIAL_SCORE_SCHEMA_V1,
                 schema_name=EDITORIAL_SCHEMA_NAME,
-                max_output_tokens=1200,
+                max_output_tokens=EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
                 temperature=0.0,
                 context=InvocationContext(
                     prompt_version=EDITORIAL_PROMPT_VERSION,
