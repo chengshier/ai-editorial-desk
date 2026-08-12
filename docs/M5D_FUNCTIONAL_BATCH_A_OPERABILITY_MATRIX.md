@@ -2,7 +2,7 @@
 
 > 审计日期：2026-08-12。范围仅覆盖 Functional Batch A：Connector Instances、Sources、Schedules、Runs、Accounts / Risk、Event Explorer、Event Workbench。
 >
-> 本地后端 `/health` 与 `/ready` 均返回 200；带本地 Admin Token 的只读真实 smoke 已确认有 1 个实例、1 个信源、5 条运行记录、1 个账号、1 个 Event。为遵守 Human Actor、Risk Gate 与“不得自动采集”的约束，本审计没有自动执行任何写入、运行、归档、人工决定或 AI 操作。
+> 本地后端 `/health` 与 `/ready` 均返回 200；带本地 Admin Token 的只读真实 smoke 已确认有 1 个实例、1 个信源、6 条运行记录、1 个账号、1 个 Event。为遵守 Human Actor、Risk Gate 与“不得自动采集”的约束，本审计没有自动执行任何写入、运行、归档、人工决定或 AI 操作。
 
 ## 分类说明
 
@@ -51,7 +51,7 @@
 
 | 用户操作 | Handler / API | 前置条件 | 预期副作用 | 当前状态 | 分类 | 修复 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 筛选 / 刷新 | `GET /connector-runs?status=` | Admin Token | 重取运行记录 | 真实 GET 成功（5 条） | WORKING_VERIFIED | 否 |
+| 筛选 / 刷新 | `GET /connector-runs?status=` | Admin Token | 重取运行记录 | 真实 GET 成功（6 条） | WORKING_VERIFIED | 否 |
 | 打开详情 | `GET /connector-runs/{id}` | 已有 Run | 查看服务端详情 | 有真实 Run 可供只读 smoke | WORKING_VERIFIED | 否 |
 | 人工重试 | `POST /connector-runs/{id}/retry` | Actor、失败/部分/取消 Run | 创建 retry Run | 已防止重复提交、显示失败反馈并刷新详情；未以审计身份写入 | WIRED_UNVERIFIED | 已补回归测试 |
 | 取消运行 | `POST /connector-runs/{id}/cancel` | Actor、pending/running Run、reason | 持久化取消 | 已防止重复提交、显示失败反馈并刷新详情；未以审计身份写入 | WIRED_UNVERIFIED | 同上 |
@@ -89,7 +89,7 @@
 | 类别 | 结果 | 说明 |
 | --- | --- | --- |
 | 后端健康与数据库 | WORKING_VERIFIED | `/health`、`/ready` 均为 200。 |
-| Batch A 只读列表 | WORKING_VERIFIED | Instances 1、Sources 1、Runs 5、Accounts 1、Events 1；Schedules/Risk Events 当前为 0。 |
+| Batch A 只读列表 | WORKING_VERIFIED | Instances 1、Sources 1、Runs 6、Accounts 1、Events 1；Schedules/Risk Events 当前为 0。 |
 | 写操作、Run、Decision、AI | REAL_SMOKE_BLOCKED | 必须由显式人工 Actor 与所需 confirmation 触发；审计不冒充人类、不自动采集或调用 AI。 |
 
 ## Batch A 结论
