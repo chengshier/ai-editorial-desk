@@ -51,6 +51,7 @@ SAFE_ENV_NAMES = frozenset(
         "PYTHONPATH",
         "HOME",
         "USERPROFILE",
+        "USERNAME",
         "APPDATA",
         "LOCALAPPDATA",
         "TEMP",

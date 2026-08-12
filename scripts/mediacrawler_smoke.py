@@ -36,6 +36,16 @@ from packages.database.models import (
 from packages.database.session import dispose_database, get_async_sessionmaker
 
 _CONFIRMATION = "M2D_REAL_SMOKE"
+_SAFE_RUNTIME_STAGES = frozenset(
+    {
+        "bootstrap",
+        "cdp_connect",
+        "page_navigation",
+        "client_create",
+        "login_state",
+        "search",
+    }
+)
 
 
 def _failure_diagnostic_summary(metadata: object) -> dict[str, object] | None:
@@ -56,6 +66,9 @@ def _failure_diagnostic_summary(metadata: object) -> dict[str, object] | None:
         for key in ("dependency_module", "dependency_reason"):
             if isinstance(metadata.get(key), str):
                 summary[key] = metadata[key]
+    runtime_stage = metadata.get("runtime_stage")
+    if isinstance(runtime_stage, str) and runtime_stage in _SAFE_RUNTIME_STAGES:
+        summary["runtime_stage"] = runtime_stage
     return summary
 
 

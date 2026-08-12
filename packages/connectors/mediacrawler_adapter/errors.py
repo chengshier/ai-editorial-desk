@@ -56,6 +56,19 @@ _SAFE_IMPORT_MARKER = re.compile(
     r"exception_type=(ModuleNotFoundError|ImportError)\s+"
     r"module=(.*?)\s+reason=(MODULE_NOT_FOUND|IMPORT_FAILED)"
 )
+_SAFE_RUNTIME_STAGES = (
+    "bootstrap",
+    "cdp_connect",
+    "page_navigation",
+    "client_create",
+    "login_state",
+    "search",
+)
+_SAFE_RUNTIME_STAGE_MARKER = re.compile(
+    r"(?m)^AI_EDITORIAL_SAFE_STAGE stage=("
+    + "|".join(_SAFE_RUNTIME_STAGES)
+    + r")\s*$"
+)
 _MODULE_NOT_FOUND = re.compile(
     r"ModuleNotFoundError:\s+No module named "
     r"['\"]([A-Za-z_][A-Za-z0-9_.]{0,127})['\"]"
@@ -81,6 +94,7 @@ class SubprocessFailureDiagnostic(TypedDict):
     output_truncated: bool
     dependency_module: str | None
     dependency_reason: str | None
+    runtime_stage: str | None
 
 
 def build_subprocess_failure_diagnostic(
@@ -101,6 +115,8 @@ def build_subprocess_failure_diagnostic(
     exception_type: str | None = None
     dependency_module: str | None = None
     dependency_reason: str | None = None
+    stage_markers = _SAFE_RUNTIME_STAGE_MARKER.findall(f"{stdout}\n{stderr}")
+    runtime_stage = stage_markers[-1] if stage_markers else None
 
     explicit_auth = "auth_required" in diagnostic
     if explicit_auth:
@@ -177,6 +193,16 @@ def build_subprocess_failure_diagnostic(
             "SUBPROCESS_TIMEOUT",
             "MediaCrawler subprocess timed out",
         )
+    elif (
+        runtime_stage is not None
+        and exit_code not in (None, 0)
+        and code is MediaCrawlerErrorCode.NON_ZERO_EXIT
+    ):
+        category, safe_code, safe_message = (
+            "RUNTIME",
+            "NON_ZERO_EXIT",
+            "MediaCrawler subprocess exited unsuccessfully",
+        )
 
     risk = code in RISK_ERROR_CODES or explicit_auth
     if risk:
@@ -208,6 +234,7 @@ def build_subprocess_failure_diagnostic(
         "output_truncated": output_truncated,
         "dependency_module": dependency_module,
         "dependency_reason": dependency_reason,
+        "runtime_stage": runtime_stage,
     }
 
 

@@ -14,7 +14,22 @@ _TARGET_LOGIN_PATCHES: dict[str, tuple[str, str]] = {
     "zhihu": ("media_platform.zhihu.core", "ZhiHuLogin"),
     "wb": ("media_platform.weibo.core", "WeiboLogin"),
 }
+_TARGET_CRAWLERS: dict[str, tuple[str, str]] = {
+    "bili": ("media_platform.bilibili.core", "BilibiliCrawler"),
+    "zhihu": ("media_platform.zhihu.core", "ZhihuCrawler"),
+    "wb": ("media_platform.weibo.core", "WeiboCrawler"),
+}
 _SAFE_MODULE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
+_SAFE_RUNTIME_STAGES = frozenset(
+    {
+        "bootstrap",
+        "cdp_connect",
+        "page_navigation",
+        "client_create",
+        "login_state",
+        "search",
+    }
+)
 
 
 def _safe_import_error_marker(exc: ImportError) -> str:
@@ -29,6 +44,54 @@ def _safe_import_error_marker(exc: ImportError) -> str:
         "AI_EDITORIAL_SAFE_IMPORT_ERROR "
         f"exception_type={type(exc).__name__} module={safe_module} reason={reason}"
     )
+
+
+def _emit_safe_stage(stage: str) -> None:
+    if stage not in _SAFE_RUNTIME_STAGES:
+        raise ValueError("unsupported safe runtime stage")
+    print(f"AI_EDITORIAL_SAFE_STAGE stage={stage}")
+
+
+def _install_stage_breadcrumbs(crawler: Any) -> None:
+    """Emit fixed stage markers while preserving the vendored call behavior."""
+
+    launch_with_cdp = getattr(crawler, "launch_browser_with_cdp", None)
+    if callable(launch_with_cdp):
+
+        async def staged_launch_with_cdp(*args: Any, **kwargs: Any) -> Any:
+            _emit_safe_stage("cdp_connect")
+            browser_context = await launch_with_cdp(*args, **kwargs)
+            _emit_safe_stage("page_navigation")
+            return browser_context
+
+        crawler.launch_browser_with_cdp = staged_launch_with_cdp
+
+    create_client = getattr(crawler, "create_bilibili_client", None)
+    if callable(create_client):
+
+        async def staged_create_client(*args: Any, **kwargs: Any) -> Any:
+            _emit_safe_stage("client_create")
+            client = await create_client(*args, **kwargs)
+            pong = getattr(client, "pong", None)
+            if callable(pong):
+
+                async def staged_pong(*pong_args: Any, **pong_kwargs: Any) -> Any:
+                    _emit_safe_stage("login_state")
+                    return await pong(*pong_args, **pong_kwargs)
+
+                client.pong = staged_pong
+            return client
+
+        crawler.create_bilibili_client = staged_create_client
+
+    search = getattr(crawler, "search", None)
+    if callable(search):
+
+        async def staged_search(*args: Any, **kwargs: Any) -> Any:
+            _emit_safe_stage("search")
+            return await search(*args, **kwargs)
+
+        crawler.search = staged_search
 
 
 class _BlockedInteractiveLogin:
@@ -77,6 +140,19 @@ def _patch_interactive_login(platform_code: str) -> None:
     setattr(core_module, class_name, _BlockedInteractiveLogin)
 
 
+def _create_target_crawler(platform_code: str) -> Any:
+    try:
+        module_name, class_name = _TARGET_CRAWLERS[platform_code]
+    except KeyError as exc:
+        raise RuntimeError(
+            "M2D_SMOKE_TARGET_ERROR: platform is outside the first validation batch"
+        ) from exc
+
+    crawler_module = importlib.import_module(module_name)
+    crawler_cls = getattr(crawler_module, class_name)
+    return crawler_cls()
+
+
 def _block_standard_browser_fallback(crawler: Any) -> None:
     async def blocked_launch_browser(
         self: Any,
@@ -98,7 +174,6 @@ async def _run() -> None:
 
     cmd_arg = importlib.import_module("cmd_arg")
     config = importlib.import_module("config")
-    vendored_main = importlib.import_module("main")
 
     args = await cmd_arg.parse_cmd()
     if bool(getattr(args, "init_db", False)):
@@ -107,8 +182,10 @@ async def _run() -> None:
     _enforce_safe_config(config, args)
     _patch_interactive_login(config.PLATFORM)
 
-    crawler = vendored_main.CrawlerFactory.create_crawler(platform=config.PLATFORM)
+    crawler = _create_target_crawler(config.PLATFORM)
     _block_standard_browser_fallback(crawler)
+    _install_stage_breadcrumbs(crawler)
+    _emit_safe_stage("bootstrap")
     await crawler.start()
 
 

@@ -270,6 +270,23 @@ def _home(tmp_path: Path) -> Path:
     (home / "main.py").write_text("# fixture", encoding="utf-8")
     return home
 
+def test_safe_environment_preserves_windows_username(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = _home(tmp_path)
+    runner = MediaCrawlerSubprocessRunner(
+        home=home,
+        python_executable="python",
+    )
+
+    monkeypatch.setenv("USERNAME", "m5d-test-user")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://secret")
+
+    environment = runner._safe_environment(tmp_path / "data")
+
+    assert environment["USERNAME"] == "m5d-test-user"
+    assert "DATABASE_URL" not in environment
 
 async def test_subprocess_success_and_result_sanitization(tmp_path: Path) -> None:
     invocation = _invocation()
@@ -445,6 +462,78 @@ def test_import_diagnostic_requires_safe_marker_or_module_not_found() -> None:
         )
         assert malicious["dependency_module"] == "unknown"
         assert "SECRET" not in json.dumps(malicious)
+
+
+def test_runtime_stage_diagnostic_uses_the_last_valid_marker() -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr=(
+            "AI_EDITORIAL_SAFE_STAGE stage=cdp_connect\n"
+            "AI_EDITORIAL_SAFE_STAGE stage=page_navigation\n"
+            "AI_EDITORIAL_SAFE_STAGE stage=client_create"
+        ),
+    )
+
+    assert diagnostic["failure_category"] == "RUNTIME"
+    assert diagnostic["failure_code"] == "NON_ZERO_EXIT"
+    assert diagnostic["runtime_stage"] == "client_create"
+
+
+@pytest.mark.parametrize(
+    "marker",
+    (
+        "AI_EDITORIAL_SAFE_STAGE stage=../../secret",
+        r"AI_EDITORIAL_SAFE_STAGE stage=C:\\Users\\foo",
+        "AI_EDITORIAL_SAFE_STAGE stage=search?token=SECRET",
+        "AI_EDITORIAL_SAFE_STAGE stage=unknown_stage",
+    ),
+)
+def test_runtime_stage_diagnostic_ignores_invalid_markers(marker: str) -> None:
+    diagnostic = build_subprocess_failure_diagnostic(exit_code=1, stderr=marker)
+
+    assert diagnostic["failure_category"] == "UNKNOWN"
+    assert diagnostic["failure_code"] == "NON_ZERO_EXIT"
+    assert diagnostic["runtime_stage"] is None
+    assert "SECRET" not in json.dumps(diagnostic)
+
+
+def test_platform_risk_overrides_runtime_stage_diagnostic() -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr="AI_EDITORIAL_SAFE_STAGE stage=search\nHTTP 429",
+    )
+
+    assert diagnostic["failure_category"] == "PLATFORM_RISK"
+    assert diagnostic["failure_code"] == "RATE_LIMITED"
+    assert diagnostic["platform_risk_detected"] is True
+    assert diagnostic["runtime_stage"] == "search"
+
+
+def test_auth_overrides_runtime_stage_diagnostic() -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr="AI_EDITORIAL_SAFE_STAGE stage=login_state\nAUTH_REQUIRED",
+    )
+
+    assert diagnostic["failure_category"] == "AUTH"
+    assert diagnostic["failure_code"] == "AUTH_REQUIRED"
+    assert diagnostic["platform_risk_detected"] is True
+    assert diagnostic["runtime_stage"] == "login_state"
+
+
+def test_dependency_overrides_runtime_stage_diagnostic() -> None:
+    diagnostic = build_subprocess_failure_diagnostic(
+        exit_code=1,
+        stderr=(
+            "AI_EDITORIAL_SAFE_STAGE stage=client_create\n"
+            "AI_EDITORIAL_SAFE_IMPORT_ERROR exception_type=ImportError "
+            "module=playwright reason=IMPORT_FAILED"
+        ),
+    )
+
+    assert diagnostic["failure_category"] == "DEPENDENCY"
+    assert diagnostic["failure_code"] == "DEPENDENCY_IMPORT_ERROR"
+    assert diagnostic["runtime_stage"] == "client_create"
 
 
 def test_platform_risk_marker_has_priority_over_import_marker() -> None:
