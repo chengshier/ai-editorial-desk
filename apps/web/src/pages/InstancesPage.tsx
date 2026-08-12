@@ -112,9 +112,9 @@ export function InstancesPage({ api }: { api: AdminApi }) {
       <div className="page-intro"><p>管理各平台连接器的采集配置与运行方式。</p></div>
       <ErrorBanner error={error}/>
       {message && <p className="notice">{message}</p>}
-      <div className="form-grid">
-        <label>连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label>
-        <label>实例名称<input value={name} onChange={(event) => setName(event.target.value)}/></label>
+      <div className="form-grid operations-form">
+        <label className="field-md">连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label>
+        <label className="field-md">实例名称<input value={name} onChange={(event) => setName(event.target.value)}/></label>
       </div>
       {selected && <><h3 className="section-title">采集配置</h3><SchemaForm schema={selected.config_schema} uiSchema={selected.ui_schema} value={config} onChange={setConfig}/></>}<button className="primary" onClick={save}>{editingId ? '保存修改' : '新建连接器实例'}</button>
     </Panel>
