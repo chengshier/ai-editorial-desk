@@ -7,5 +7,6 @@ import './workspace.css'
 import './visual-fidelity.css'
 import './product-ux.css'
 import './screenshot-refinement.css'
+import './workbench-polish.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
