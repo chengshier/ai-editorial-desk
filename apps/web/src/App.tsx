@@ -28,13 +28,13 @@ type NavItem=readonly[PageKey,string,LucideIcon]
 type NavGroup={label:string;items:readonly NavItem[]}
 const groups:readonly NavGroup[]=[
  {label:'编辑工作',items:[['overview','今日总览',LayoutDashboard],['candidates','候选池',ListChecks],['events','事件',CircleDot],['publications','发布',Send],['performance','效果反馈',Activity]]},
- {label:'内容资源',items:[['sources','信源',Rss],['schedules','采集任务',CalendarClock],['runs','运行记录',History],['checkpoints','检查点',BookmarkCheck],['risk','账号 / 风险',ShieldAlert]]},
+ {label:'内容资源',items:[['sources','信源',Rss],['schedules','采集任务',CalendarClock],['runs','运行记录',History],['checkpoints','检查点',BookmarkCheck],['risk','平台账号 / 风险',ShieldAlert]]},
  {label:'系统配置',items:[['definitions','连接器定义',Blocks],['instances','连接器实例',PlugZap]]},
  {label:'AI',items:[['ai-providers','AI 服务商',Cpu],['ai-routes','AI 路由',Route],['ai-budgets','AI 预算',WalletCards],['ai-invocations','AI 调用记录',ScrollText]]},
 ]
 const allPages:NavItem[]=groups.flatMap(group=>[...group.items])
 const workspacePages=new Set<PageKey>(['overview','candidates','events','publications','performance'])
-const pageDescriptions:Record<PageKey,string>={overview:'优先处理高风险、需要人工判断的编辑事项',candidates:'浏览候选快照并记录人工编辑判断',events:'核验事件上下文并推进内容生产',publications:'只记录真实已发布结果',performance:'读取已录入的发布表现反馈',sources:'管理采集来源与运行状态',schedules:'安排和查看采集调度',runs:'检查采集任务执行情况',checkpoints:'查看采集进度与恢复点',risk:'管理平台账号与风险事件',definitions:'查看系统已注册的连接器及能力',instances:'管理连接器实例','ai-providers':'管理 AI Provider 可用性','ai-routes':'管理 AI 路由与版本','ai-budgets':'查看 AI 预算约束','ai-invocations':'审计 AI 调用元数据'}
+const pageDescriptions:Record<PageKey,string>={overview:'优先处理高风险、需要人工判断的编辑事项',candidates:'浏览候选快照并记录人工编辑判断',events:'核验事件上下文并推进内容生产',publications:'只记录真实已发布结果',performance:'读取已录入的发布表现反馈',sources:'管理采集来源与运行状态',schedules:'安排和查看采集调度',runs:'检查采集任务执行情况',checkpoints:'查看采集进度与恢复点',risk:'配置平台账号并处理平台风险事件',definitions:'查看系统已注册的连接器及能力',instances:'管理连接器实例','ai-providers':'管理 AI Provider 可用性','ai-routes':'管理 AI 路由与版本','ai-budgets':'查看 AI 预算约束','ai-invocations':'审计 AI 调用元数据'}
 
 export default function App(){
  const[page,setPage]=useState<PageKey>('overview'),[eventId,setEventId]=useState<string|null>(null);const[config,setConfig]=useState<SessionConfig>(()=>loadSessionConfig()),[draft,setDraft]=useState(config);const adminApi=useMemo(()=>new AdminApi(config),[config]),workbench=useMemo(()=>new WorkbenchApi(adminApi),[adminApi]),workflow=useMemo(()=>new EditorialWorkflowApi(adminApi),[adminApi]),publication=useMemo(()=>new PublicationApi(adminApi),[adminApi]);const tokenConfigured=Boolean(config.adminToken),actorConfigured=Boolean(config.actorId),fullyConfigured=tokenConfigured&&actorConfigured
