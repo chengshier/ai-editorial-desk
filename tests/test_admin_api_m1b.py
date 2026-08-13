@@ -91,6 +91,49 @@ async def test_admin_api_auth_actor_errors_and_pagination(db_session) -> None:  
 
 
 @pytest.mark.usefixtures("clean_database")
+async def test_definition_runtime_switch_requires_actor_and_survives_sync(db_session) -> None:  # type: ignore[no-untyped-def]
+    await ConnectorDefinitionSyncService(db_session).sync()
+    definition = await db_session.scalar(select(ConnectorDefinition).limit(1))
+    assert definition is not None
+    definition_id = definition.id
+    await db_session.commit()
+    transport = httpx.ASGITransport(app=app)
+    headers = {**ADMIN_HEADERS, "X-Actor-ID": "definition-operator"}
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        missing_actor = await client.post(
+            f"/api/v1/admin/connector-definitions/{definition_id}/disable",
+            headers=ADMIN_HEADERS,
+        )
+        assert missing_actor.status_code == 422
+        disabled = await client.post(
+            f"/api/v1/admin/connector-definitions/{definition_id}/disable",
+            headers=headers,
+        )
+        assert disabled.status_code == 200, disabled.text
+        assert disabled.json()["is_enabled"] is False
+
+    await ConnectorDefinitionSyncService(db_session).sync()
+    await db_session.refresh(definition)
+    assert definition.is_enabled is False
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        enabled = await client.post(
+            f"/api/v1/admin/connector-definitions/{definition_id}/enable",
+            headers=headers,
+        )
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["is_enabled"] is True
+    audit = await db_session.scalar(
+        select(ConfigurationChangeLog).where(
+            ConfigurationChangeLog.entity_id == definition_id,
+            ConfigurationChangeLog.action == "disable",
+        )
+    )
+    assert audit is not None
+    assert audit.actor == "definition-operator"
+
+
+@pytest.mark.usefixtures("clean_database")
 async def test_account_references_can_be_cleared_without_api_or_audit_leak(db_session) -> None:  # type: ignore[no-untyped-def]
     account = await _account_with_references(db_session)
     account_id = account.id
