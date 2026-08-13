@@ -39,11 +39,15 @@ V1 四条支线允许部分并行，但必须在 MVP 主闭环稳定后开始；
 - M5-D D Full Human-in-loop MVP E2E = PASS；
 - formal `verify_m5d_e2e = PASS`；
 - PR #23 `feat: 完成 M5-D Hardening与MVP收口` = MERGED；
-- merge commit / current MVP merge baseline = `8ab9200172786705f9e73093646e3d3d3507ee2f`；
-- merge-head GitHub Actions `python` = success；
-- merge-head GitHub Actions `web` = success；
+- PR #23 merge commit = `8ab9200172786705f9e73093646e3d3d3507ee2f`；
+- PR #25 `docs: 建立Post-MVP与V1 readiness基线` = MERGED；
+- Post-MVP 文档收口后的 immutable MVP release baseline target = `8b0e1a4ce4fdf2ae1eb01cd0faf76dd47d31dacb`；
+- baseline exact-head GitHub Actions `python` = success；
+- baseline exact-head GitHub Actions `web` = success；
 - M5-D Real Validation Report = PASS；
 - M5 Overall = COMPLETE。
+
+后续功能 commit 不改变上述 immutable MVP release baseline target。
 
 M5-D 真实验证链：
 
@@ -208,6 +212,42 @@ other generation parameters
 
 但必须逐项评估与现有 Provider / Route / Budget ownership 的关系，避免重复配置真相。
 
+### 7.3 当前实现进度
+
+当前开发分支：
+
+```text
+feature/ai-generation-policy-config
+```
+
+PR：
+
+```text
+#26 feat: 增加任务级AI生成策略配置
+```
+
+已实现：
+
+- 新增 typed generation policy resolver；
+- `AITaskRouteRecord.config.generation_policy.max_output_tokens` 优先于调用方 fallback；
+- effective token 同时用于 Provider request、normalized input/hash 与 AI Budget reservation；
+- Admin Route schema 拒绝非对象、布尔值、非整数、0 与负数；
+- AI Route 页面仅对 Evidence / Editorial Scoring / Draft 暴露 typed 数字输入；
+- 空值保持代码 fallback 4096 / 4096 / 6000；
+- 保存保留 unrelated route config，并继续创建新的 Route version / Audit Log；
+- 新增 runtime、Provider request、Budget gate、invalid config 与 Web save payload 回归。
+
+本批：
+
+```text
+NO NEW MIGRATION
+NO REAL PLATFORM REQUEST
+NO PAID AI
+NO PRODUCTION DB CHANGE
+```
+
+PR #26 在人工合并前保持 `IN_PROGRESS / ENGINEERING VALIDATION`；CI 全绿后只能提升为 Engineering PASS，仍不自动 merge。
+
 ## 8. P1-lite Scope Boundary
 
 P1-lite 是 Post-MVP/V1 readiness 横切保障，不提前宣称进入正式 P1。
@@ -229,7 +269,11 @@ P1-lite 是 Post-MVP/V1 readiness 横切保障，不提前宣称进入正式 P1�
 
 ## 9. Release Baseline Strategy
 
-在本 checklist 与 M5 合并后状态文档收口并合并到 main 后，再建立 immutable MVP release baseline。
+Post-MVP readiness 文档已经由 PR #25 合并到 main。immutable MVP release baseline target 冻结为：
+
+```text
+8b0e1a4ce4fdf2ae1eb01cd0faf76dd47d31dacb
+```
 
 推荐：
 
@@ -240,7 +284,7 @@ GitHub Release: MVP Closeout — M5-D PASS
 
 不建议在 V1 尚未完成时直接使用 `v1.0.0` 表示正式 V1。
 
-Release baseline 应指向“包含 M5-D 已合并代码 + 最终状态文档收口”的 main commit，而不是回退指向验证发生时的旧 engineering HEAD。
+当前执行环境的 GitHub connector 没有 create Tag / create Release 写动作，因此本步骤标记为 `TOOLING_BLOCKED`，不使用 branch 冒充 Tag，也不把后续功能 SHA 当成 MVP baseline。待具备 Tag/Release 写能力时必须仍指向上述 exact baseline SHA。
 
 真实验证报告中的 validation engineering HEAD / invocation / artifact provenance 保持原值，不因 release tag 改写。
 
@@ -257,25 +301,28 @@ Release baseline 应指向“包含 M5-D 已合并代码 + 最终状态文档收
 8. V1-D Feedback / Calibration
 ```
 
+第 2 步因当前工具写能力受限已冻结 exact target，不阻塞不依赖 Tag 的第 3 步工程开发；未来补 Tag/Release 时不得改 target。
+
 M2 Zhihu / Weibo coverage follow-up 是非阻塞旁路线，插入安全窗口执行，不把项目拖回 M2。
 
 ## 11. Progress Tracker
 
 | Item | Status | Notes |
 |---|---|---|
-| Post-MVP/V1 readiness audit | COMPLETE | 2026-08-13；结论：M5 工程/真实验证 PASS，需完成 post-merge 文档与 release baseline 收口 |
+| Post-MVP/V1 readiness audit | COMPLETE | 2026-08-13；M5 工程/真实验证 PASS，正式路线与后续 backlog 已冻结 |
 | Create readiness baseline branch | COMPLETE | `chore/post-mvp-v1-readiness-baseline` |
 | Add this checklist | COMPLETE | `docs/POST_MVP_V1_READINESS_CHECKLIST.md` |
 | Sync START_HERE post-merge status | COMPLETE | 已切换到 M5 COMPLETE / Post-MVP/V1 readiness |
 | Sync M5 Acceptance final status | COMPLETE | 已记录 M5-D A/B/C/D PASS 与 M5 Overall COMPLETE |
 | Sync M5-D Report post-merge note | COMPLETE | 保留 validation provenance，并补 PR #23 merge note |
-| Add final CHANGELOG closeout entry | COMPLETE | 新增 2026-08-13 MVP closeout / Post-MVP entry；历史记录保持不改 |
-| Confirm docs consistency | COMPLETE | 核对正式路线、M2/M5-D 语义与上述入口文档，无需重新打开 M2/M5 |
-| Baseline documentation PR | OPEN / AWAITING HUMAN MERGE | PR #25 `docs: 建立Post-MVP与V1 readiness基线`；不自动 merge |
-| MVP tag / GitHub Release | PENDING | PR #25 人工合并到 main 后执行 |
-| AI Generation Policy v1 | PENDING | Release baseline 后第一项真正功能开发 |
-| P1-lite | PENDING | AI policy 后 |
-| V1-A | PENDING | 按单平台灰度推进 |
+| Add final CHANGELOG closeout entry | COMPLETE | 已有 2026-08-13 MVP closeout / Post-MVP entry；历史记录保持不改 |
+| Confirm docs consistency | COMPLETE | 正式路线、M2/M5-D 语义与入口文档已核对 |
+| Baseline documentation PR | COMPLETE / MERGED | PR #25 已人工合并 |
+| Immutable MVP baseline target | COMPLETE / FROZEN | `8b0e1a4ce4fdf2ae1eb01cd0faf76dd47d31dacb`；Python/Web baseline CI success |
+| MVP tag / GitHub Release | TOOLING_BLOCKED | 推荐 tag/release 已冻结；当前 connector 无创建写动作，不伪造完成状态 |
+| AI Generation Policy v1 | IN_PROGRESS / PR #26 OPEN | 功能、Admin UI、typed validation 与回归已提交；等待 exact-head CI 与人工 merge |
+| P1-lite | PENDING | PR #26 合并后从最新 main 单独建分支 |
+| V1-A | PENDING | P1-lite 最低 operability 后按单平台灰度推进 |
 
 ## 12. Change Discipline
 
