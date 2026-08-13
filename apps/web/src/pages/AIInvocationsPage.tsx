@@ -30,6 +30,7 @@ export function AIInvocationsPage({ api }: Props) {
   const open = async (id: string) => {
     try {
       setSelected(await api.request<AiInvocationDetail>(`/api/v1/admin/ai/invocations/${id}`))
+      setError('')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '加载 Invocation 详情失败')
     }
@@ -51,9 +52,10 @@ export function AIInvocationsPage({ api }: Props) {
       {selected && <>
         <p><strong>{selected.id}</strong></p>
         <p>用途：{selected.task_key} · 状态：{runStatusLabel[selected.status]||selected.status}</p>
+        {selected.error_code&&<div className="error-banner"><strong>最终错误：{selected.error_code}</strong><div>下面的“调用尝试”会展示服务商返回的安全错误说明，便于定位 503、鉴权、限流或结构化输出问题。</div></div>}
         <h3>调用尝试</h3>
-        <div className="table-wrap"><table><thead><tr><th>#</th><th>模型</th><th>状态</th><th>重试 / 备用</th><th>错误</th></tr></thead><tbody>{selected.attempts.map(attempt => <tr key={attempt.id}><td>{attempt.attempt_no}</td><td>{attempt.provider_key}<br /><small>{attempt.model_name}</small></td><td>{runStatusLabel[attempt.status]||attempt.status}</td><td>{attempt.retry_index}/{attempt.fallback_index}</td><td>{attempt.error_code || '无'}</td></tr>)}</tbody></table></div>
-        <details><summary>查看技术元数据</summary><p>输入哈希：<code>{selected.input_hash}</code></p><p>Prompt 版本：{selected.prompt_version || '暂无'}<br />Schema 版本：{selected.schema_version || '暂无'}</p><p>关联对象：{selected.subject_type || '暂无'} / {selected.subject_id || '暂无'}</p><p>服务商请求 ID：{selected.provider_request_id || '暂无'}</p><h3>计价快照</h3><pre className="json-view">{JSON.stringify(selected.pricing_snapshot, null, 2)}</pre></details>
+        <div className="table-wrap"><table><thead><tr><th>#</th><th>模型</th><th>状态</th><th>重试 / 备用</th><th>错误</th></tr></thead><tbody>{selected.attempts.map(attempt => <tr key={attempt.id}><td>{attempt.attempt_no}</td><td>{attempt.provider_key}<br /><small>{attempt.model_name}</small></td><td>{runStatusLabel[attempt.status]||attempt.status}</td><td>{attempt.retry_index}/{attempt.fallback_index}</td><td>{attempt.error_code || '无'}{attempt.error_message&&<small className="technical-meta">{attempt.error_message}</small>}</td></tr>)}</tbody></table></div>
+        <details><summary>查看技术元数据</summary><p>输入哈希：<code>{selected.input_hash}</code></p><p>Prompt 版本：{selected.prompt_version || '暂无'}<br />Schema 版本：{selected.schema_version || '暂无'}</p><p>关联对象：{selected.subject_type || '暂无'} / {selected.subject_id || '暂无'}</p><p>服务商请求 ID：{selected.provider_request_id || '暂无'}</p><h3>安全元数据</h3><pre className="json-view">{JSON.stringify(selected.metadata, null, 2)}</pre><h3>计价快照</h3><pre className="json-view">{JSON.stringify(selected.pricing_snapshot, null, 2)}</pre></details>
       </>}
     </aside>
   </div>
