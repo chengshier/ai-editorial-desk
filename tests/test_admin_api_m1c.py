@@ -172,7 +172,7 @@ async def test_m1c_admin_api_closed_loop(db_session) -> None:  # type: ignore[no
                 headers=ADMIN_HEADERS,
                 json={
                     "source_id": source_id,
-                    "requested_limit": 10,
+                    "requested_limit": 5,
                     "dry_run": False,
                 },
             )
