@@ -44,6 +44,7 @@ from packages.ai_gateway.errors import (
     AIProviderError,
     provider_error_metadata,
 )
+from packages.ai_gateway.generation_policy import resolve_max_output_tokens
 from packages.ai_gateway.invocations import AIInvocationStore
 from packages.ai_gateway.openai_compatible import DefaultProviderAdapterFactory
 from packages.ai_gateway.providers import AIProviderAdapter, ProviderAdapterFactory
@@ -153,20 +154,26 @@ class AIGateway:
     ) -> GatewayTextResult:
         _validate_messages(messages)
         route = await self.route_snapshot(task_key=task_key, capability="text_generation")
+        effective_max_output_tokens = resolve_max_output_tokens(
+            route_config=route.config,
+            fallback=max_output_tokens,
+        )
         request = TextProviderRequest(
             messages=messages,
-            max_output_tokens=max_output_tokens,
+            max_output_tokens=effective_max_output_tokens,
             temperature=temperature,
         )
         normalized = {
             "messages": [{"role": item.role, "content": item.content} for item in messages],
-            "max_output_tokens": max_output_tokens,
+            "max_output_tokens": effective_max_output_tokens,
             "temperature": temperature,
         }
         estimated_input_tokens = sum(
             approximate_input_tokens(f"{item.role}:{item.content}") for item in messages
         )
-        reserved_output = max_output_tokens or int(route.budget_policy.get("reserve_output_tokens", 512))
+        reserved_output = effective_max_output_tokens or int(
+            route.budget_policy.get("reserve_output_tokens", 512)
+        )
 
         async def call(
             provider: AIProviderAdapter,
@@ -218,24 +225,30 @@ class AIGateway:
         except SchemaError as exc:
             raise AIGatewayError(AIErrorCode.INVALID_REQUEST, "JSON Schema 无效") from exc
         route = await self.route_snapshot(task_key=task_key, capability="structured_output")
+        effective_max_output_tokens = resolve_max_output_tokens(
+            route_config=route.config,
+            fallback=max_output_tokens,
+        )
         request = StructuredProviderRequest(
             messages=messages,
             schema=schema,
             schema_name=schema_name,
-            max_output_tokens=max_output_tokens,
+            max_output_tokens=effective_max_output_tokens,
             temperature=temperature,
         )
         normalized = {
             "messages": [{"role": item.role, "content": item.content} for item in messages],
             "schema": schema,
             "schema_name": schema_name,
-            "max_output_tokens": max_output_tokens,
+            "max_output_tokens": effective_max_output_tokens,
             "temperature": temperature,
         }
         estimated_input_tokens = sum(
             approximate_input_tokens(f"{item.role}:{item.content}") for item in messages
         ) + approximate_input_tokens(json.dumps(schema, sort_keys=True, ensure_ascii=False))
-        reserved_output = max_output_tokens or int(route.budget_policy.get("reserve_output_tokens", 512))
+        reserved_output = effective_max_output_tokens or int(
+            route.budget_policy.get("reserve_output_tokens", 512)
+        )
 
         async def call(
             provider: AIProviderAdapter,
