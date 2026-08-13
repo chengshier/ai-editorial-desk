@@ -120,10 +120,23 @@ async def test_connection_test_without_credential_is_explicit_not_tested() -> No
             f"/api/v1/admin/ai/providers/{provider['id']}",
             headers=ADMIN_HEADERS,
         )
+        invocations = await client.get(
+            "/api/v1/admin/ai/invocations?page=1&page_size=20",
+            headers=ADMIN_HEADERS,
+        )
+        assert invocations.status_code == 200, invocations.text
+        invocation_id = invocations.json()["items"][0]["id"]
+        detail = await client.get(
+            f"/api/v1/admin/ai/invocations/{invocation_id}",
+            headers=ADMIN_HEADERS,
+        )
     assert tested.status_code == 200
     assert tested.json()["status"] == "failed"
     assert tested.json()["error_code"] == "CREDENTIAL_NOT_CONFIGURED"
     assert fetched.json()["validation_status"] == "NOT_TESTED"
+    assert detail.status_code == 200, detail.text
+    assert "metadata" in detail.json()
+    assert detail.json()["id"] == invocation_id
 
 
 @pytest.mark.usefixtures("clean_database")
