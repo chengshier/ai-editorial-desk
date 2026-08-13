@@ -42,7 +42,6 @@ class Settings(BaseSettings):
     # future local Runtime Agent instead of trying to control the user's browser remotely.
     local_browser_runtime_enabled: bool = False
     local_browser_runtime_executable: str | None = None
-    local_browser_runtime_port: int = Field(default=9222, ge=1024, le=65535)
 
     @field_validator("database_url")
     @classmethod
