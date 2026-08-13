@@ -130,6 +130,21 @@ class AITaskRouteUpdate(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     enabled: bool = False
 
+    @field_validator("config")
+    @classmethod
+    def validate_generation_policy(cls, value: dict[str, Any]) -> dict[str, Any]:
+        policy = value.get("generation_policy")
+        if policy is None:
+            return value
+        if not isinstance(policy, dict):
+            raise ValueError("generation_policy 必须是对象")
+        max_output_tokens = policy.get("max_output_tokens")
+        if max_output_tokens is None:
+            return value
+        if isinstance(max_output_tokens, bool) or not isinstance(max_output_tokens, int) or max_output_tokens <= 0:
+            raise ValueError("generation_policy.max_output_tokens 必须是正整数")
+        return value
+
 
 class AITaskRouteResponse(BaseModel):
     id: UUID
