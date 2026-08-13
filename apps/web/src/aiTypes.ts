@@ -38,6 +38,14 @@ export type AiModel = {
   updated_at: string
 }
 
+export type AiGenerationPolicy = Record<string, unknown> & {
+  max_output_tokens?: number
+}
+
+export type AiRouteConfig = Record<string, unknown> & {
+  generation_policy?: AiGenerationPolicy
+}
+
 export type AiRoute = {
   id: string
   task_key: string
@@ -47,7 +55,7 @@ export type AiRoute = {
   timeout_seconds: number
   retry_limit: number
   budget_policy: Record<string, unknown>
-  config: Record<string, unknown>
+  config: AiRouteConfig
   enabled: boolean
   is_active: boolean
   created_at: string
