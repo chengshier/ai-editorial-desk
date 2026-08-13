@@ -323,13 +323,13 @@ export function AIProvidersPage({ api }: Props) {
       const response = await api.post<{ invocation_id: string | null; status: string; error_code: string | null }>(
         `/api/v1/admin/ai/providers/${model.provider_id}/test`, { model_id: model.id },
       )
+      await load()
       if (response.status !== 'succeeded') {
         const suffix = response.invocation_id ? ` 调用记录：${response.invocation_id.slice(0, 8)}。` : ''
         setError(`${connectionFailureMessage(provider, model, response.error_code)}${suffix}`)
       } else {
         setMessage('连接测试通过：服务地址、凭据和当前模型能力均已完成一次真实请求验证。')
       }
-      await load()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'AI 模型连接测试失败')
     } finally {
