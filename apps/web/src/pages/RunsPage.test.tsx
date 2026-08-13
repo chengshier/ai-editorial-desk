@@ -30,3 +30,29 @@ it('surfaces retry failures and disables duplicate submission while retry is pen
   rejectRetry?.(new Error('重试服务不可用'))
   expect(await screen.findByRole('alert')).toHaveTextContent('重试服务不可用')
 })
+
+it('shows safe subprocess diagnosis before raw checkpoint details', async () => {
+  const diagnosed = {
+    ...run,
+    id: '87654321-1234-1234-1234-123456789012',
+    mode: 'search',
+    error_code: 'AUTH_REQUIRED',
+    error_message: 'MediaCrawler authentication is required',
+    metadata: {
+      subprocess_diagnostic: {
+        failure_category: 'AUTH',
+        failure_code: 'AUTH_REQUIRED',
+        safe_message: 'MediaCrawler authentication is required',
+        runtime_stage: 'login_state',
+        auth_required: true,
+      },
+      budget: { completed: true, actual_items: 0 },
+    },
+  }
+  vi.stubGlobal('fetch', vi.fn(async (url:string|URL|Request) => Response.json(String(url).endsWith(diagnosed.id) ? diagnosed : { items: [diagnosed], page: 1, page_size: 20, total: 1, has_next: false })))
+  render(<RunsPage api={new AdminApi({apiBaseUrl:'http://api',adminToken:'t',actorId:'a'})}/>)
+  await userEvent.click(await screen.findByText('87654321'))
+  expect(await screen.findByText(/失败诊断 · 登录 \/ 认证/)).toBeInTheDocument()
+  expect(screen.getByText(/发生阶段：检查登录状态/)).toBeInTheDocument()
+  expect(screen.getByText(/检查当前运行选择的平台账号/)).toBeInTheDocument()
+})
