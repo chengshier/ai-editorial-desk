@@ -24,6 +24,7 @@ from packages.signals.repositories import RawSignalRepository, SourceRepository
 from packages.signals.urls import normalize_http_url
 
 SOURCE_STATUSES = frozenset({"active", "archived"})
+_TARGET_REQUIRED_MODES = frozenset({"search", "account", "detail", "comments", "feed"})
 
 
 def _source_snapshot(source: Source) -> dict[str, Any]:
@@ -48,6 +49,18 @@ def _validate_source_config(config: dict[str, Any]) -> None:
         raise BusinessValidationError(exc.message, details=exc.details) from exc
 
 
+def _validate_source_target(mode: str, external_ref: str | None) -> None:
+    if mode in _TARGET_REQUIRED_MODES and not (external_ref or "").strip():
+        target_label = {
+            "search": "搜索关键词",
+            "account": "创作者 ID / URL",
+            "detail": "内容 ID / URL",
+            "comments": "内容 ID / URL",
+            "feed": "Feed URL",
+        }[mode]
+        raise BusinessValidationError(f"{target_label}不能为空")
+
+
 class SourceService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -69,6 +82,8 @@ class SourceService:
         actor: str,
     ) -> Source:
         _validate_source_config(config)
+        normalized_mode = mode.strip()
+        normalized_target = external_ref.strip() if external_ref is not None else None
         async with self.session.begin():
             instance = await self.instances.get(connector_instance_id)
             if instance is None:
@@ -77,23 +92,26 @@ class SourceService:
                 raise ConflictError("不能为已归档实例创建来源")
             if source_type != instance.definition.connector_type:
                 raise ConflictError("来源类型必须与连接器定义类型一致")
+            # Definition / Instance 的模式能力最终仍由 CollectorRuntime Preflight
+            # 强制校验。这里保留历史 Source 可读写，避免配置同步后破坏已有记录。
+            _validate_source_target(normalized_mode, normalized_target)
             duplicate = await self.repository.get_by_scope(
                 connector_instance_id,
-                mode.strip(),
+                normalized_mode,
                 scope_key.strip(),
             )
             if duplicate is not None:
                 raise ConflictError("该实例、模式和 scope_key 的来源已存在")
             normalized_external_ref = (
-                normalize_http_url(external_ref)
-                if external_ref is not None and source_type in {"rss", "manual"}
-                else external_ref
+                normalize_http_url(normalized_target)
+                if normalized_target is not None and source_type in {"rss", "manual"}
+                else normalized_target
             )
             source = Source(
                 connector_instance_id=connector_instance_id,
                 name=name.strip(),
                 source_type=source_type,
-                mode=mode.strip(),
+                mode=normalized_mode,
                 scope_key=scope_key.strip(),
                 external_ref=normalized_external_ref,
                 config=config,
@@ -158,10 +176,12 @@ class SourceService:
                 source.name = str(changes["name"]).strip()
             if "external_ref" in changes:
                 external_ref = changes["external_ref"]
+                normalized_target = external_ref.strip() if external_ref is not None else None
+                _validate_source_target(source.mode, normalized_target)
                 normalized = (
-                    normalize_http_url(external_ref)
-                    if external_ref is not None and source.source_type in {"rss", "manual"}
-                    else external_ref
+                    normalize_http_url(normalized_target)
+                    if normalized_target is not None and source.source_type in {"rss", "manual"}
+                    else normalized_target
                 )
                 if source.external_ref != normalized:
                     source.external_ref = normalized

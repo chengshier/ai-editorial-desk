@@ -4,12 +4,13 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import tempfile
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Any, Protocol
+from typing import IO, Any, Protocol
 
 from pydantic import ValidationError
 
@@ -91,6 +92,32 @@ class _OutputLimitExceeded(RuntimeError):
     pass
 
 
+class _ThreadedPopenProcess:
+    """Async-shaped wrapper around Popen for Windows event-loop compatibility."""
+
+    def __init__(self, process: subprocess.Popen[bytes]) -> None:
+        self._process = process
+        self.stdout = process.stdout
+        self.stderr = process.stderr
+
+    @property
+    def pid(self) -> int:
+        return self._process.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self._process.poll()
+
+    async def wait(self) -> int:
+        return await asyncio.to_thread(self._process.wait)
+
+    def kill(self) -> None:
+        self._process.kill()
+
+
+RunnerProcess = asyncio.subprocess.Process | _ThreadedPopenProcess
+
+
 def _prepare_run_directory(temp_dir: str) -> tuple[Path, Path]:
     run_root = Path(temp_dir).resolve()
     data_root = run_root / "data"
@@ -109,6 +136,26 @@ async def _read_bounded(
     total = 0
     while True:
         chunk = await stream.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise _OutputLimitExceeded
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _read_bounded_sync(
+    stream: IO[bytes] | None,
+    *,
+    max_bytes: int,
+) -> bytes:
+    if stream is None:
+        return b""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = stream.read(64 * 1024)
         if not chunk:
             break
         total += len(chunk)
@@ -322,29 +369,59 @@ class MediaCrawlerSubprocessRunner:
         self,
         command: list[str],
         data_root: Path,
-    ) -> asyncio.subprocess.Process:
-        kwargs: dict[str, Any] = {
-            "cwd": str(self.home),
-            "stdout": asyncio.subprocess.PIPE,
-            "stderr": asyncio.subprocess.PIPE,
-            "env": self._safe_environment(data_root),
-        }
+    ) -> RunnerProcess:
         if self.process_factory is not None:
+            kwargs: dict[str, Any] = {
+                "cwd": str(self.home),
+                "stdout": asyncio.subprocess.PIPE,
+                "stderr": asyncio.subprocess.PIPE,
+                "env": self._safe_environment(data_root),
+            }
             return await self.process_factory(*command, **kwargs)
-        return await asyncio.create_subprocess_exec(*command, **kwargs)
+        try:
+            process = await asyncio.to_thread(
+                subprocess.Popen,
+                command,
+                cwd=str(self.home),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self._safe_environment(data_root),
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise MediaCrawlerAdapterError(
+                MediaCrawlerErrorCode.NON_ZERO_EXIT,
+                "MediaCrawler subprocess could not be started",
+            ) from exc
+        return _ThreadedPopenProcess(process)
 
     async def _communicate(
         self,
-        process: asyncio.subprocess.Process,
+        process: RunnerProcess,
         *,
         timeout_seconds: int,
     ) -> tuple[bytes, bytes]:
-        stdout_task = asyncio.create_task(
-            _read_bounded(process.stdout, max_bytes=self.max_diagnostic_bytes)
-        )
-        stderr_task = asyncio.create_task(
-            _read_bounded(process.stderr, max_bytes=self.max_diagnostic_bytes)
-        )
+        if isinstance(process, _ThreadedPopenProcess):
+            stdout_task = asyncio.create_task(
+                asyncio.to_thread(
+                    _read_bounded_sync,
+                    process.stdout,
+                    max_bytes=self.max_diagnostic_bytes,
+                )
+            )
+            stderr_task = asyncio.create_task(
+                asyncio.to_thread(
+                    _read_bounded_sync,
+                    process.stderr,
+                    max_bytes=self.max_diagnostic_bytes,
+                )
+            )
+        else:
+            stdout_task = asyncio.create_task(
+                _read_bounded(process.stdout, max_bytes=self.max_diagnostic_bytes)
+            )
+            stderr_task = asyncio.create_task(
+                _read_bounded(process.stderr, max_bytes=self.max_diagnostic_bytes)
+            )
         wait_task = asyncio.create_task(process.wait())
         try:
             _, stdout, stderr = await asyncio.wait_for(
@@ -357,7 +434,7 @@ class MediaCrawlerSubprocessRunner:
                     task.cancel()
         return stdout, stderr
 
-    async def _kill(self, process: asyncio.subprocess.Process) -> None:
+    async def _kill(self, process: RunnerProcess) -> None:
         if process.returncode is None:
             process.kill()
         try:

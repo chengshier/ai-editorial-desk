@@ -10,9 +10,41 @@ export function EventCardPackSection({api,eventId,canWrite,onChanged}:{api:Workb
  const load=useCallback(async()=>{setLoading(true);setError(null);try{const[c,p]=await Promise.all([api.cards(eventId),api.packs(eventId)]);setCards(c);setPacks(p);setCardId(x=>x||c[0]?.id||'')}catch(e){setError(FriendlyError(e))}finally{setLoading(false)}},[api,eventId]);useEffect(()=>{void load()},[load])
  const mutate=async(fn:()=>Promise<unknown>)=>{if(mutating)return;setMutating(true);try{setError(null);await fn();await load();onChanged()}catch(e){setError(FriendlyError(e))}finally{setMutating(false)}}
  const latest=cards[0]||null,latestPack=packs[0]||null
- return <div className="wb-two-col align-start" aria-busy={mutating}>{mutating&&<p className="notice" role="status">正在保存并刷新最新 Card / Pack…</p>}<Panel title="Event Card"><SectionState loading={loading} error={error}>{latest?<CardView card={latest}/>:<Empty text="暂无 Event Card"/>}</SectionState><div className="actions"><button className="primary" disabled={mutating||!canWrite} title={!canWrite?'配置执行者 ID 后才能操作；已合并事件只读':''} onClick={()=>void mutate(()=>api.createCard(eventId,null))}>{mutating?'正在创建…':'创建新 Card'}</button></div><details><summary>Card 版本历史（{cards.length}）</summary>{cards.map(c=><CardView key={c.id} card={c}/>)}</details></Panel>
-  <Panel title="Editorial Pack"><SectionState loading={loading} error={error}>{latestPack?<PackView pack={latestPack}/>:<Empty text="暂无 Editorial Pack"/>}</SectionState><div className="inline-form"><label>基于 Event Card<select disabled={mutating} value={cardId} onChange={e=>setCardId(e.target.value)}><option value="">选择 Card</option>{cards.map(c=><option value={c.id} key={c.id}>{c.card_version} · {fmt(c.created_at)}</option>)}</select></label><button className="primary" disabled={mutating||!canWrite||!cardId} onClick={()=>void mutate(()=>api.createPack(eventId,cardId))}>{mutating?'正在创建…':'创建 Editorial Pack'}</button></div><details><summary>Pack 版本历史（{packs.length}）</summary>{packs.map(p=><PackView key={p.id} pack={p}/>)}</details></Panel></div>
+ return <div className="wb-two-col artifact-workspace align-start" aria-busy={mutating}>
+  {mutating&&<p className="notice artifact-workspace-status" role="status">正在保存并刷新最新卡片 / 选题包…</p>}
+  <Panel title="事件卡片（Event Card）" className="artifact-panel artifact-card-panel">
+   <p className="panel-lead">沉淀当前事件的事实主张、时间线、信源摘要、风险与推荐形式，供后续选题包和草稿复用。</p>
+   <SectionState loading={loading} error={error}>{latest?<CardView card={latest}/>:<Empty text="暂无事件卡片" helper="完成必要的事件信息后，可显式创建一份确定性的事件卡片。"/>}</SectionState>
+   <div className="artifact-primary-actions"><button className="primary" disabled={mutating||!canWrite} title={!canWrite?'配置执行者 ID 后才能操作；已合并事件只读':''} onClick={()=>void mutate(()=>api.createCard(eventId,null))}>{mutating?'正在创建…':'创建新卡片'}</button></div>
+   <details className="artifact-history"><summary>卡片版本历史（{cards.length}）</summary><div className="artifact-history-list">{cards.map(c=><CardView key={c.id} card={c}/>)}</div></details>
+  </Panel>
+  <Panel title="编辑选题包（Editorial Pack）" className="artifact-panel artifact-pack-panel">
+   <p className="panel-lead">基于某一版本事件卡片组织建议角度、信源材料、时间线、风险提示和待确认点。</p>
+   <SectionState loading={loading} error={error}>{latestPack?<PackView pack={latestPack}/>:<Empty text="暂无编辑选题包" helper="先选择一版事件卡片，再生成对应的编辑选题包。"/>}</SectionState>
+   <div className="artifact-create-box"><label>基于事件卡片<select disabled={mutating} value={cardId} onChange={e=>setCardId(e.target.value)}><option value="">选择卡片版本</option>{cards.map(c=><option value={c.id} key={c.id}>{c.card_version} · {fmt(c.created_at)}</option>)}</select></label><button className="primary" disabled={mutating||!canWrite||!cardId} onClick={()=>void mutate(()=>api.createPack(eventId,cardId))}>{mutating?'正在创建…':'创建选题包'}</button></div>
+   <details className="artifact-history"><summary>选题包版本历史（{packs.length}）</summary><div className="artifact-history-list">{packs.map(p=><PackView key={p.id} pack={p}/>)}</div></details>
+  </Panel>
+ </div>
 }
-function CardView({card}:{card:EventCard}){return <article className="artifact-card"><div className="badges"><Badge tone="info">{card.card_version}</Badge><RiskBadge value={card.risk_level}/><Badge>{editorialFormatLabel[card.recommended_format]||card.recommended_format}</Badge><Badge>{sourceTypeLabel[card.generated_by]||card.generated_by}</Badge></div><h3>{card.title}</h3><p>{card.concise_summary}</p><div className="provenance"><span>创建于 {fmt(card.created_at)}</span><span>输入摘要 {card.input_hash.slice(0,12)}…</span><span>证据快照 {card.evidence_snapshot_hash.slice(0,12)}…</span><span>趋势快照 {card.trend_snapshot_id||'暂无'}</span><span>评分 {card.editorial_score_id}</span></div><details><summary>事实主张分组、时间线与信源摘要</summary><div className="claim-id-grid"><span>已确认 {card.confirmed_claim_ids.length}</span><span>核验中 {card.investigating_claim_ids.length}</span><span>单一信源 {card.single_source_claim_ids.length}</span><span>存在争议 {card.disputed_claim_ids.length}</span><span>已证伪 {card.false_claim_ids.length}</span><span>待确认点 {card.unknown_ids.length}</span></div><JsonSummary value={{timeline:card.timeline,source_summary:card.source_summary,effective_assessment:card.effective_assessment}}/></details></article>}
-function PackView({pack}:{pack:EditorialPack}){return <article className="artifact-card"><div className="badges"><Badge tone="info">{pack.pack_version}</Badge><Badge>{editorialFormatLabel[pack.recommended_format]||pack.recommended_format}</Badge></div><div className="provenance"><span>创建于 {fmt(pack.created_at)}</span><span>Card {pack.event_card_id}</span><span>输入摘要 {pack.input_hash.slice(0,12)}…</span></div><Section name="建议角度" value={pack.suggested_angles}/><Section name="信源材料" value={pack.source_items}/><Section name="时间线" value={pack.timeline_items}/>{pack.material_items.length?<Section name="媒体素材" value={pack.material_items}/>:<div className="unavailable">暂无媒体元数据</div>}<Section name="风险提示" value={pack.warnings}/><Section name="待确认点" value={pack.unknown_items}/><Section name="事实主张引用" value={pack.claim_references}/></article>}
-function Section({name,value}:{name:string;value:Array<Record<string,unknown>>}){return <details><summary>{name}（{value.length}）</summary>{value.length?<JsonSummary value={value}/>:<Empty text={`暂无${name}`}/>}</details>}
+
+function CardView({card}:{card:EventCard}){
+ return <article className="artifact-card">
+  <div className="badges"><Badge tone="info">{card.card_version}</Badge><RiskBadge value={card.risk_level}/><Badge>{editorialFormatLabel[card.recommended_format]||card.recommended_format}</Badge><Badge>{sourceTypeLabel[card.generated_by]||card.generated_by}</Badge></div>
+  <h3>{card.title}</h3>
+  <p className="artifact-summary">{card.concise_summary}</p>
+  <div className="provenance"><span>创建于 {fmt(card.created_at)}</span><span>输入摘要 {card.input_hash.slice(0,12)}…</span><span>证据快照 {card.evidence_snapshot_hash.slice(0,12)}…</span><span>趋势快照 {card.trend_snapshot_id||'暂无'}</span><span>评分 {card.editorial_score_id}</span></div>
+  <details className="artifact-detail"><summary>查看事实主张分组、时间线与信源摘要</summary><div className="claim-id-grid"><span>已确认 <strong>{card.confirmed_claim_ids.length}</strong></span><span>核验中 <strong>{card.investigating_claim_ids.length}</strong></span><span>单一信源 <strong>{card.single_source_claim_ids.length}</strong></span><span>存在争议 <strong>{card.disputed_claim_ids.length}</strong></span><span>已证伪 <strong>{card.false_claim_ids.length}</strong></span><span>待确认点 <strong>{card.unknown_ids.length}</strong></span></div><JsonSummary value={{timeline:card.timeline,source_summary:card.source_summary,effective_assessment:card.effective_assessment}}/></details>
+ </article>
+}
+
+function PackView({pack}:{pack:EditorialPack}){
+ return <article className="artifact-card artifact-pack-card">
+  <div className="badges"><Badge tone="info">{pack.pack_version}</Badge><Badge>{editorialFormatLabel[pack.recommended_format]||pack.recommended_format}</Badge></div>
+  <div className="provenance"><span>创建于 {fmt(pack.created_at)}</span><span>Card {pack.event_card_id}</span><span>输入摘要 {pack.input_hash.slice(0,12)}…</span></div>
+  <div className="pack-sections"><Section name="建议角度" value={pack.suggested_angles}/><Section name="信源材料" value={pack.source_items}/><Section name="时间线" value={pack.timeline_items}/>{pack.material_items.length?<Section name="媒体素材" value={pack.material_items}/>:<div className="unavailable">暂无媒体元数据</div>}<Section name="风险提示" value={pack.warnings}/><Section name="待确认点" value={pack.unknown_items}/><Section name="事实主张引用" value={pack.claim_references}/></div>
+ </article>
+}
+
+function Section({name,value}:{name:string;value:Array<Record<string,unknown>>}){
+ return <details className="pack-section"><summary><span>{name}</span><strong>{value.length}</strong></summary>{value.length?<JsonSummary value={value}/>:<Empty text={`暂无${name}`} helper="当前版本没有该类内容。"/>}</details>
+}

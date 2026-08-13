@@ -141,11 +141,10 @@ class AITaskRouteUpdate(BaseModel):
         max_output_tokens = policy.get("max_output_tokens")
         if max_output_tokens is None:
             return value
-        if (
-            isinstance(max_output_tokens, bool)
-            or not isinstance(max_output_tokens, int)
-            or max_output_tokens <= 0
-        ):
+        invalid_type = isinstance(max_output_tokens, bool) or not isinstance(
+            max_output_tokens, int
+        )
+        if invalid_type or max_output_tokens <= 0:
             raise ValueError("generation_policy.max_output_tokens 必须是正整数")
         return value
 
@@ -240,7 +239,7 @@ class AIInvocationAttemptResponse(BaseModel):
 
 
 class AIInvocationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: UUID
     task_key: str

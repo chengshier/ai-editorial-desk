@@ -61,11 +61,14 @@ export type Definition = {
 export type Instance = {
   id: string
   definition_id: string
+  connector_type: string
+  platform: string
   name: string
   enabled: boolean
   status: string
   config: Record<string, unknown>
   config_version: number
+  credential_configured?: boolean
 }
 
 export type Source = {
@@ -150,11 +153,20 @@ export type Account = {
   connector_instance_id: string
   platform: string
   display_name: string
+  account_identifier: string
   status: string
+  risk_level?: string
+  last_success_at?: string | null
+  last_warning_at?: string | null
+  last_warning_code?: string | null
+  consecutive_failures?: number
   cooldown_until?: string | null
   manual_review_required: boolean
-  credential_configured?: boolean
-  browser_profile_configured?: boolean
+  credential_configured: boolean
+  browser_profile_configured: boolean
+  daily_request_count?: number
+  daily_item_count?: number
+  daily_comment_count?: number
 }
 
 export type RiskEvent = {

@@ -1,147 +1,34 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AdminApi } from '../api'
-import { Empty, ErrorBanner, Panel } from '../components/common'
+import { Drawer, Empty, ErrorBanner, ResourceHeader } from '../components/common'
 import { enabledLabel, sourceModeLabel, sourceStatusLabel } from '../uiLabels'
-import type { Instance, Source } from '../types'
+import type { Account, Definition, Instance, Source } from '../types'
 
-export function SourcesPage({ api, onNavigate }: { api: AdminApi; onNavigate?: (page: 'runs') => void }) {
-  const [sources, setSources] = useState<Source[]>([])
-  const [instances, setInstances] = useState<Instance[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [form, setForm] = useState({
-    connector_instance_id: '',
-    name: '',
-    source_type: 'rss',
-    mode: 'feed',
-    scope_key: '',
-    external_ref: '',
-  })
-  const [error, setError] = useState<string | null>(null)
-  const [pendingAction, setPendingAction] = useState<string | null>(null)
+const SAFE_REAL_COLLECTION_LIMIT=5
+const emptyForm={connector_instance_id:'',name:'',source_type:'',mode:'',scope_key:'',external_ref:''}
+const targetCopy:Record<string,{label:string;placeholder:string;helper:string;required:boolean}>={search:{label:'搜索关键词',placeholder:'例如：AI Agent',helper:'一个搜索信源对应一个稳定关键词，便于独立维护检查点、预算与运行历史。',required:true},account:{label:'创作者 ID / URL',placeholder:'填写平台创作者 ID 或主页 URL',helper:'该目标用于账号 / 创作者采集。',required:true},detail:{label:'内容 ID / URL',placeholder:'填写内容 ID 或详情页 URL',helper:'该目标用于内容详情采集。',required:true},comments:{label:'内容 ID / URL',placeholder:'填写需要采集评论的内容 ID 或 URL',helper:'评论采集仍受评论预算与风险规则限制。',required:true},feed:{label:'Feed URL',placeholder:'https://example.com/feed.xml',helper:'填写实际读取的 RSS / Atom 地址。',required:true},hotlist:{label:'热榜目标（可选）',placeholder:'留空时使用实例默认热榜来源',helper:'只有实现明确要求时才填写。',required:false},manual_import:{label:'导入目标（可选）',placeholder:'手工导入通常在执行时指定 URL',helper:'手工导入的实际 URL 可在执行动作中提供。',required:false}}
+type PreflightCheck={name:string;status:'READY'|'BLOCKED'|string;message:string}
+type PreflightReport={status:'READY'|'BLOCKED';platform:string;mode:string;requested_limit:number;comment_limit:number;initiates_platform_request:boolean;uses_local_cdp:boolean;account_label:string|null;checkpoint_summary:Record<string,string|number|null>;budget_summary:Record<string,string|number|null>;checks:PreflightCheck[]}
+function supportedModes(definition:Definition|null|undefined):string[]{if(!definition)return[];const declared=definition.capabilities.allowed_modes;if(Array.isArray(declared))return declared.filter((item):item is string=>typeof item==='string');return Object.keys(sourceModeLabel).filter(mode=>definition.capabilities[mode]===true)}
+function scopeKey(mode:string,target:string,name:string):string{return `${mode}:${target.trim()||name.trim()}`.slice(0,500)}
 
-  const load = useCallback(async () => {
-    try {
-      const [sourcePage, instancePage] = await Promise.all([
-        api.page<Source>('/api/v1/admin/sources?page_size=100'),
-        api.page<Instance>('/api/v1/admin/connector-instances?page_size=100'),
-      ])
-      setSources(sourcePage.items)
-      setInstances(instancePage.items)
-      if (instancePage.items[0]) {
-        setForm((current) => current.connector_instance_id
-          ? current
-          : { ...current, connector_instance_id: instancePage.items[0].id })
-      }
-      setError(null)
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }, [api])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  const resetForm = () => {
-    setEditingId(null)
-    setForm((current) => ({ ...current, name: '', scope_key: '', external_ref: '' }))
-  }
-
-  const save = async () => {
-    setPendingAction('save')
-    setError(null)
-    try {
-      if (editingId) {
-        await api.patch(`/api/v1/admin/sources/${editingId}`, {
-          name: form.name,
-          external_ref: form.external_ref || null,
-        })
-        setMessage('信源已更新。')
-      } else {
-        await api.post('/api/v1/admin/sources', {
-          ...form,
-          external_ref: form.external_ref || null,
-          config: {},
-          enabled: true,
-        })
-        setMessage('信源已创建。')
-      }
-      resetForm()
-      await load()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  const edit = (source: Source) => {
-    setEditingId(source.id)
-    setForm({
-      connector_instance_id: source.connector_instance_id,
-      name: source.name,
-      source_type: source.source_type,
-      mode: source.mode,
-      scope_key: source.scope_key,
-      external_ref: source.external_ref || '',
-    })
-    setMessage(null)
-    setError(null)
-  }
-
-  const toggle = async (source: Source) => {
-    setPendingAction(`toggle:${source.id}`)
-    setError(null)
-    try {
-      await api.patch(`/api/v1/admin/sources/${source.id}`, { enabled: !source.enabled })
-      setMessage(source.enabled ? '信源已停用。' : '信源已启用。')
-      await load()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  const archive = async (source: Source) => {
-    if (!window.confirm('归档信源？历史原始信号不会删除。')) return
-    setPendingAction(`archive:${source.id}`)
-    setError(null)
-    try {
-      await api.post(`/api/v1/admin/sources/${source.id}/archive`)
-      setMessage('信源已归档。')
-      await load()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  const testRun = async (source: Source) => {
-    setPendingAction(`run:${source.id}`)
-    setError(null)
-    try {
-      const result = await api.post<{ run_id: string; status: string }>(
-        `/api/v1/admin/connector-instances/${source.connector_instance_id}/test-runs`,
-        { source_id: source.id, requested_limit: 5, dry_run: true },
-      )
-      setMessage(`测试运行已创建：${result.status} / ${result.run_id}`)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  return <>
-    <Panel title={editingId ? '编辑信源' : '新建信源'} actions={editingId ? <button onClick={resetForm}>取消编辑</button> : undefined}>
-      <div className="page-intro"><p>管理用于采集和编辑判断的数据来源。</p></div>
-      <ErrorBanner error={error}/>{message && <p className="notice">{message}{onNavigate && <button className="quiet-action" onClick={() => onNavigate('runs')}>查看运行记录</button>}</p>}<div className="form-grid operations-form">
-      <label className="field-md">所属实例<select disabled={Boolean(editingId)} value={form.connector_instance_id} onChange={(event) => setForm({ ...form, connector_instance_id: event.target.value })}>{instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.name}</option>)}</select></label>
-      <label className="field-md">信源名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label className="field-sm">来源类型<input disabled={Boolean(editingId)} value={form.source_type} onChange={(event) => setForm({ ...form, source_type: event.target.value })}/></label><label className="field-md">采集模式<select disabled={Boolean(editingId)} value={form.mode} onChange={(event) => setForm({ ...form, mode: event.target.value })}>{Object.entries(sourceModeLabel).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><label className="field-md">作用范围<input disabled={Boolean(editingId)} value={form.scope_key} onChange={(event) => setForm({ ...form, scope_key: event.target.value })}/></label><label className="field-lg">外部引用<input value={form.external_ref} onChange={(event) => setForm({ ...form, external_ref: event.target.value })}/></label>
-    </div><button className="primary" disabled={pendingAction === 'save'} onClick={save}>{pendingAction === 'save' ? '正在保存…' : editingId ? '保存修改' : '新建信源'}</button></Panel>
-    <Panel title="信源列表" actions={<button onClick={load}>刷新</button>}>{sources.length===0?<Empty text="暂无信源"/>:<div className="table-wrap"><table><thead><tr><th>名称</th><th>来源类型</th><th>采集模式</th><th>状态</th><th>操作</th></tr></thead><tbody>{sources.map((source) => <tr key={source.id}><td><strong>{source.name}</strong><small className="technical-meta">{source.scope_key}</small></td><td>{source.source_type}</td><td>{sourceModeLabel[source.mode]||source.mode}</td><td>{source.enabled?enabledLabel(true):(sourceStatusLabel[source.status]||enabledLabel(false))}</td><td className="actions"><button disabled={Boolean(pendingAction)} onClick={() => edit(source)}>编辑</button><button disabled={Boolean(pendingAction)} onClick={() => void testRun(source)}>{pendingAction === `run:${source.id}` ? '正在创建…' : '测试运行'}</button><details className="more-actions"><summary>更多</summary><button disabled={Boolean(pendingAction)} onClick={() => void toggle(source)}>{pendingAction === `toggle:${source.id}` ? '正在处理…' : source.enabled ? '停用' : '启用'}</button><button className="danger" disabled={Boolean(pendingAction)} onClick={() => void archive(source)}>{pendingAction === `archive:${source.id}` ? '正在归档…' : '归档'}</button></details></td></tr>)}</tbody></table></div>}</Panel>
-  </>
+export function SourcesPage({api,onNavigate}:{api:AdminApi;onNavigate?:(page:'runs'|'risk'|'collection-budgets')=>void}){
+ const[sources,setSources]=useState<Source[]>([]),[instances,setInstances]=useState<Instance[]>([]),[definitions,setDefinitions]=useState<Definition[]>([]),[accounts,setAccounts]=useState<Account[]>([])
+ const[editingId,setEditingId]=useState<string|null>(null),[drawerOpen,setDrawerOpen]=useState(false),[preflightOpen,setPreflightOpen]=useState(false)
+ const[form,setForm]=useState(emptyForm),[activeSourceId,setActiveSourceId]=useState(''),[accountId,setAccountId]=useState(''),[limit,setLimit]=useState(1)
+ const[report,setReport]=useState<PreflightReport|null>(null),[pageError,setPageError]=useState<string|null>(null),[drawerError,setDrawerError]=useState<string|null>(null),[preflightError,setPreflightError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null),[pending,setPending]=useState<string|null>(null)
+ const formInstance=useMemo(()=>instances.find(item=>item.id===form.connector_instance_id)||null,[instances,form.connector_instance_id]);const formDefinition=useMemo(()=>formInstance?definitions.find(item=>item.id===formInstance.definition_id)||null:null,[definitions,formInstance]);const formModes=useMemo(()=>supportedModes(formDefinition),[formDefinition]);const target=targetCopy[form.mode]||{label:'采集目标 / 外部引用',placeholder:'填写该模式需要的外部目标',helper:'该值作为本信源运行时的明确采集目标。',required:false}
+ const activeSource=useMemo(()=>sources.find(item=>item.id===activeSourceId)||null,[sources,activeSourceId]);const activeInstance=useMemo(()=>activeSource?instances.find(item=>item.id===activeSource.connector_instance_id)||null:null,[instances,activeSource]);const activeDefinition=useMemo(()=>activeInstance?definitions.find(item=>item.id===activeInstance.definition_id)||null:null,[definitions,activeInstance]);const requiresAccount=Boolean(activeDefinition?.capabilities.requires_account);const usableAccounts=useMemo(()=>activeInstance?accounts.filter(item=>item.connector_instance_id===activeInstance.id&&item.status==='healthy'):[],[accounts,activeInstance])
+ function formForInstance(instanceId:string,instanceList=instances,definitionList=definitions){const instance=instanceList.find(item=>item.id===instanceId);const definition=instance?definitionList.find(item=>item.id===instance.definition_id):null;const modes=supportedModes(definition);return{...emptyForm,connector_instance_id:instanceId,source_type:definition?.connector_type||instance?.connector_type||'',mode:modes[0]||''}}
+ const load=useCallback(async()=>{try{const[sourcePage,instancePage,definitionPage,accountPage]=await Promise.all([api.page<Source>('/api/v1/admin/sources?page_size=100'),api.page<Instance>('/api/v1/admin/connector-instances?page_size=100'),api.page<Definition>('/api/v1/admin/connector-definitions?page_size=100'),api.page<Account>('/api/v1/admin/platform-accounts?page_size=100')]);setSources(sourcePage.items);setInstances(instancePage.items);setDefinitions(definitionPage.items);setAccounts(accountPage.items);setPageError(null);if(instancePage.items[0])setForm(current=>current.connector_instance_id?current:formForInstance(instancePage.items[0].id,instancePage.items,definitionPage.items))}catch(e){setPageError(e instanceof Error?e.message:'加载信源失败')}},[api])
+ useEffect(()=>{void load()},[load])
+ const openCreate=()=>{setEditingId(null);setForm(instances[0]?formForInstance(instances[0].id):emptyForm);setDrawerError(null);setMessage(null);setDrawerOpen(true)}
+ const edit=(source:Source)=>{setEditingId(source.id);setForm({connector_instance_id:source.connector_instance_id,name:source.name,source_type:source.source_type,mode:source.mode,scope_key:source.scope_key,external_ref:source.external_ref||''});setDrawerError(null);setDrawerOpen(true)}
+ const save=async()=>{if(!form.connector_instance_id||!formDefinition)return setDrawerError('请先选择所属连接器实例');if(!form.name.trim())return setDrawerError('请填写信源名称');if(!form.mode)return setDrawerError('请选择采集模式');if(target.required&&!form.external_ref.trim())return setDrawerError(`请填写${target.label}`);setPending('save');try{if(editingId)await api.patch(`/api/v1/admin/sources/${editingId}`,{name:form.name.trim(),external_ref:form.external_ref.trim()||null});else await api.post('/api/v1/admin/sources',{connector_instance_id:form.connector_instance_id,name:form.name.trim(),source_type:formDefinition.connector_type,mode:form.mode,scope_key:scopeKey(form.mode,form.external_ref,form.name),external_ref:form.external_ref.trim()||null,config:{},enabled:true});setMessage(editingId?'信源已更新。':'信源已创建。');await load();setDrawerOpen(false)}catch(e){setDrawerError(e instanceof Error?e.message:'保存信源失败')}finally{setPending(null)}}
+ const toggle=async(source:Source)=>{setPending(`toggle:${source.id}`);try{await api.patch(`/api/v1/admin/sources/${source.id}`,{enabled:!source.enabled});setMessage(source.enabled?'信源已停用。':'信源已启用。');await load()}catch(e){setPageError(e instanceof Error?e.message:'更新信源失败')}finally{setPending(null)}}
+ const archive=async(source:Source)=>{if(!window.confirm('归档信源？历史原始信号不会删除。'))return;setPending(`archive:${source.id}`);try{await api.post(`/api/v1/admin/sources/${source.id}/archive`);setMessage('信源已归档。');await load()}catch(e){setPageError(e instanceof Error?e.message:'归档信源失败')}finally{setPending(null)}}
+ const openPreflight=(source:Source)=>{const matching=accounts.filter(item=>item.connector_instance_id===source.connector_instance_id&&item.status==='healthy');setActiveSourceId(source.id);setAccountId(matching[0]?.id||'');setLimit(1);setReport(null);setPreflightError(null);setMessage(null);setPreflightOpen(true)}
+ const runPreflight=async()=>{if(!activeSource)return;if(requiresAccount&&!accountId)return setPreflightError('该平台需要账号。请先选择健康账号；没有可选项时前往“平台账号 / 风险”配置。');setPending('preflight');setPreflightError(null);setReport(null);try{setReport(await api.post<PreflightReport>(`/api/v1/admin/sources/${activeSource.id}/collection-preflight`,{platform_account_id:accountId||null,requested_limit:limit,comment_limit:0}))}catch(e){setPreflightError(e instanceof Error?e.message:'采集前检查失败')}finally{setPending(null)}}
+ const executeReal=async()=>{if(!activeSource||!report||report.status!=='READY')return;const resume=String(report.checkpoint_summary.resume_scope||'从头开始');if(!window.confirm(`将真实访问 ${report.platform}。\n模式：${report.mode}\n数量上限：${limit}\n续采位置：${resume}\n账号：${report.account_label||'无需账号'}\n\n403 / 406 / 429 / CAPTCHA / 登录失效等风险会由 Runtime fail-closed 处理。\n\n确认发起一次真实低量采集？`))return;setPending('execute');setPreflightError(null);try{const result=await api.post<{run_id:string;status:string}>(`/api/v1/admin/connector-instances/${activeSource.connector_instance_id}/test-runs`,{source_id:activeSource.id,platform_account_id:accountId||null,requested_limit:limit,dry_run:false});setMessage(`低量真实采集已完成：${result.status} / ${result.run_id}`);setPreflightOpen(false)}catch(e){setPreflightError(e instanceof Error?e.message:'真实低量采集失败')}finally{setPending(null)}}
+ return <div className="operations-page"><ErrorBanner error={pageError}/>{message&&<div className="success-banner"><span>{message}</span>{message.includes('采集')&&onNavigate&&<button className="quiet-action" onClick={()=>onNavigate('runs')}>查看运行记录</button>}</div>}<section className="panel"><ResourceHeader title="信源" description="信源回答“具体采什么”。先完成只读采集前检查，再由人明确确认一次真实低量采集；正式采集量由采集预算与采集任务控制。" actions={<><button onClick={()=>void load()}>刷新</button><button className="primary" disabled={instances.length===0} onClick={openCreate}>新建信源</button></>}/>{instances.length===0&&<div className="prerequisite-hint">还没有连接器实例。首次使用建议按“实例 → 平台账号 → 信源 → 采集预算 → 采集前检查”的顺序完成。</div>}{sources.length===0?<Empty text="暂无信源" helper="创建信源后，在真实访问平台前先完成采集前检查。" action={instances.length?<button className="primary" onClick={openCreate}>新建信源</button>:undefined}/>:<div className="table-wrap"><table><thead><tr><th>名称 / 目标</th><th>所属实例</th><th>模式</th><th>运行准备</th><th>状态</th><th>操作</th></tr></thead><tbody>{sources.map(source=>{const instance=instances.find(item=>item.id===source.connector_instance_id);const definition=instance?definitions.find(item=>item.id===instance.definition_id):null;const needAccount=Boolean(definition?.capabilities.requires_account);const healthy=accounts.filter(a=>a.connector_instance_id===source.connector_instance_id&&a.status==='healthy');return <tr key={source.id}><td><strong>{source.name}</strong><small className="technical-meta">{targetCopy[source.mode]?.label||'采集目标'} · {source.external_ref||'使用实例默认配置'}</small></td><td>{instance?.name||'未知实例'}<small className="technical-meta">{definition?.display_name||source.source_type}</small></td><td>{sourceModeLabel[source.mode]||source.mode}</td><td><div className="status-stack"><span>{needAccount?(healthy.length?`${healthy.length} 个健康账号`:'缺少平台账号'):'无需平台账号'}</span><small>执行前仍需采集前检查</small></div></td><td>{source.enabled?enabledLabel(true):(sourceStatusLabel[source.status]||enabledLabel(false))}</td><td><div className="actions action-cell"><button className="primary" disabled={Boolean(pending)||!source.enabled} onClick={()=>openPreflight(source)}>采集前检查</button><button disabled={Boolean(pending)} onClick={()=>edit(source)}>编辑</button><details className="more-actions"><summary>更多</summary><button disabled={Boolean(pending)} onClick={()=>void toggle(source)}>{source.enabled?'停用':'启用'}</button><button className="danger" disabled={Boolean(pending)} onClick={()=>void archive(source)}>归档</button></details></div>{needAccount&&healthy.length===0&&onNavigate&&<button className="inline-link" onClick={()=>onNavigate('risk')}>去配置平台账号</button>}</td></tr>})}</tbody></table></div>}<div className="notice"><strong>安全语义：</strong>采集前检查不会创建 Run、不会预留预算、不会主动访问平台；MediaCrawler 检查可连接 localhost CDP 并读取既有登录标记。只有“确认发起一次真实低量采集”才进入真实 CollectorRuntime。</div></section><Drawer open={drawerOpen} title={editingId?'编辑信源':'新建信源'} description="连接器实例决定公共运行能力；信源只描述具体采集目标。" onClose={()=>setDrawerOpen(false)} footer={<><button disabled={Boolean(pending)} onClick={()=>setDrawerOpen(false)}>取消</button><button className="primary" disabled={Boolean(pending)} onClick={()=>void save()}>{pending==='save'?'正在保存…':'保存信源'}</button></>}><ErrorBanner error={drawerError}/><div className="drawer-section"><h3>采集目标</h3><div className="form-grid"><label className="field-full">连接器实例<select disabled={Boolean(editingId)} value={form.connector_instance_id} onChange={e=>setForm(formForInstance(e.target.value))}>{instances.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>信源名称<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label><label>采集模式<select disabled={Boolean(editingId)} value={form.mode} onChange={e=>setForm({...form,mode:e.target.value,external_ref:''})}>{formModes.map(mode=><option key={mode} value={mode}>{sourceModeLabel[mode]||mode}</option>)}</select></label><label className="field-full">{target.label}{target.required?' *':''}<input value={form.external_ref} placeholder={target.placeholder} onChange={e=>setForm({...form,external_ref:e.target.value})}/><small>{target.helper}</small></label></div></div></Drawer><Drawer open={preflightOpen} title={activeSource?`运行准备 · ${activeSource.name}`:'采集前检查'} description="先做本地只读检查。READY 只代表当前可尝试；真正执行时 Runtime 仍会再次 fail-closed 检查。" onClose={()=>setPreflightOpen(false)} footer={<><button disabled={Boolean(pending)} onClick={()=>setPreflightOpen(false)}>关闭</button>{report?.status==='READY'&&<button className="primary" disabled={Boolean(pending)} onClick={()=>void executeReal()}>{pending==='execute'?'正在执行…':'确认发起一次真实低量采集'}</button>}</>}><ErrorBanner error={preflightError}/><div className="drawer-section"><h3>本次检查参数</h3><div className="form-grid">{requiresAccount&&<label className="field-full">平台账号<select value={accountId} onChange={e=>{setAccountId(e.target.value);setReport(null)}}><option value="">请选择健康账号</option>{usableAccounts.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</select><small>没有可选账号时，请前往“平台账号 / 风险”。</small></label>}<label>低量条目上限<input type="number" min="1" max={SAFE_REAL_COLLECTION_LIMIT} value={limit} onChange={e=>{setLimit(Math.min(SAFE_REAL_COLLECTION_LIMIT,Math.max(1,Number(e.target.value)||1)));setReport(null)}}/><small>这里只用于真实链路验证；正式采集量请在“采集预算”配置。</small></label></div><div className="actions"><button className="primary" disabled={Boolean(pending)} onClick={()=>void runPreflight()}>{pending==='preflight'?'正在检查…':'执行采集前检查'}</button>{onNavigate&&<button onClick={()=>onNavigate('collection-budgets')}>查看采集预算</button>}{requiresAccount&&onNavigate&&<button onClick={()=>onNavigate('risk')}>平台账号 / 风险</button>}</div></div>{report&&<div className="drawer-section"><div className={`preflight-summary ${report.status==='READY'?'ready':'blocked'}`}><strong>{report.status==='READY'?'READY · 可以进入人工确认':'BLOCKED · 暂不能执行真实采集'}</strong><small>{report.initiates_platform_request?'会访问平台':'本次检查未主动访问平台'} · {report.uses_local_cdp?'会读取本地 CDP':'无需本地 CDP'}</small></div><div className="preflight-checks">{report.checks.map(check=><div key={check.name} className={`preflight-check ${check.status.toLowerCase()}`}><span>{check.status==='READY'?'✓':'!'}</span><div><strong>{check.name}</strong><p>{check.message}</p></div></div>)}</div><div className="notice"><strong>续采位置：</strong>{String(report.checkpoint_summary.resume_scope||'从头开始')}<br/><strong>预算：</strong>{String(report.budget_summary.budget_count??0)} 条适用预算；预检未做任何预留。</div>{report.status==='BLOCKED'&&<p className="muted-text">请修复 BLOCKED 项后重新执行采集前检查。不会提供盲目重试入口。</p>}</div>}</Drawer></div>
 }

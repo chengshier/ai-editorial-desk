@@ -5,5 +5,10 @@ import './styles.css'
 import './editorial.css'
 import './workspace.css'
 import './visual-fidelity.css'
+import './product-ux.css'
+import './screenshot-refinement.css'
+import './workbench-polish.css'
+import './interaction-hotfix.css'
+import './workflow-refinement.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)

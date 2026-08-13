@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     mediacrawler_timeout_seconds: int = Field(default=900, ge=30, le=7200)
     mediacrawler_profile_root: str = ".runtime/mediacrawler_profiles"
 
+    # Local human-operated browser runtime. Development bound to loopback is enabled
+    # automatically. Production / remote deployments must explicitly opt in or use a
+    # future local Runtime Agent instead of trying to control the user's browser remotely.
+    local_browser_runtime_enabled: bool = False
+    local_browser_runtime_executable: str | None = None
+
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: SecretStr) -> SecretStr:

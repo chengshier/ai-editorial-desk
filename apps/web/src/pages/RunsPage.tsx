@@ -4,55 +4,18 @@ import { Empty, ErrorBanner, JsonView, Panel } from '../components/common'
 import { runStatusLabel, triggerTypeLabel } from '../uiLabels'
 import type { Run } from '../types'
 
-export function RunsPage({ api }: { api: AdminApi }) {
-  const [items, setItems] = useState<Run[]>([])
-  const [selected, setSelected] = useState<Run | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState('')
-  const [pendingAction, setPendingAction] = useState<string | null>(null)
+type SafeDiagnostic={failure_category?:string;failure_code?:string;safe_message?:string;runtime_stage?:string|null;dependency_module?:string|null;auth_required?:boolean;cdp_connect_failed?:boolean;profile_error?:boolean;configuration_error?:boolean;dependency_error?:boolean;timeout?:boolean}
+const categoryLabel:Record<string,string>={AUTH:'登录 / 认证',CDP:'浏览器连接',PROFILE:'浏览器配置',CONFIGURATION:'采集配置',DEPENDENCY:'运行依赖',TIMEOUT:'运行超时',RUNTIME:'采集执行',PLATFORM_RISK:'平台风险',UNKNOWN:'未知执行错误'}
+const stageLabel:Record<string,string>={bootstrap:'启动采集进程',cdp_connect:'连接浏览器 CDP',page_navigation:'页面导航',client_create:'创建平台客户端',login_state:'检查登录状态',search:'执行搜索采集'}
+function diagnosticFor(run:Run):SafeDiagnostic|null{const value=run.metadata?.subprocess_diagnostic;return value&&typeof value==='object'&&!Array.isArray(value)?value as SafeDiagnostic:null}
+function diagnosticSuggestion(diagnostic:SafeDiagnostic):string{if(diagnostic.auth_required)return'检查平台账号与浏览器登录态；不要通过换号或绕过平台验证重试。';if(diagnostic.cdp_connect_failed)return'确认浏览器调试端点已启动，再重新执行采集前检查。';if(diagnostic.profile_error)return'检查平台账号关联的 Browser Profile 是否存在并可被后端访问。';if(diagnostic.dependency_error)return`检查 MediaCrawler 运行环境依赖${diagnostic.dependency_module?`：${diagnostic.dependency_module}`:''}。`;if(diagnostic.configuration_error)return'检查连接器实例与信源目标配置后重新预检。';if(diagnostic.timeout)return'检查网络与超时设置，确认不是平台风险后再重新预检。';return'返回信源重新执行采集前检查；READY 后再人工确认一次真实网络访问。'}
 
-  const load = useCallback(async () => {
-    try {
-      const suffix = status ? `&status=${encodeURIComponent(status)}` : ''
-      const page = await api.page<Run>(`/api/v1/admin/connector-runs?page_size=100${suffix}`)
-      setItems(page.items)
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }, [api, status])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  const detail = async (id: string) => {
-    try {
-      setSelected(await api.request<Run>(`/api/v1/admin/connector-runs/${id}`))
-    } catch (e) {
-      setError((e as Error).message)
-    }
-  }
-
-  const actOnRun = async (run: Run, action: 'retry' | 'cancel') => {
-    setPendingAction(action)
-    setError(null)
-    try {
-      await api.post(`/api/v1/admin/connector-runs/${run.id}/${action}`, action === 'cancel' ? { reason: 'Web 管理员取消' } : {})
-      await load()
-      await detail(run.id)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setPendingAction(null)
-    }
-  }
-
-  return <Panel title="运行记录" actions={<><select aria-label="运行状态" value={status} onChange={(event) => setStatus(event.target.value)}><option value="">全部状态</option>{['pending', 'running', 'succeeded', 'partial', 'failed', 'cancelled', 'paused_risk'].map((item) => <option key={item} value={item}>{runStatusLabel[item]}</option>)}</select><button onClick={load}>刷新</button></>}>
-    <div className="page-intro"><p>查看采集任务的执行结果、数量统计与风险状态。</p><span className="readonly-note">历史 / 审计</span></div>
-    <ErrorBanner error={error}/>
-    <div className="split">
-      {items.length===0?<Empty text="暂无运行记录"/>:<div className="table-wrap"><table><thead><tr><th>运行 ID</th><th>触发方式</th><th>状态</th><th>采集数量</th><th>错误 / 风险</th></tr></thead><tbody>{items.map((run) => <tr key={run.id} onClick={() => void detail(run.id)}><td>{run.id.slice(0, 8)}</td><td>{triggerTypeLabel[run.trigger_type]||run.trigger_type}</td><td>{runStatusLabel[run.status]||run.status}</td><td>{run.inserted_count} 条新增 · {run.duplicate_count} 条重复 · {run.failed_count} 条失败</td><td>{run.error_code || '无'}</td></tr>)}</tbody></table></div>}
-      {selected && <aside><h3>运行详情 · {selected.id.slice(0,8)}</h3><p>耗时：{selected.latency_seconds ?? '暂无'} 秒 · 重试 {selected.retry_count} 次</p><p>错误：{selected.error_message || '无'}</p><div className="actions">{['failed', 'partial', 'cancelled'].includes(selected.status) && <button className="primary" disabled={Boolean(pendingAction)} onClick={() => void actOnRun(selected, 'retry')}>{pendingAction === 'retry' ? '正在重试…' : '人工重试'}</button>}{['pending', 'running'].includes(selected.status) && <button className="danger" disabled={Boolean(pendingAction)} onClick={() => void actOnRun(selected, 'cancel')}>{pendingAction === 'cancel' ? '正在取消…' : '取消运行'}</button>}</div><details><summary>查看技术详情</summary><h4>运行前检查点</h4><JsonView value={selected.checkpoint_before}/><h4>运行后检查点</h4><JsonView value={selected.checkpoint_after}/><h4>预算信息</h4><JsonView value={selected.budget}/><h4>风险动作</h4><JsonView value={selected.risk_action}/></details></aside>}
-    </div>
-  </Panel>
+export function RunsPage({api,onNavigate}:{api:AdminApi;onNavigate?:(page:'sources')=>void}){
+ const[items,setItems]=useState<Run[]>([]),[selected,setSelected]=useState<Run|null>(null),[error,setError]=useState<string|null>(null),[status,setStatus]=useState(''),[pending,setPending]=useState(false)
+ const load=useCallback(async()=>{try{const suffix=status?`&status=${encodeURIComponent(status)}`:'';const page=await api.page<Run>(`/api/v1/admin/connector-runs?page_size=100${suffix}`);setItems(page.items);setError(null)}catch(e){setError(e instanceof Error?e.message:'加载运行记录失败')}},[api,status])
+ useEffect(()=>{void load()},[load])
+ const detail=async(id:string)=>{try{setSelected(await api.request<Run>(`/api/v1/admin/connector-runs/${id}`))}catch(e){setError(e instanceof Error?e.message:'加载运行详情失败')}}
+ const cancel=async(run:Run)=>{setPending(true);try{await api.post(`/api/v1/admin/connector-runs/${run.id}/cancel`,{reason:'Web 管理员取消'});await load();await detail(run.id)}catch(e){setError(e instanceof Error?e.message:'取消运行失败')}finally{setPending(false)}}
+ const diagnostic=selected?diagnosticFor(selected):null
+ return <Panel title="运行记录" actions={<><select aria-label="运行状态" value={status} onChange={e=>setStatus(e.target.value)}><option value="">全部状态</option>{['pending','running','succeeded','partial','failed','cancelled','paused_risk'].map(item=><option key={item} value={item}>{runStatusLabel[item]}</option>)}</select><button onClick={()=>void load()}>刷新</button></>}><div className="page-intro"><p>查看采集执行结果与安全诊断。失败运行不再直接提供“人工重试”：先回到信源重新预检，再由人确认一次真实平台访问。</p><span className="readonly-note">历史 / 审计</span></div><ErrorBanner error={error}/><div className="split">{items.length===0?<Empty text="暂无运行记录"/>:<div className="table-wrap"><table><thead><tr><th>运行 ID</th><th>触发方式</th><th>状态</th><th>采集数量</th><th>错误 / 风险</th></tr></thead><tbody>{items.map(run=><tr key={run.id} onClick={()=>void detail(run.id)}><td>{run.id.slice(0,8)}</td><td>{triggerTypeLabel[run.trigger_type]||run.trigger_type}</td><td>{runStatusLabel[run.status]||run.status}</td><td>{run.inserted_count} 条新增 · {run.duplicate_count} 条重复 · {run.failed_count} 条失败</td><td>{run.error_code||'无'}</td></tr>)}</tbody></table></div>}{selected&&<aside><h3>运行详情 · {selected.id.slice(0,8)}</h3><p>耗时：{selected.latency_seconds??'暂无'} 秒 · 历史重试 {selected.retry_count} 次</p><div className="status-stack"><strong>{runStatusLabel[selected.status]||selected.status}</strong><span>{selected.error_message||'本次运行没有错误信息'}</span>{selected.error_code&&<small>技术错误码：{selected.error_code}</small>}</div>{diagnostic?<div className="notice"><strong>失败诊断 · {categoryLabel[diagnostic.failure_category||'']||diagnostic.failure_category||'采集执行'}</strong><p>{diagnostic.safe_message||selected.error_message||'采集执行失败'}</p><div className="status-stack"><span>发生阶段：{diagnostic.runtime_stage?(stageLabel[diagnostic.runtime_stage]||diagnostic.runtime_stage):'未返回明确阶段'}</span><small>诊断码：{diagnostic.failure_code||selected.error_code||'未知'}</small><small>建议：{diagnosticSuggestion(diagnostic)}</small></div></div>:selected.error_code==='collector_execution_failed'?<div className="error-banner" role="alert"><strong>未获得可细分安全诊断</strong><div>当前只能确认采集执行发生未归类异常。系统不会鼓励直接重试；请先重新执行采集前检查。</div></div>:null}<div className="actions">{['failed','partial','cancelled','paused_risk'].includes(selected.status)&&onNavigate&&<button className="primary" onClick={()=>onNavigate('sources')}>重新执行采集前检查</button>}{['pending','running'].includes(selected.status)&&<button className="danger" disabled={pending} onClick={()=>void cancel(selected)}>{pending?'正在取消…':'取消运行'}</button>}</div><details><summary>查看技术详情</summary>{diagnostic&&<><h4>安全诊断原始结构</h4><JsonView value={diagnostic}/></>}<h4>运行前检查点</h4><JsonView value={selected.checkpoint_before}/><h4>运行后检查点</h4><JsonView value={selected.checkpoint_after}/><h4>预算信息</h4><JsonView value={selected.metadata?.budget??selected.budget??null}/><h4>风险动作</h4><JsonView value={selected.risk_action}/></details></aside>}</div></Panel>
 }

@@ -10,7 +10,11 @@ from packages.connector_management.exceptions import (
     DefinitionSyncError,
     ResourceNotFoundError,
 )
-from packages.connector_management.repositories import ConnectorDefinitionRepository, Page
+from packages.connector_management.repositories import (
+    AuditLogRepository,
+    ConnectorDefinitionRepository,
+    Page,
+)
 from packages.connectors.definitions import CONNECTOR_DEFINITIONS, ConnectorDefinitionManifest
 from packages.database.models import ConnectorDefinition
 
@@ -21,6 +25,15 @@ class DefinitionSyncResult:
     updated: int
     unchanged: int
     failed: int = 0
+
+
+def _definition_state_snapshot(definition: ConnectorDefinition) -> dict[str, object]:
+    return {
+        "connector_type": definition.connector_type,
+        "platform": definition.platform,
+        "implementation_version": definition.implementation_version,
+        "is_enabled": definition.is_enabled,
+    }
 
 
 class ConnectorDefinitionSyncService:
@@ -116,3 +129,43 @@ class ConnectorDefinitionQueryService:
             platform=platform,
             is_enabled=is_enabled,
         )
+
+
+class ConnectorDefinitionStateService:
+    """Mutate only the operator-owned runtime switch on a code-owned definition."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repository = ConnectorDefinitionRepository(session)
+        self.audit = AuditLogRepository(session)
+
+    async def enable(self, *, definition_id: UUID, actor: str) -> ConnectorDefinition:
+        return await self._set_enabled(definition_id=definition_id, actor=actor, enabled=True)
+
+    async def disable(self, *, definition_id: UUID, actor: str) -> ConnectorDefinition:
+        return await self._set_enabled(definition_id=definition_id, actor=actor, enabled=False)
+
+    async def _set_enabled(
+        self,
+        *,
+        definition_id: UUID,
+        actor: str,
+        enabled: bool,
+    ) -> ConnectorDefinition:
+        async with self.session.begin():
+            definition = await self.repository.get(definition_id)
+            if definition is None:
+                raise ResourceNotFoundError("连接器定义不存在")
+            if definition.is_enabled == enabled:
+                return definition
+            before = _definition_state_snapshot(definition)
+            definition.is_enabled = enabled
+            self.audit.add(
+                entity_type="connector_definition",
+                entity_id=definition.id,
+                action="enable" if enabled else "disable",
+                actor=actor,
+                before_data=before,
+                after_data=_definition_state_snapshot(definition),
+            )
+        return definition
