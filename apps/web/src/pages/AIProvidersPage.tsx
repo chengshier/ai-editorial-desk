@@ -5,12 +5,13 @@ import { Drawer, Empty, ErrorBanner, ResourceHeader } from '../components/common
 import { enabledLabel, providerTypeLabel, validationStatusLabel } from '../uiLabels'
 
 type Props = { api: AdminApi }
-type DrawerMode = 'provider' | 'model' | 'credential' | null
+type DrawerMode = 'provider' | 'provider-edit' | 'model' | 'credential' | null
 
 const emptyProviderDraft = {
   provider_key: '', display_name: '', provider_type: 'openai_compatible',
   base_url: '', credential_ref: '',
 }
+const emptyProviderEditDraft = { display_name: '', base_url: '' }
 const emptyModelDraft = {
   provider_id: '', model_key: '', model_name: '', capabilities: 'text_generation',
   pricing_version: 'unpriced-v1', dimensions: '', structured_output_mode: 'json_schema',
@@ -31,6 +32,8 @@ export function AIProvidersPage({ api }: Props) {
   const [drawerMode, setDrawerMode] = useState<DrawerMode>(null)
   const [credentialProvider, setCredentialProvider] = useState<AiProvider | null>(null)
   const [credentialDraft, setCredentialDraft] = useState('')
+  const [editingProvider, setEditingProvider] = useState<AiProvider | null>(null)
+  const [providerEditDraft, setProviderEditDraft] = useState(emptyProviderEditDraft)
   const [providerDraft, setProviderDraft] = useState(emptyProviderDraft)
   const [modelDraft, setModelDraft] = useState(emptyModelDraft)
 
@@ -55,6 +58,14 @@ export function AIProvidersPage({ api }: Props) {
     setProviderDraft(emptyProviderDraft)
     setError('')
     setDrawerMode('provider')
+  }
+
+  const openProviderEdit = (provider: AiProvider) => {
+    setEditingProvider(provider)
+    setProviderEditDraft({ display_name: provider.display_name, base_url: provider.base_url })
+    setError('')
+    setMessage('')
+    setDrawerMode('provider-edit')
   }
 
   const openModel = () => {
@@ -83,6 +94,28 @@ export function AIProvidersPage({ api }: Props) {
       setDrawerMode(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '创建 AI 服务商失败')
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  const updateProvider = async () => {
+    if (!editingProvider) return
+    if (!providerEditDraft.display_name.trim() || !providerEditDraft.base_url.trim()) return setError('服务商名称和服务地址不能为空')
+    setPendingAction('update-provider')
+    setError('')
+    try {
+      await api.patch<AiProvider>(`/api/v1/admin/ai/providers/${editingProvider.id}`, {
+        display_name: providerEditDraft.display_name.trim(),
+        base_url: providerEditDraft.base_url.trim(),
+      })
+      setMessage('AI 服务商连接信息已更新。后续连接测试与业务调用将使用新的 Base URL。')
+      await load()
+      setDrawerMode(null)
+      setEditingProvider(null)
+      setProviderEditDraft(emptyProviderEditDraft)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '更新 AI 服务商失败')
     } finally {
       setPendingAction(null)
     }
@@ -194,18 +227,19 @@ export function AIProvidersPage({ api }: Props) {
     {message&&<div className="success-banner">{message}</div>}
 
     <section className="panel">
-      <ResourceHeader title="AI 服务商" description="管理模型服务连接、凭据引用和启用状态。页面只保存 env:// 环境变量引用，真实 API Key 必须由后端进程环境提供。" actions={<><button onClick={() => void load()}>刷新</button><button className="primary" onClick={openProvider}>新建服务商</button></>}/>
-      {providers.length===0 ? <Empty text="暂无 AI 服务商" helper="先登记一个服务商，再为它添加模型并进行连接测试。" action={<button className="primary" onClick={openProvider}>新建服务商</button>}/> : <div className="table-wrap"><table><thead><tr><th>服务商</th><th>类型</th><th>状态</th><th>凭据状态</th><th>验证状态</th><th>模型数</th><th>最近调用 / 错误率</th><th>操作</th></tr></thead><tbody>{providers.map((provider) => {
+      <ResourceHeader title="AI 服务商" description="管理模型服务连接、服务地址、凭据引用和启用状态。页面只保存 env:// 环境变量引用，真实 API Key 必须由后端进程环境提供。" actions={<><button onClick={() => void load()}>刷新</button><button className="primary" onClick={openProvider}>新建服务商</button></>}/>
+      {providers.length===0 ? <Empty text="暂无 AI 服务商" helper="先登记一个服务商，再为它添加模型并进行连接测试。" action={<button className="primary" onClick={openProvider}>新建服务商</button>}/> : <div className="table-wrap"><table><thead><tr><th>服务商</th><th>类型</th><th>服务地址</th><th>状态</th><th>凭据状态</th><th>验证状态</th><th>模型数</th><th>最近调用 / 错误率</th><th>操作</th></tr></thead><tbody>{providers.map((provider) => {
         const credential = credentialState(provider)
         return <tr key={provider.id}>
         <td><strong>{provider.display_name}</strong><small className="technical-meta">{provider.provider_key}</small></td>
         <td>{providerTypeLabel[provider.provider_type]||provider.provider_type}</td>
+        <td><span className="mono-break">{provider.base_url}</span></td>
         <td>{enabledLabel(provider.enabled)}</td>
         <td><strong>{credential.title}</strong><small className="technical-meta">{credential.detail}</small><small className="technical-meta">引用：{provider.credential_ref_masked || '—'}</small></td>
         <td>{validationStatusLabel[provider.validation_status]}</td>
         <td>{provider.model_count}</td>
         <td>{provider.last_invocation_at || '暂无'}<small className="technical-meta">错误率 {provider.error_rate === null ? '暂无' : `${(provider.error_rate * 100).toFixed(1)}%`}</small></td>
-        <td><div className="actions action-cell"><button className="primary" disabled={Boolean(pendingAction)} onClick={() => void toggleProvider(provider)}>{pendingAction===`provider:${provider.id}`?'正在处理…':provider.enabled?'停用':'启用'}</button><button disabled={Boolean(pendingAction)} onClick={() => openCredential(provider)}>配置凭据引用</button></div></td>
+        <td><div className="actions action-cell"><button className="primary" disabled={Boolean(pendingAction)} onClick={() => void toggleProvider(provider)}>{pendingAction===`provider:${provider.id}`?'正在处理…':provider.enabled?'停用':'启用'}</button><button disabled={Boolean(pendingAction)} onClick={() => openProviderEdit(provider)}>编辑连接</button><button disabled={Boolean(pendingAction)} onClick={() => openCredential(provider)}>配置凭据引用</button></div></td>
       </tr>})}</tbody></table></div>}
     </section>
 
@@ -222,6 +256,11 @@ export function AIProvidersPage({ api }: Props) {
       <ErrorBanner error={error || null}/>
       <div className="drawer-section"><h3>连接信息</h3><p>服务商标识用于路由和审计，名称用于界面展示。</p><div className="form-grid"><label>服务商标识<input value={providerDraft.provider_key} onChange={(event) => setProviderDraft({ ...providerDraft, provider_key: event.target.value })}/></label><label>服务商名称<input value={providerDraft.display_name} onChange={(event) => setProviderDraft({ ...providerDraft, display_name: event.target.value })}/></label><label className="field-full">服务类型<select value={providerDraft.provider_type} onChange={(event) => setProviderDraft({ ...providerDraft, provider_type: event.target.value })}><option value="openai_compatible">OpenAI 兼容服务</option><option value="local_openai_compatible">本地 OpenAI 兼容服务</option></select></label><label className="field-full">服务地址（Base URL）<input value={providerDraft.base_url} onChange={(event) => setProviderDraft({ ...providerDraft, base_url: event.target.value })} placeholder="https://provider.example/v1"/></label></div></div>
       <div className="drawer-section"><h3>凭据引用（不是 API Key）</h3><p>这里只保存类似 env://AI_PROVIDER_KEY 的环境变量引用。真实 Secret 必须在启动后端的同一进程环境中设置，页面不会保存、读取或回显真实 API Key。</p><div className="form-grid"><label className="field-full">环境变量引用<input type="text" autoComplete="off" placeholder="例如 env://AI_PROVIDER_KEY" value={providerDraft.credential_ref} onChange={(event) => setProviderDraft({ ...providerDraft, credential_ref: event.target.value })}/><small>只支持 env://UPPER_CASE_NAME 格式。保存引用不等于后端已经加载真实凭据。</small></label></div></div>
+    </Drawer>
+
+    <Drawer open={drawerMode==='provider-edit'} title="编辑 AI 服务商连接" description={editingProvider?`服务商：${editingProvider.display_name}`:undefined} onClose={() => { setDrawerMode(null); setEditingProvider(null); setProviderEditDraft(emptyProviderEditDraft) }} footer={<><button disabled={pendingAction==='update-provider'} onClick={() => { setDrawerMode(null); setEditingProvider(null); setProviderEditDraft(emptyProviderEditDraft) }}>取消</button><button className="primary" disabled={pendingAction==='update-provider'} onClick={() => void updateProvider()}>{pendingAction==='update-provider'?'正在保存…':'保存连接信息'}</button></>}>
+      <ErrorBanner error={error || null}/>
+      <div className="drawer-section"><h3>连接信息</h3><p>服务商标识与类型属于稳定身份，不在这里改动；名称和 Base URL 可以按实际服务配置更新。</p>{editingProvider&&<div className="form-grid"><label>服务商标识<input value={editingProvider.provider_key} disabled/></label><label>服务类型<input value={providerTypeLabel[editingProvider.provider_type]||editingProvider.provider_type} disabled/></label><label className="field-full">服务商名称<input value={providerEditDraft.display_name} onChange={(event) => setProviderEditDraft({ ...providerEditDraft, display_name: event.target.value })}/></label><label className="field-full">服务地址（Base URL）<input value={providerEditDraft.base_url} onChange={(event) => setProviderEditDraft({ ...providerEditDraft, base_url: event.target.value })} placeholder="https://provider.example/v1"/><small>修改后，新的连接测试和业务调用会使用该地址。</small></label></div>}</div>
     </Drawer>
 
     <Drawer open={drawerMode==='model'} title="新建 AI 模型" description="将服务商提供的模型登记到路由系统，并声明结构化输出方式。" onClose={() => setDrawerMode(null)} footer={<><button disabled={pendingAction==='create-model'} onClick={() => setDrawerMode(null)}>取消</button><button className="primary" disabled={pendingAction==='create-model'} onClick={() => void createModel()}>{pendingAction==='create-model'?'正在创建…':'创建模型'}</button></>}>
