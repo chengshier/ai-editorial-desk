@@ -54,7 +54,7 @@ it('shows and updates an existing provider base url', async () => {
   render(<AIProvidersPage api={api} />)
   await screen.findByText('https://provider.test/v1')
   await userEvent.click(screen.getByRole('button', { name: '编辑连接' }))
-  const input = screen.getByLabelText('服务地址（Base URL）')
+  const input = screen.getByLabelText(/^服务地址（Base URL）/)
   await userEvent.clear(input)
   await userEvent.type(input, 'https://new-provider.test/v1')
   await userEvent.click(screen.getByRole('button', { name: '保存连接信息' }))
