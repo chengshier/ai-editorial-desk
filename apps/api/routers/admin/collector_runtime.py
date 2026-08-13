@@ -119,7 +119,8 @@ async def run_connector_test(
 ) -> TestRunResponse:
     if payload.requested_limit > SAFE_REAL_COLLECTION_LIMIT:
         raise ConflictError(
-            f"低量真实采集单次上限为 {SAFE_REAL_COLLECTION_LIMIT} 条；正式采集请使用采集任务与采集预算"
+            f"低量真实采集单次上限为 {SAFE_REAL_COLLECTION_LIMIT} 条；"
+            "正式采集请使用采集任务与采集预算"
         )
     source = await SourceService(session).get(payload.source_id)
     if source.connector_instance_id != instance_id:
