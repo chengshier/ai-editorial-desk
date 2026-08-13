@@ -88,7 +88,7 @@ class LocalBrowserRuntimeManager:
     login URLs come from a server-side allow-list.
     """
 
-    _process: ClassVar[asyncio.subprocess.Process | None] = None
+    _process: ClassVar[subprocess.Popen[bytes] | None] = None
     _account_id: ClassVar[UUID | None] = None
     _browser_name: ClassVar[str | None] = None
     _profile_ref: ClassVar[str | None] = None
@@ -109,16 +109,15 @@ class LocalBrowserRuntimeManager:
         profile_configured = bool(profile_ref)
         profile_ready = self._profile_exists(profile_ref)
         cdp_ready = self._cdp_reachable()
+        process_running = self._managed_process_running()
         managed = bool(
             cdp_ready
-            and self.__class__._process is not None
-            and self.__class__._process.returncode is None
+            and process_running
             and self.__class__._account_id == account_id
         )
         managed_other = bool(
             cdp_ready
-            and self.__class__._process is not None
-            and self.__class__._process.returncode is None
+            and process_running
             and self.__class__._account_id != account_id
         )
 
@@ -200,13 +199,14 @@ class LocalBrowserRuntimeManager:
                 "about:blank",
             ]
             try:
-                process = await asyncio.create_subprocess_exec(
-                    *command,
+                process = await asyncio.to_thread(
+                    subprocess.Popen,
+                    command,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     env=self._safe_browser_environment(),
                 )
-            except OSError as exc:
+            except (OSError, subprocess.SubprocessError) as exc:
                 raise LocalBrowserRuntimeError(
                     "专用浏览器启动失败，请检查浏览器安装与运行权限。"
                 ) from exc
@@ -217,7 +217,7 @@ class LocalBrowserRuntimeManager:
             self.__class__._profile_ref = profile_ref
 
             for _ in range(40):
-                if process.returncode is not None:
+                if process.poll() is not None:
                     self._clear_managed_state()
                     raise LocalBrowserRuntimeError(
                         "浏览器进程已退出，未能建立本地调试连接。"
@@ -243,7 +243,7 @@ class LocalBrowserRuntimeManager:
             process = self.__class__._process
             if (
                 process is None
-                or process.returncode is not None
+                or not self._managed_process_running()
                 or self.__class__._account_id != account_id
             ):
                 snapshot = self.status(account_id=account_id, profile_ref=profile_ref)
@@ -370,6 +370,11 @@ class LocalBrowserRuntimeManager:
             return False
         return candidate.is_relative_to(root) and candidate.is_dir()
 
+    @classmethod
+    def _managed_process_running(cls) -> bool:
+        process = cls._process
+        return process is not None and process.poll() is None
+
     @staticmethod
     def _cdp_reachable() -> bool:
         try:
@@ -414,12 +419,12 @@ class LocalBrowserRuntimeManager:
                 raise OSError("CDP refused to open a new tab")
 
     @staticmethod
-    async def _wait_for_exit(process: asyncio.subprocess.Process) -> None:
+    async def _wait_for_exit(process: subprocess.Popen[bytes]) -> None:
         try:
-            await asyncio.wait_for(process.wait(), timeout=5)
-        except TimeoutError:
+            await asyncio.to_thread(process.wait, timeout=5)
+        except subprocess.TimeoutExpired:
             process.kill()
-            await process.wait()
+            await asyncio.to_thread(process.wait)
 
     @classmethod
     def _clear_managed_state(cls) -> None:
