@@ -3,6 +3,7 @@ from typing import Annotated
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.auth import require_actor_id, require_admin_token
@@ -18,6 +19,10 @@ from packages.connector_management.exceptions import ConflictError
 from packages.connectors.implementations import implementation_registry
 from packages.database.session import get_async_sessionmaker, get_database_session
 from packages.signals.services import SourceService
+from packages.validation.collection_preflight import (
+    SAFE_REAL_COLLECTION_LIMIT,
+    CollectionPreflightService,
+)
 
 router = APIRouter(
     tags=["admin-collector-runtime"],
@@ -25,6 +30,32 @@ router = APIRouter(
 )
 Session = Annotated[AsyncSession, Depends(get_database_session)]
 Actor = Annotated[str, Depends(require_actor_id)]
+
+
+class CollectionPreflightRequest(BaseModel):
+    platform_account_id: UUID | None = None
+    requested_limit: int = Field(default=1, ge=1, le=SAFE_REAL_COLLECTION_LIMIT)
+    comment_limit: int = Field(default=0, ge=0, le=20)
+
+
+class CollectionPreflightCheckResponse(BaseModel):
+    name: str
+    status: str
+    message: str
+
+
+class CollectionPreflightResponse(BaseModel):
+    status: str
+    platform: str
+    mode: str
+    requested_limit: int
+    comment_limit: int
+    initiates_platform_request: bool
+    uses_local_cdp: bool
+    account_label: str | None
+    checkpoint_summary: dict[str, str | int | None]
+    budget_summary: dict[str, int | str | None]
+    checks: list[CollectionPreflightCheckResponse]
 
 
 def get_collector_runtime() -> CollectorRuntime:
@@ -38,6 +69,44 @@ Runtime = Annotated[CollectorRuntime, Depends(get_collector_runtime)]
 
 
 @router.post(
+    "/sources/{source_id}/collection-preflight",
+    response_model=CollectionPreflightResponse,
+)
+async def collection_preflight(
+    source_id: UUID,
+    payload: CollectionPreflightRequest,
+) -> CollectionPreflightResponse:
+    report = await CollectionPreflightService(
+        session_factory=get_async_sessionmaker()
+    ).run(
+        source_id=source_id,
+        platform_account_id=payload.platform_account_id,
+        requested_limit=payload.requested_limit,
+        comment_limit=payload.comment_limit,
+    )
+    return CollectionPreflightResponse(
+        status=report.status,
+        platform=report.platform,
+        mode=report.mode,
+        requested_limit=report.requested_limit,
+        comment_limit=report.comment_limit,
+        initiates_platform_request=report.initiates_platform_request,
+        uses_local_cdp=report.uses_local_cdp,
+        account_label=report.account_label,
+        checkpoint_summary=report.checkpoint_summary,
+        budget_summary=report.budget_summary,
+        checks=[
+            CollectionPreflightCheckResponse(
+                name=item.name,
+                status=item.status,
+                message=item.message,
+            )
+            for item in report.checks
+        ],
+    )
+
+
+@router.post(
     "/connector-instances/{instance_id}/test-runs",
     response_model=TestRunResponse,
 )
@@ -48,6 +117,10 @@ async def run_connector_test(
     actor: Actor,
     runtime: Runtime,
 ) -> TestRunResponse:
+    if payload.requested_limit > SAFE_REAL_COLLECTION_LIMIT:
+        raise ConflictError(
+            f"低量真实采集单次上限为 {SAFE_REAL_COLLECTION_LIMIT} 条；正式采集请使用采集任务与采集预算"
+        )
     source = await SourceService(session).get(payload.source_id)
     if source.connector_instance_id != instance_id:
         raise ConflictError("来源不属于指定连接器实例")
