@@ -26,7 +26,10 @@ def _manager(tmp_path, monkeypatch) -> LocalBrowserRuntimeManager:
     return manager
 
 
-def test_local_browser_status_is_available_without_manual_cdp_command(tmp_path, monkeypatch) -> None:
+def test_local_browser_status_is_available_without_manual_cdp_command(
+    tmp_path,
+    monkeypatch,
+) -> None:
     manager = _manager(tmp_path, monkeypatch)
 
     snapshot = manager.status(account_id=uuid4(), profile_ref="bilibili-main")
@@ -39,7 +42,10 @@ def test_local_browser_status_is_available_without_manual_cdp_command(tmp_path, 
     assert snapshot.profile_ready is False
 
 
-def test_prepare_profile_creates_only_controlled_opaque_profile(tmp_path, monkeypatch) -> None:
+def test_prepare_profile_creates_only_controlled_opaque_profile(
+    tmp_path,
+    monkeypatch,
+) -> None:
     manager = _manager(tmp_path, monkeypatch)
 
     profile = manager._prepare_profile("bilibili-main")
@@ -52,7 +58,10 @@ def test_prepare_profile_creates_only_controlled_opaque_profile(tmp_path, monkey
         manager._prepare_profile("../escaped")
 
 
-def test_browser_child_environment_does_not_inherit_provider_secret(tmp_path, monkeypatch) -> None:
+def test_browser_child_environment_does_not_inherit_provider_secret(
+    tmp_path,
+    monkeypatch,
+) -> None:
     manager = _manager(tmp_path, monkeypatch)
     monkeypatch.setenv("DEEPSEEK_API_KEY", "must-not-reach-browser")
     monkeypatch.setenv("PATH", "safe-path")
