@@ -95,6 +95,13 @@ class CollectorRuntimeSupport:
             allowed_modes = definition.capabilities.get("allowed_modes")
             if isinstance(allowed_modes, list) and task.mode not in allowed_modes:
                 raise PreflightRejectedError("平台当前不允许请求的运行模式")
+            instance_modes = instance.config.get("modes")
+            if (
+                isinstance(instance_modes, list)
+                and instance_modes
+                and task.mode not in instance_modes
+            ):
+                raise PreflightRejectedError("当前连接器实例未启用该采集模式")
             if bool(definition.capabilities.get("requires_account")) and account is None:
                 raise PreflightRejectedError("该连接器运行需要平台账号")
             self.risk_guard.before_run(account)
