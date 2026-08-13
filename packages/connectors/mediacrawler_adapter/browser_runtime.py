@@ -16,6 +16,7 @@ from uuid import UUID
 from packages.common.config import Settings, get_settings
 
 _CDP_HOST = "127.0.0.1"
+_CDP_PORT = 9222
 _PROFILE_REF_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _LOGIN_URLS = {
     "bilibili": "https://www.bilibili.com/",
@@ -38,6 +39,7 @@ _SAFE_BROWSER_ENV_NAMES = {
     "LC_ALL",
     "LOCALAPPDATA",
     "PATH",
+    "PATHEXT",
     "PROGRAMFILES",
     "PROGRAMFILES(X86)",
     "PROGRAMW6432",
@@ -45,6 +47,8 @@ _SAFE_BROWSER_ENV_NAMES = {
     "TEMP",
     "TMP",
     "TMPDIR",
+    "USERDOMAIN",
+    "USERNAME",
     "USERPROFILE",
     "WAYLAND_DISPLAY",
     "WINDIR",
@@ -137,7 +141,7 @@ class LocalBrowserRuntimeManager:
             message = "平台账号尚未配置专用 Browser Profile 引用。请先编辑账号配置。"
             status = "PROFILE_REQUIRED"
         else:
-            message = "专用浏览器尚未启动。点击“启动专用浏览器”即可自动准备 Profile 与本地调试端口。"
+            message = "专用浏览器尚未启动。点击“启动专用浏览器”即可自动准备 Profile 与本地调试环境。"
             status = "STOPPED"
 
         return LocalBrowserRuntimeSnapshot(
@@ -152,7 +156,7 @@ class LocalBrowserRuntimeManager:
             can_stop=managed,
             can_open_login=managed,
             cdp_host=_CDP_HOST,
-            cdp_port=self.settings.local_browser_runtime_port,
+            cdp_port=_CDP_PORT,
             message=message,
         )
 
@@ -172,7 +176,7 @@ class LocalBrowserRuntimeManager:
             command = [
                 str(executable),
                 f"--remote-debugging-address={_CDP_HOST}",
-                f"--remote-debugging-port={self.settings.local_browser_runtime_port}",
+                f"--remote-debugging-port={_CDP_PORT}",
                 f"--user-data-dir={profile_path}",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -204,7 +208,7 @@ class LocalBrowserRuntimeManager:
             process.terminate()
             await self._wait_for_exit(process)
             self._clear_managed_state()
-            raise LocalBrowserRuntimeError("浏览器已启动，但本地调试端口在等待时间内没有就绪。")
+            raise LocalBrowserRuntimeError("浏览器已启动，但本地调试环境在等待时间内没有就绪。")
 
     async def stop(self, *, account_id: UUID, profile_ref: str | None) -> LocalBrowserRuntimeSnapshot:
         async with self.__class__._lock:
@@ -244,11 +248,7 @@ class LocalBrowserRuntimeManager:
         if login_url is None:
             raise LocalBrowserRuntimeError("当前平台尚未配置安全的人工登录入口。")
         try:
-            await asyncio.to_thread(
-                self._open_cdp_tab,
-                self.settings.local_browser_runtime_port,
-                login_url,
-            )
+            await asyncio.to_thread(self._open_cdp_tab, login_url)
         except (OSError, TimeoutError, ValueError) as exc:
             raise LocalBrowserRuntimeError("无法在专用浏览器中打开平台登录页，请刷新运行状态后重试。") from exc
         return self.status(account_id=account_id, profile_ref=profile_ref)
@@ -294,7 +294,14 @@ class LocalBrowserRuntimeManager:
         for candidate in path_candidates:
             if candidate.is_file():
                 return candidate
-        for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "msedge"):
+        for name in (
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "microsoft-edge",
+            "msedge",
+        ):
             resolved = shutil.which(name)
             if resolved:
                 return Path(resolved)
@@ -323,16 +330,18 @@ class LocalBrowserRuntimeManager:
         root = root_value if root_value.is_absolute() else Path.cwd() / root_value
         try:
             root = root.resolve()
-            candidate = (root / profile_ref).resolve()
+            unresolved = root / profile_ref
+            if unresolved.is_symlink():
+                return False
+            candidate = unresolved.resolve()
         except OSError:
             return False
-        return candidate.is_relative_to(root) and candidate.is_dir() and not candidate.is_symlink()
+        return candidate.is_relative_to(root) and candidate.is_dir()
 
-    def _cdp_reachable(self) -> bool:
+    @staticmethod
+    def _cdp_reachable() -> bool:
         try:
-            with socket.create_connection(
-                (_CDP_HOST, self.settings.local_browser_runtime_port), timeout=0.25
-            ):
+            with socket.create_connection((_CDP_HOST, _CDP_PORT), timeout=0.25):
                 return True
         except OSError:
             return False
@@ -362,10 +371,10 @@ class LocalBrowserRuntimeManager:
         }
 
     @staticmethod
-    def _open_cdp_tab(port: int, login_url: str) -> None:
+    def _open_cdp_tab(login_url: str) -> None:
         encoded = urllib.parse.quote(login_url, safe="")
         request = urllib.request.Request(
-            f"http://{_CDP_HOST}:{port}/json/new?{encoded}",
+            f"http://{_CDP_HOST}:{_CDP_PORT}/json/new?{encoded}",
             method="PUT",
         )
         with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310 - fixed loopback URL
