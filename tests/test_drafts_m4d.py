@@ -23,7 +23,12 @@ from packages.database.models import (
     EventRecord,
 )
 from packages.database.session import get_async_sessionmaker
-from packages.editorial.drafts_domain import DRAFT_PROMPT_VERSION, DRAFT_SCHEMA_VERSION
+from packages.editorial.drafts_domain import (
+    DRAFT_PROMPT_VERSION,
+    DRAFT_SCHEMA_V1,
+    DRAFT_SCHEMA_VERSION,
+    DRAFT_SYSTEM_PROMPT,
+)
 from packages.editorial.drafts_generation import DraftService
 from packages.editorial.errors import (
     DraftRiskGateError,
@@ -36,6 +41,26 @@ from tests.m4d_helpers import (
     create_mock_draft_service,
     valid_draft_payload,
 )
+
+
+def test_draft_system_prompt_requires_exact_json_schema_contract() -> None:
+    prompt = DRAFT_SYSTEM_PROMPT
+
+    assert DRAFT_PROMPT_VERSION == "draft-generation-v2"
+    assert "exactly one complete JSON object" in prompt
+    assert "Do not use Markdown or code fences" in prompt
+    assert "Do not add prose before or after the JSON object" in prompt
+    assert "must conform exactly to the supplied JSON Schema" in prompt
+    assert "remain attributed to that source" in prompt
+    assert "uncollected video content happened" in prompt
+    for field in DRAFT_SCHEMA_V1["required"]:
+        assert field in prompt
+    section_schema = DRAFT_SCHEMA_V1["properties"]["sections"]["items"]
+    for field in section_schema["required"]:
+        assert field in prompt
+    citation_schema = section_schema["properties"]["citations"]["items"]
+    for field in citation_schema["required"]:
+        assert field in prompt
 
 
 @pytest.mark.usefixtures("clean_database")
