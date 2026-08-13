@@ -49,16 +49,6 @@ def _validate_source_config(config: dict[str, Any]) -> None:
         raise BusinessValidationError(exc.message, details=exc.details) from exc
 
 
-def _validate_source_mode(capabilities: dict[str, Any], mode: str) -> None:
-    allowed_modes = capabilities.get("allowed_modes")
-    if isinstance(allowed_modes, list):
-        if mode not in allowed_modes:
-            raise BusinessValidationError("当前连接器不支持该采集模式")
-        return
-    if not bool(capabilities.get(mode)):
-        raise BusinessValidationError("当前连接器不支持该采集模式")
-
-
 def _validate_source_target(mode: str, external_ref: str | None) -> None:
     if mode in _TARGET_REQUIRED_MODES and not (external_ref or "").strip():
         target_label = {
@@ -102,7 +92,8 @@ class SourceService:
                 raise ConflictError("不能为已归档实例创建来源")
             if source_type != instance.definition.connector_type:
                 raise ConflictError("来源类型必须与连接器定义类型一致")
-            _validate_source_mode(instance.definition.capabilities, normalized_mode)
+            # Definition / Instance 的模式能力最终仍由 CollectorRuntime Preflight
+            # 强制校验。这里保留历史 Source 可读写，避免配置同步后破坏已有记录。
             _validate_source_target(normalized_mode, normalized_target)
             duplicate = await self.repository.get_by_scope(
                 connector_instance_id,
