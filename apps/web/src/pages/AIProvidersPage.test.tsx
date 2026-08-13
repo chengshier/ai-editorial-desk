@@ -29,7 +29,7 @@ it('sends the selected structured output mode in model config', async () => {
   await userEvent.selectOptions(screen.getByLabelText('所属服务商'), 'provider-1')
   await userEvent.type(screen.getByLabelText('模型标识'), 'structured-model')
   await userEvent.type(screen.getByLabelText('服务商模型名称'), 'vendor-model')
-  await userEvent.selectOptions(screen.getByLabelText('结构化输出方式'), 'json_object')
+  await userEvent.selectOptions(screen.getByLabelText(/结构化输出方式/), 'json_object')
   await userEvent.click(screen.getByRole('button', { name: '创建模型' }))
   expect(bodies).toContainEqual(expect.objectContaining({
     config: { structured_output_mode: 'json_object' },
@@ -90,7 +90,7 @@ it('explains DeepSeek INVALID_REQUEST when json schema mode is selected', async 
   }))
   const api = new AdminApi({ apiBaseUrl: 'http://api', adminToken: 'token', actorId: 'human' })
   render(<AIProvidersPage api={api} />)
-  await screen.findByText('DeepSeek Production')
+  await screen.findAllByText('DeepSeek Production')
   await userEvent.click(screen.getByRole('button', { name: '连接测试' }))
   expect(await screen.findByText(/DeepSeek 的 JSON Output 使用 JSON Object/)).toBeInTheDocument()
   expect(screen.queryByText(/连接测试完成：failed/)).not.toBeInTheDocument()
@@ -120,7 +120,7 @@ it('edits an existing model structured output mode', async () => {
   render(<AIProvidersPage api={api} />)
   await screen.findByText('structured-model')
   await userEvent.click(screen.getByRole('button', { name: '编辑模型' }))
-  await userEvent.selectOptions(screen.getByLabelText('结构化输出方式'), 'json_object')
+  await userEvent.selectOptions(screen.getByLabelText(/结构化输出方式/), 'json_object')
   await userEvent.click(screen.getByRole('button', { name: '保存模型配置' }))
   expect(patchBodies).toContainEqual(expect.objectContaining({
     config: { structured_output_mode: 'json_object', keep_me: true },
