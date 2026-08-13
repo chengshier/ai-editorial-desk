@@ -15,7 +15,8 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
   const [config, setConfig] = useState<Record<string, unknown>>({})
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [drawerError, setDrawerError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const selected = useMemo(
     () => definitions.find((item) => item.id === definitionId),
@@ -35,9 +36,9 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
       if (definitionPage.items[0]) {
         setDefinitionId((current) => current || definitionPage.items[0].id)
       }
-      setError(null)
+      setPageError(null)
     } catch (e) {
-      setError((e as Error).message)
+      setPageError((e as Error).message)
     }
   }, [api])
 
@@ -49,23 +50,28 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
     setEditingId(null)
     setName('')
     setConfig({})
+    setDrawerError(null)
     if (definitions[0]) setDefinitionId(definitions[0].id)
+  }
+
+  const closeDrawer = () => {
+    setDrawerOpen(false)
+    resetForm()
   }
 
   const openCreate = () => {
     resetForm()
     setMessage(null)
-    setError(null)
     setDrawerOpen(true)
   }
 
   const save = async () => {
-    if (!selected || !name.trim()) return setError('请选择连接器类型并填写实例名称')
+    if (!selected || !name.trim()) return setDrawerError('请选择连接器类型并填写实例名称')
     if (Object.keys(validateSchemaValue(selected.config_schema, config, selected.ui_schema)).length) {
-      return setError('配置未通过表单校验，请检查必填项与字段范围')
+      return setDrawerError('配置未通过表单校验，请检查必填项与字段范围')
     }
     setPendingAction('save')
-    setError(null)
+    setDrawerError(null)
     try {
       if (editingId) {
         await api.patch(`/api/v1/admin/connector-instances/${editingId}`, { name, config })
@@ -80,10 +86,9 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
         setMessage('连接器实例已创建。')
       }
       await load()
-      setDrawerOpen(false)
-      resetForm()
+      closeDrawer()
     } catch (e) {
-      setError((e as Error).message)
+      setDrawerError((e as Error).message)
     } finally {
       setPendingAction(null)
     }
@@ -95,19 +100,19 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
     setName(instance.name)
     setConfig(instance.config)
     setMessage(null)
-    setError(null)
+    setDrawerError(null)
     setDrawerOpen(true)
   }
 
   const action = async (id: string, actionName: 'enable' | 'disable' | 'archive') => {
     setPendingAction(`${actionName}:${id}`)
-    setError(null)
+    setPageError(null)
     try {
       await api.post(`/api/v1/admin/connector-instances/${id}/${actionName}`)
       setMessage(actionName === 'archive' ? '连接器实例已归档。' : actionName === 'enable' ? '连接器实例已启用。' : '连接器实例已停用。')
       await load()
     } catch (e) {
-      setError((e as Error).message)
+      setPageError((e as Error).message)
     } finally {
       setPendingAction(null)
     }
@@ -115,9 +120,9 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
 
   const run = async (instance: Instance, dryRun: boolean) => {
     const source = sources.find((item) => item.connector_instance_id === instance.id && item.enabled)
-    if (!source) return setError('该实例没有已启用的信源。请先在“信源”页面创建或启用信源。')
+    if (!source) return setPageError('该实例没有已启用的信源。请先在“信源”页面创建或启用信源。')
     setPendingAction(`run:${instance.id}`)
-    setError(null)
+    setPageError(null)
     try {
       const result = await api.post<{ run_id: string; status: string }>(
         `/api/v1/admin/connector-instances/${instance.id}/test-runs`,
@@ -126,14 +131,14 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
       setMessage(`${dryRun ? '运行已创建' : '立即执行已创建'}：${result.status} / ${result.run_id}`)
       await load()
     } catch (e) {
-      setError((e as Error).message)
+      setPageError((e as Error).message)
     } finally {
       setPendingAction(null)
     }
   }
 
   return <div className="operations-page">
-    <ErrorBanner error={error}/>
+    <ErrorBanner error={pageError}/>
     {message && <div className="success-banner"><span>{message}</span>{message.includes('运行') && onNavigate && <button className="quiet-action" onClick={() => onNavigate('runs')}>查看运行记录</button>}</div>}
 
     <section className="panel">
@@ -167,11 +172,12 @@ export function InstancesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
       title={editingId ? '编辑连接器实例' : '新建连接器实例'}
       description="先选择连接器类型和名称，再配置该实例允许的采集能力与运行参数。"
       width="wide"
-      onClose={() => { setDrawerOpen(false); resetForm() }}
-      footer={<><button disabled={pendingAction==='save'} onClick={() => { setDrawerOpen(false); resetForm() }}>取消</button><button className="primary" disabled={pendingAction==='save'} onClick={() => void save()}>{pendingAction==='save'?'正在保存…':editingId?'保存修改':'创建实例'}</button></>}
+      onClose={closeDrawer}
+      footer={<><button disabled={pendingAction==='save'} onClick={closeDrawer}>取消</button><button className="primary" disabled={pendingAction==='save'} onClick={() => void save()}>{pendingAction==='save'?'正在保存…':editingId?'保存修改':'创建实例'}</button></>}
     >
-      <div className="drawer-section"><h3>基本信息</h3><p>选择实例所属连接器，并用一个易识别的名称区分不同采集配置。</p><div className="form-grid"><label className="field-full">连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label><label className="field-full">实例名称<input aria-label="实例名称" value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：B站热点采集"/></label></div></div>
-      {selected && <div className="drawer-section"><h3>采集与运行配置</h3><p>按连接器能力配置采集模式、运行参数和附加选项。</p><SchemaForm schema={selected.config_schema} uiSchema={selected.ui_schema} value={config} onChange={setConfig}/></div>}
+      <ErrorBanner error={drawerError}/>
+      <div className="drawer-section"><h3>基本信息</h3><p>选择实例所属连接器，并用一个易识别的名称区分不同采集配置。</p><div className="form-grid"><label className="field-full">连接器类型<select disabled={Boolean(editingId)} value={definitionId} onChange={(event) => { setDefinitionId(event.target.value); setConfig({}); setDrawerError(null) }}><option value="">请选择</option>{definitions.map((definition) => <option key={definition.id} value={definition.id}>{definition.display_name} · {definition.platform}</option>)}</select></label><label className="field-full">实例名称<input aria-label="实例名称" value={name} onChange={(event) => { setName(event.target.value); setDrawerError(null) }} placeholder="例如：B站热点采集"/></label></div></div>
+      {selected && <div className="drawer-section"><h3>采集与运行配置</h3><p>按连接器能力配置采集模式、运行参数和附加选项。</p><SchemaForm schema={selected.config_schema} uiSchema={selected.ui_schema} value={config} onChange={(next) => { setConfig(next); setDrawerError(null) }}/></div>}
     </Drawer>
   </div>
 }
