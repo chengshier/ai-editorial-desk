@@ -1,0 +1,98 @@
+/* Screenshot-driven refinement pass: reduce dead space and make dense work areas read as one workspace. */
+.page-inner.page-workspace,
+.page-inner.page-operations {
+  width: 100%;
+  max-width: none !important;
+  margin-inline: 0 !important;
+}
+
+@media (min-width: 1600px) {
+  .content { padding-left: 24px; padding-right: 24px; }
+}
+
+/* Event explorer: keep the primary filters on one useful row on wide screens. */
+.event-explorer-panel { width: 100%; }
+.event-explorer-panel .page-intro {
+  min-height: 0;
+  margin-bottom: 12px;
+  padding-bottom: 14px;
+}
+.event-explorer-panel .event-primary-filters {
+  grid-template-columns: minmax(260px, 1.35fr) repeat(4, minmax(150px, .8fr));
+  gap: 10px 12px;
+  margin: 10px 0 12px;
+}
+.event-explorer-panel .event-more-filters {
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px 12px;
+}
+.event-explorer-panel .more-filters { padding-top: 8px; }
+.event-explorer-panel .event-list { gap: 8px; }
+.event-explorer-panel .event-row { padding: 12px 14px; }
+.event-explorer-panel .pager { margin-top: 10px; }
+
+/* Native date/time affordances should look clickable in Chrome/Edge. */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+  cursor: pointer;
+  color-scheme: light;
+}
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  opacity: .78;
+  cursor: pointer;
+}
+
+/* Event workbench: reduce repeated tall empty blocks and tighten vertical rhythm. */
+.workbench-header { margin-bottom: 0; }
+.workbench-tabs { margin-top: 0; }
+.workbench-tabs + .panel { padding-top: 18px; }
+.workbench-overview-layout { gap: 20px; }
+.workbench-overview-layout main > .panel { padding-top: 16px; padding-bottom: 16px; }
+.workbench-overview-layout > aside .panel { padding: 18px; }
+
+.claim-group {
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.claim-group:first-of-type { padding-top: 6px; }
+.claim-group:last-of-type { border-bottom: 0; }
+.claim-group h3 { margin: 0 0 8px; }
+.claim-group .empty {
+  min-height: 84px;
+  padding: 16px 20px;
+  gap: 3px;
+}
+.claim-group .empty svg { width: 20px; height: 20px; margin-bottom: 2px; }
+.claim-group .empty strong { font-size: 14px; }
+.unknown-group { padding-top: 14px; }
+.unknown-group > h3 { margin-top: 0; }
+
+/* Card / Pack and publication blocks should align without oversized gutters. */
+.artifact-card { padding-top: 10px; padding-bottom: 10px; }
+.wb-json, .json-view { margin-top: 10px; }
+.page-inner.page-workspace > .panel { width: 100%; }
+
+/* Drawer task flows: errors and prerequisites belong close to the fields that caused them. */
+.drawer-body > .error-banner:first-child,
+.drawer-body > .prerequisite-hint:first-child { margin-top: 0; }
+.drawer-section + .drawer-section { margin-top: 0; }
+.drawer .form-grid { margin-top: 0; margin-bottom: 0; }
+.drawer .field-label { line-height: 1.4; }
+.drawer select:not(:disabled),
+.drawer input:not(:disabled),
+.drawer textarea:not(:disabled) { background: #fff; }
+.drawer select:disabled,
+.drawer input:disabled { background: #f5f7fa; color: #7a8494; cursor: not-allowed; }
+
+@media (max-width: 1500px) {
+  .event-explorer-panel .event-primary-filters { grid-template-columns: repeat(4, minmax(150px, 1fr)); }
+  .event-explorer-panel .event-primary-filters > label:first-child { grid-column: span 2; }
+}
+
+@media (max-width: 1100px) {
+  .event-explorer-panel .event-primary-filters,
+  .event-explorer-panel .event-more-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
