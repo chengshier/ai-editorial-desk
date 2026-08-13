@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -611,19 +612,20 @@ class CollectionPreflightService:
             if key.upper() in SAFE_ENV_NAMES
         }
         try:
-            process = await asyncio.create_subprocess_exec(
-                *command,
+            completed = await asyncio.to_thread(
+                subprocess.run,
+                command,
                 cwd=str(REPO_ROOT),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 env=safe_env,
-            )
-            stdout, _ = await asyncio.wait_for(
-                process.communicate(),
                 timeout=20,
+                check=False,
             )
-            payload = json.loads(stdout.decode("utf-8"))
-        except (OSError, TimeoutError, UnicodeError, json.JSONDecodeError):
+            if completed.returncode != 0:
+                return "BLOCKED", "只读登录态检查未能完成；未发起平台采集。"
+            payload = json.loads(completed.stdout.decode("utf-8"))
+        except (OSError, subprocess.SubprocessError, UnicodeError, json.JSONDecodeError):
             return "BLOCKED", "只读登录态检查未能完成；未发起平台采集。"
         if not isinstance(payload, dict):
             return "BLOCKED", "只读登录态检查返回无效结果。"
