@@ -24,7 +24,7 @@ it('sends the selected structured output mode in model config', async () => {
   const api = new AdminApi({ apiBaseUrl: 'http://api', adminToken: 'token', actorId: 'human' })
   render(<AIProvidersPage api={api} />)
   await screen.findByText('Provider')
-  await userEvent.click(screen.getByRole('button', { name: '新建模型' }))
+  await userEvent.click(screen.getAllByRole('button', { name: '新建模型' })[0])
   await userEvent.selectOptions(screen.getByLabelText('所属服务商'), 'provider-1')
   await userEvent.type(screen.getByLabelText('模型标识'), 'structured-model')
   await userEvent.type(screen.getByLabelText('服务商模型名称'), 'vendor-model')
