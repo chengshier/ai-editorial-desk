@@ -12,6 +12,7 @@ from packages.connectors.mediacrawler_adapter.browser_runtime import (
     LocalBrowserRuntimeManager,
     LocalBrowserRuntimeSnapshot,
 )
+from packages.database.models import PlatformAccount
 from packages.database.session import get_database_session
 
 router = APIRouter(
@@ -38,12 +39,8 @@ class BrowserRuntimeResponse(BaseModel):
     cdp_port: int
     message: str
 
-    @classmethod
-    def from_snapshot(cls, snapshot: LocalBrowserRuntimeSnapshot) -> "BrowserRuntimeResponse":
-        return cls(**snapshot.__dict__)
 
-
-async def _account(account_id: UUID, session: Session):
+async def _account(account_id: UUID, session: Session) -> PlatformAccount:
     return await PlatformAccountService(session).get(account_id)
 
 
