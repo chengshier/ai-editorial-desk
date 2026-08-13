@@ -10,7 +10,7 @@ from collections.abc import Awaitable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
-from typing import Any, BinaryIO, Protocol
+from typing import IO, Any, Protocol
 
 from pydantic import ValidationError
 
@@ -146,7 +146,7 @@ async def _read_bounded(
 
 
 def _read_bounded_sync(
-    stream: BinaryIO | None,
+    stream: IO[bytes] | None,
     *,
     max_bytes: int,
 ) -> bytes:
