@@ -40,8 +40,12 @@ class CollectorRuntime(CollectorRuntimeSupport):
         actual_comments = 0
 
         try:
+            runtime_config = {
+                **dict(context.instance.config),
+                **dict(context.source.config),
+            }
             requested_comments = self.requested_comment_budget(
-                context.source.config,
+                runtime_config,
                 task.mode,
                 task.requested_limit,
             )
@@ -78,7 +82,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                         if checkpoint is not None
                         else None
                     ),
-                    parameters=dict(context.source.config),
+                    parameters=runtime_config,
                     run_id=str(run.id),
                     platform=context.definition.platform,
                     account_ref=(
