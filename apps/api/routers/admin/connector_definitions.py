@@ -4,12 +4,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.api.auth import require_admin_token
+from apps.api.auth import require_actor_id, require_admin_token
 from apps.api.schemas.m1c import (
     ConnectorDefinitionRuntimePage,
     ConnectorDefinitionRuntimeResponse,
 )
-from packages.connector_management.services import ConnectorDefinitionQueryService
+from packages.connector_management.services import (
+    ConnectorDefinitionQueryService,
+    ConnectorDefinitionStateService,
+)
 from packages.connectors.implementations import implementation_registry
 from packages.database.models import ConnectorDefinition, ConnectorValidationStatus
 from packages.database.session import get_database_session
@@ -21,6 +24,7 @@ router = APIRouter(
     dependencies=[Depends(require_admin_token)],
 )
 Session = Annotated[AsyncSession, Depends(get_database_session)]
+Actor = Annotated[str, Depends(require_actor_id)]
 
 
 async def _response(
@@ -64,4 +68,26 @@ async def get_definition(
     definition_id: UUID, session: Session
 ) -> ConnectorDefinitionRuntimeResponse:
     item = await ConnectorDefinitionQueryService(session).get(definition_id)
+    return await _response(session, item)
+
+
+@router.post("/{definition_id}/enable", response_model=ConnectorDefinitionRuntimeResponse)
+async def enable_definition(
+    definition_id: UUID, session: Session, actor: Actor
+) -> ConnectorDefinitionRuntimeResponse:
+    item = await ConnectorDefinitionStateService(session).enable(
+        definition_id=definition_id,
+        actor=actor,
+    )
+    return await _response(session, item)
+
+
+@router.post("/{definition_id}/disable", response_model=ConnectorDefinitionRuntimeResponse)
+async def disable_definition(
+    definition_id: UUID, session: Session, actor: Actor
+) -> ConnectorDefinitionRuntimeResponse:
+    item = await ConnectorDefinitionStateService(session).disable(
+        definition_id=definition_id,
+        actor=actor,
+    )
     return await _response(session, item)
