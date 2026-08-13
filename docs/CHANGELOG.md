@@ -1,5 +1,42 @@
 # Changelog
 
+## 2026-08-13 - M5-D Real Validation / MVP Closeout / Post-MVP Readiness
+
+### Final Validation / Merge
+
+- M5-D A Engineering Hardening = PASS；
+- M5-D B Real Platform Smoke = PASS，当前真实范围仅为 Bilibili low-volume smoke；
+- M5-D C Production AI Provider Validation = PASS，Provider=`deepseek-production`，model=`deepseek-v4-flash`；
+- M5-D D Full Human-in-loop MVP E2E = PASS；
+- formal `verify_m5d_e2e = PASS`；
+- `docs/M5D_REAL_VALIDATION_REPORT.md` 已形成最终 PASS 证据；
+- PR #23 `feat: 完成 M5-D Hardening与MVP收口` 已人工合并；
+- merge commit `8ab9200172786705f9e73093646e3d3d3507ee2f` 的 GitHub Actions `python` / `web` 均 success；
+- `M5 Overall = COMPLETE`。
+
+### Real Platform / M2 Boundary
+
+- Bilibili real smoke：CollectionRun `19bed81a-ac50-4251-ab57-7eb841a91bfb`；RawSignal `f2e03174-3023-4e64-8389-2a8724fabb82`；collected=1、inserted=1、failed=0、risk=none observed；
+- 该 Bilibili 证据满足 D-030 的 MVP real-platform Gate，因此 `M2 deferred real-smoke Gate for MVP/M5 closeout = SATISFIED / CLOSED`；
+- 不回写 M2 当时 Acceptance 的历史 `DEFERRED / NOT_TESTED` 事实；
+- 当前不宣称 Zhihu、Weibo、Douyin、Xiaohongshu、Kuaishou、Baidu Tieba 已有单独 real smoke；
+- 不宣称 `All MediaCrawler platforms have been production validated`；
+- Weibo low-volume search known limitation 继续保留，不通过猜 API 参数、扩大请求量、换号或代理轮换追求 PASS。
+
+### Post-MVP / V1 Readiness
+
+- 新增 `docs/POST_MVP_V1_READINESS_CHECKLIST.md`，明确正式路线不存在 M6；
+- 正式后续路线继续为 `M5 → V1-A/V1-B/V1-C/V1-D → V1.5 → V2 → P1 → P2`；
+- Post-MVP 第一项真正功能开发确定为 AI Generation Policy v1；
+- AI Generation Policy 第一版优先解决 `evidence_extraction / editorial_scoring / draft_generation` 的 task-level `max_output_tokens` 配置化；
+- 优先复用现有 versioned `AITaskRouteRecord` / route config，DB/Admin UI 优先、代码常量 fallback、保留 audit/versioning，且不绕过 AI Budget；
+- Editorial Scoring 继续共享 `allowed_risk_levels` / R0 eligibility semantics；
+- `draft-generation-v2` 继续 exactly-one-JSON + strict schema + strict `json.loads`，不增加 malformed JSON repair；
+- P1-lite 只做 7-day/30-day soak、backup/restore、disk/backlog/provider failure/risk/checkpoint/budget 等最低 operability，不提前演变为完整 Redis/Worker P1 重构；
+- V1-A 按单平台灰度推进，不一次打开抖音/小红书/快手/贴吧全部平台。
+
+---
+
 ## 2026-08-10 - M5-D Engineering Hardening / MVP Real Validation Harness
 
 ### Added / Hardened
