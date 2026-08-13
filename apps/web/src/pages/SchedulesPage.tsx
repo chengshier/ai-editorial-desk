@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AdminApi } from '../api'
-import { Empty, ErrorBanner, Panel } from '../components/common'
+import { Drawer, Empty, ErrorBanner, ResourceHeader } from '../components/common'
 import { scheduleTypeLabel } from '../uiLabels'
 import type { Schedule, Source } from '../types'
+
+const initialForm = {
+  source_id: '',
+  name: '',
+  schedule_type: 'interval' as 'interval' | 'cron',
+  interval_seconds: 900,
+  cron_expression: '',
+  timezone: 'Asia/Shanghai',
+  requested_limit: 20,
+}
 
 export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?: (page: 'runs') => void }) {
   const [items, setItems] = useState<Schedule[]>([])
@@ -10,15 +20,8 @@ export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
   const [error, setError] = useState<string | null>(null)
   const [pendingAction, setPendingAction] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
-  const [form, setForm] = useState({
-    source_id: '',
-    name: '',
-    schedule_type: 'interval' as 'interval' | 'cron',
-    interval_seconds: 900,
-    cron_expression: '',
-    timezone: 'Asia/Shanghai',
-    requested_limit: 20,
-  })
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [form, setForm] = useState(initialForm)
 
   const load = useCallback(async () => {
     try {
@@ -31,6 +34,7 @@ export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
       if (sourcePage.items[0]) {
         setForm((current) => current.source_id ? current : { ...current, source_id: sourcePage.items[0].id })
       }
+      setError(null)
     } catch (e) {
       setError((e as Error).message)
     }
@@ -40,9 +44,13 @@ export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
     void load()
   }, [load])
 
+  const resetForm = () => setForm({ ...initialForm, source_id: sources[0]?.id || '' })
+
   const create = async () => {
     const source = sources.find((item) => item.id === form.source_id)
     if (!source) return setError('请选择信源')
+    if (!form.name.trim()) return setError('请填写任务名称')
+    if (form.schedule_type === 'cron' && !form.cron_expression.trim()) return setError('请填写 Cron 表达式')
     setPendingAction('create')
     setError(null)
     try {
@@ -50,15 +58,17 @@ export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
         connector_instance_id: source.connector_instance_id,
         source_id: source.id,
         platform_account_id: null,
-        name: form.name,
+        name: form.name.trim(),
         schedule_type: form.schedule_type,
         interval_seconds: form.schedule_type === 'interval' ? form.interval_seconds : null,
-        cron_expression: form.schedule_type === 'cron' ? form.cron_expression : null,
+        cron_expression: form.schedule_type === 'cron' ? form.cron_expression.trim() : null,
         timezone: form.timezone,
         requested_limit: form.requested_limit,
       })
       setMessage('采集任务已创建，并已从服务端刷新列表。')
       await load()
+      setDrawerOpen(false)
+      resetForm()
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -95,8 +105,35 @@ export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?:
     }
   }
 
-  return <>
-    <Panel title="创建采集任务"><div className="page-intro"><p>为指定信源创建周期性或单次采集任务。</p></div><ErrorBanner error={error}/>{message&&<p className="notice">{message}{message.startsWith('运行已创建')&&onNavigate&&<button className="quiet-action" onClick={()=>onNavigate('runs')}>查看运行记录</button>}</p>}<div className="form-grid"><label>信源<select value={form.source_id} onChange={(event) => setForm({ ...form, source_id: event.target.value })}>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label>任务名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label>调度方式<select value={form.schedule_type} onChange={(event) => setForm({ ...form, schedule_type: event.target.value as 'interval' | 'cron' })}><option value="interval">按间隔执行</option><option value="cron">Cron 表达式</option></select></label>{form.schedule_type === 'interval' ? <label>执行间隔<input type="number" min="300" value={form.interval_seconds} onChange={(event) => setForm({ ...form, interval_seconds: Number(event.target.value) })}/><small>当前：{form.interval_seconds} 秒（约 {Math.round(form.interval_seconds/60)} 分钟）</small></label> : <label>Cron 表达式<input value={form.cron_expression} placeholder="0 */6 * * *" onChange={(event) => setForm({ ...form, cron_expression: event.target.value })}/></label>}<label>时区<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}/></label><label>单次采集上限<input type="number" min="1" max="100" value={form.requested_limit} onChange={(event) => setForm({ ...form, requested_limit: Number(event.target.value) })}/></label></div><button className="primary" disabled={pendingAction==='create'} onClick={create}>{pendingAction==='create'?'正在保存…':'创建采集任务'}</button></Panel>
-    <Panel title="已有采集任务" actions={<button onClick={load}>刷新</button>}>{items.length===0?<Empty text="暂无采集任务"/>:<div className="table-wrap"><table><thead><tr><th>名称</th><th>调度方式</th><th>下次运行</th><th>最近运行</th><th>状态</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{scheduleTypeLabel[item.schedule_type]}{item.interval_seconds ? ` · ${item.interval_seconds} 秒` : ''}</td><td>{new Date(item.next_run_at).toLocaleString()}</td><td>{item.last_run_id || '暂无'}</td><td>{item.enabled ? '已启用' : '已暂停'}{item.paused_reason ? ` · ${item.paused_reason}` : ''}</td><td className="actions"><button disabled={Boolean(pendingAction)} onClick={() => void changeScheduleState(item)}>{pendingAction === `${item.enabled ? 'pause' : 'resume'}:${item.id}` ? '正在处理…' : item.enabled ? '暂停' : '恢复'}</button><button disabled={Boolean(pendingAction)} onClick={() => void runNow(item)}>{pendingAction === `run:${item.id}` ? '正在创建…' : '立即运行'}</button></td></tr>)}</tbody></table></div>}<p className="muted-text">创建任务后，可在这里查看下次运行时间、最近运行与当前状态。</p></Panel>
-  </>
+  return <div className="operations-page">
+    <ErrorBanner error={error}/>
+    {message&&<div className="success-banner"><span>{message}</span>{message.startsWith('运行已创建')&&onNavigate&&<button className="quiet-action" onClick={()=>onNavigate('runs')}>查看运行记录</button>}</div>}
+    <section className="panel">
+      <ResourceHeader
+        title="采集任务"
+        description="任务决定信源何时采集。列表用于查看运行节奏、暂停恢复和临时执行；创建任务通过独立配置流程完成。"
+        actions={<><button onClick={() => void load()}>刷新</button><button className="primary" disabled={sources.length===0} title={sources.length===0?'请先创建并启用信源':''} onClick={() => { resetForm(); setError(null); setDrawerOpen(true) }}>创建采集任务</button></>}
+      />
+      {sources.length===0&&<div className="prerequisite-hint">当前没有可用信源。请先创建信源，再安排采集任务。</div>}
+      {items.length===0 ? <Empty text="暂无采集任务" helper="创建任务后，可在这里查看下次运行时间、最近运行与当前状态。" action={sources.length>0?<button className="primary" onClick={() => { resetForm(); setDrawerOpen(true) }}>创建采集任务</button>:undefined}/> : <div className="table-wrap"><table><thead><tr><th>名称</th><th>调度方式</th><th>下次运行</th><th>最近运行</th><th>状态</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}>
+        <td><strong>{item.name}</strong><small className="technical-meta">单次上限 {item.requested_limit}</small></td>
+        <td>{scheduleTypeLabel[item.schedule_type]}{item.interval_seconds ? ` · ${item.interval_seconds} 秒` : ''}</td>
+        <td>{new Date(item.next_run_at).toLocaleString()}</td>
+        <td>{item.last_run_id || '暂无'}</td>
+        <td><div className="status-stack"><span>{item.enabled ? '已启用' : '已暂停'}</span>{item.paused_reason&&<small>{item.paused_reason}</small>}</div></td>
+        <td><div className="actions action-cell"><button className="primary" disabled={Boolean(pendingAction)||!item.enabled} title={!item.enabled?'请先恢复任务':'立即创建一次运行'} onClick={() => void runNow(item)}>{pendingAction === `run:${item.id}` ? '正在创建…' : '立即运行'}</button><button disabled={Boolean(pendingAction)} onClick={() => void changeScheduleState(item)}>{pendingAction === `${item.enabled ? 'pause' : 'resume'}:${item.id}` ? '正在处理…' : item.enabled ? '暂停' : '恢复'}</button></div></td>
+      </tr>)}</tbody></table></div>}
+    </section>
+
+    <Drawer
+      open={drawerOpen}
+      title="创建采集任务"
+      description="先选择采集对象，再设置执行方式和单次采集上限。"
+      onClose={() => { setDrawerOpen(false); resetForm() }}
+      footer={<><button disabled={pendingAction==='create'} onClick={() => { setDrawerOpen(false); resetForm() }}>取消</button><button className="primary" disabled={pendingAction==='create'} onClick={() => void create()}>{pendingAction==='create'?'正在保存…':'创建任务'}</button></>}
+    >
+      <div className="drawer-section"><h3>采集对象</h3><p>选择一个已经配置好的信源，并给任务一个能说明用途的名称。</p><div className="form-grid"><label className="field-full">信源<select value={form.source_id} onChange={(event) => setForm({ ...form, source_id: event.target.value })}><option value="">请选择信源</option>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label className="field-full">任务名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：B站科技热点 · 每 15 分钟"/></label></div></div>
+      <div className="drawer-section"><h3>执行策略</h3><p>按固定间隔执行更适合常规采集；需要精确时刻时可使用 Cron。</p><div className="form-grid"><label>调度方式<select value={form.schedule_type} onChange={(event) => setForm({ ...form, schedule_type: event.target.value as 'interval' | 'cron' })}><option value="interval">按间隔执行</option><option value="cron">Cron 表达式</option></select></label>{form.schedule_type === 'interval' ? <label>执行间隔<input type="number" min="300" value={form.interval_seconds} onChange={(event) => setForm({ ...form, interval_seconds: Number(event.target.value) })}/><small>约 {Math.round(form.interval_seconds/60)} 分钟</small></label> : <label>Cron 表达式<input value={form.cron_expression} placeholder="0 */6 * * *" onChange={(event) => setForm({ ...form, cron_expression: event.target.value })}/></label>}<label>时区<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}/></label><label>单次采集上限<input type="number" min="1" max="100" value={form.requested_limit} onChange={(event) => setForm({ ...form, requested_limit: Number(event.target.value) })}/></label></div></div>
+    </Drawer>
+  </div>
 }
