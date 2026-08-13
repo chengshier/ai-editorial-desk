@@ -154,11 +154,17 @@ def build_ui_schema(spec: MediaCrawlerPlatformSpec) -> dict[str, Any]:
     ui: dict[str, Any] = {
         "modes": {
             "widget": "checkbox_group", "label": "允许的采集模式", "order": 10,
-            "help": "这里只控制该实例允许执行哪些模式。搜索关键词、内容 ID、创作者等具体采集目标在“信源”页面配置。",
+            "help": (
+                "这里只控制该实例允许执行哪些模式。"
+                "搜索关键词、内容 ID、创作者等具体采集目标在“信源”页面配置。"
+            ),
         },
         "include_comments": {
             "label": "默认采集一级评论", "order": 50,
-            "help": "实例级默认值；信源可在后续扩展中覆盖，最终仍受 CollectorRuntime 评论预算限制。",
+            "help": (
+                "实例级默认值；信源可在后续扩展中覆盖，"
+                "最终仍受 CollectorRuntime 评论预算限制。"
+            ),
         },
         "comment_limit": {
             "label": "单内容评论上限", "order": 60,
