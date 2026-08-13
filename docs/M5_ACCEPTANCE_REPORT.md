@@ -1,24 +1,30 @@
 # M5 Acceptance Report
 
-> 本文分别记录 M5 工程阶段与真实验证状态。Engineering CI、Mock/Fake、synthetic fixture 或 offline E2E 不代表真实平台、Production Provider 或 Human-in-loop E2E 已通过。
+> Final Status: **M5 Overall COMPLETE**
+>
+> 本文分别记录 M5 工程阶段与真实验证状态。Engineering CI、Mock/Fake、synthetic fixture 或 offline E2E 不能替代真实平台、Production Provider 或 Human-in-loop E2E；M5-D 最终 PASS 依据真实受控验证与正式 provenance verifier 成立。
 
 ## 阶段状态
 
 - **M5-A Editorial Workbench：COMPLETE / MERGED**
 - **M5-B Daily Candidates / Editorial Workflow：COMPLETE / MERGED**
 - **M5-C Publication / Performance Feedback：COMPLETE / MERGED**
-- **M5-D Engineering Hardening：COMPLETE / PR #23 OPEN**
-- **M5-D Real Platform Smoke：PENDING / NOT_RUN**
-- **M5-D Production AI Provider Validation：PENDING / NOT_TESTED**
-- **M5-D Full Human-in-loop E2E：PENDING / NOT_RUN**
-- **M5 Overall：NOT COMPLETE**
+- **M5-D A Engineering Hardening：PASS**
+- **M5-D B Real Platform Smoke：PASS（Bilibili low-volume only）**
+- **M5-D C Production AI Provider Validation：PASS**
+- **M5-D D Full Human-in-loop MVP E2E：PASS**
+- **formal `verify_m5d_e2e`：PASS**
+- **M5-D Real Validation Report：PASS / CURRENT**
+- **PR #23：MERGED**
+- **M5 Overall：COMPLETE**
 
-继续保留：
+继续保留以下范围边界：
 
-- **M4 Overall Engineering：COMPLETE**
-- **Production AI Provider Validation：NOT_TESTED**
-- **M2 Real Smoke Validation：DEFERRED / NOT_TESTED**
-- **M2 Real-world Validation：NOT COMPLETE**
+- **M4 Overall Engineering：COMPLETE**；
+- **M2 deferred real-smoke Gate for MVP/M5 closeout：SATISFIED / CLOSED by Bilibili low-volume real smoke**；
+- **M2 broader real-world platform coverage：PARTIAL**；
+- **当前明确单独真实 smoke 证明的平台仅为 Bilibili**；
+- 不得写成 `All MediaCrawler platforms have been production validated`。
 
 ## M5-A Editorial Workbench
 
@@ -78,21 +84,14 @@ M5-C 已合并，并建立真实发布与 Outcome 数据基础。
 - 修正通过新 Snapshot + supersedes provenance，不 silent overwrite；
 - snapshot identity 使用稳定 hash 幂等。
 
-### Manual / CSV
+### Manual / CSV / Feedback projection
 
-- Manual Performance 支持所有核心 metric；
-- canonical CSV 版本为 `performance-csv-v1`；
-- `completion_rate_percent` 明确使用 0..100 输入；
-- blank → NULL；
-- observed_at 必须 timezone-aware ISO 8601；
+- Manual Performance 支持核心 metric；
+- canonical CSV = `performance-csv-v1`；
 - Preview side-effect free；
-- Apply 需要 Actor + confirmation，第一版 all-or-nothing；
-- file hash + mapping version 与 snapshot hash 形成双层幂等；
-- ImportRun 保留 CSV provenance。
-
-### Feedback projection
-
-Performance Feedback 只读并排展示 Candidate Rank snapshot、Human Decision snapshot、Score/Risk/Format snapshot、Draft version、Publication 与真实指标。
+- Apply 需要 Actor + confirmation；
+- ImportRun 保留 CSV provenance；
+- Performance Feedback 只读并排展示 Candidate Rank、Human Decision、Score/Risk/Format、Draft version、Publication 与真实指标。
 
 M5-C **不**：
 
@@ -104,158 +103,197 @@ M5-C **不**：
 - 自动改 Evidence verification；
 - 自动调 Prompt/weight/model。
 
+V1-D 后续应建立在 M5-C 现有模型之上，重点补真实运营数据与校准分析，不建立第二套 Publication / Performance 模型。
+
 ## Migration
 
-M5-C 新增 migration：
+M5-C migration：
 
-`20260810_0015_m5c_publication_performance`
+```text
+20260810_0015_m5c_publication_performance
+```
 
-M5-D **NO NEW MIGRATION**，当前 Alembic head 继续为 `20260810_0015`。M5-D 的 Harness/Doctor/Verifier/Report 组合现有 Run/Risk/Checkpoint/Provider/Invocation/Artifact 证据，不新建 Validation 真相表。
+M5-D **NO NEW MIGRATION**。Harness/Doctor/Verifier/Report 组合现有 Run/Risk/Checkpoint/Provider/Invocation/Artifact 证据，不新建 Validation 业务真相表。
 
 ## M5-D A. Engineering Hardening
 
-Phase 1 Engineering Hardening 已完成：
+**PASS**。
 
-- `M5DPreflightService`：read-only 检查 DB、migration、Connector/Source、Account/Profile、Collection Budget、Checkpoint、Risk、Provider credential ref、Provider validation、AI Route、AI Budget；
-- `MVPDoctorService`：read-only PASS/WARN/BLOCK 运行诊断；
-- `verify_business_invocation`：正式业务 Invocation/Attempt/provider identity 核验；
-- `verify_m5d_e2e`：只读 CollectionRun→RawSignal→Event→Evidence→Trend→AI Score→Candidate→Human Adopt→Card/Pack→AI Draft provenance verifier；
+已完成：
+
+- `M5DPreflightService`；
+- `MVPDoctorService`；
+- `verify_business_invocation`；
+- `verify_m5d_e2e`；
 - Validation output/report recursive secret redaction；
-- MediaCrawler real smoke 薄 wrapper，仍调用现有 M2 smoke/CollectorRuntime 主链；
-- Production Provider validation CLI，要求显式 `--confirm-paid-call`，Connection Test 单独成功仍不是 Production Validation PASS；
-- AIConnectionTester hardening：注入 ProviderFactory/MockTransport 的 Engineering Test 不具备提升 Provider `validation_status` 的资格；
-- E2E verifier 防伪回归：Fake/Mock Provider Invocation 必须 FAIL，Decision 非 `adopt` 的错误 provenance 必须 FAIL；
+- MediaCrawler real smoke 薄 wrapper；
+- Production Provider validation CLI；
+- Fake/Mock validation-status hard gate；
+- E2E provenance 防伪回归；
 - `docs/MVP_RUNBOOK.md`；
-- `docs/M5D_REAL_VALIDATION_REPORT.md`，真实验证状态仍为 `NOT_RUN`。
+- `docs/M5D_REAL_VALIDATION_REPORT.md`。
 
-### Engineering Hardening 不能证明
-
-- Real Platform Smoke PASS；
-- Production AI Provider Validation PASS；
-- Full Human-in-loop MVP E2E PASS。
-
-这些真实 Gate 必须在受控本地环境从绿色 exact-head 单独执行。
+这些工程能力不会自动登录、自动采集、自动调用 AI、自动 Adopt、自动补建缺失 Artifact 或自动发布。
 
 ## M5-D B. Real Platform Smoke
 
-当前：**PENDING / NOT_RUN**。
+**PASS**。
 
-首选顺序：Bilibili → Zhihu。MVP 只要求至少一个完成低量真实 Smoke，但一平台 Gate 不能宣称七平台 Real-world 全验证完成。
+真实验证范围：
 
-必须使用：
+```text
+platform = bilibili
+CollectionRun = 19bed81a-ac50-4251-ab57-7eb841a91bfb
+RawSignal = f2e03174-3023-4e64-8389-2a8724fabb82
+collected / inserted / failed = 1 / 1 / 0
+platform risk = none observed
+result = real / non-mock
+```
 
-- isolated low-value test account；
-- controlled visible Chrome/CDP/profile；
-- explicit human confirmation；
-- 现有 CollectorRuntime / RawSignal / Checkpoint / CollectionRun 主链；
-- 现有 Account/Risk/Budget Guard；
-- 默认 search limit=1，且绝不超过现有更严格 gate。
+该证据满足 D-030 对 MVP Closeout 的 real-platform Gate，并关闭 M2 deferred real-smoke Gate for MVP/M5 closeout。
 
-出现 403/406/429、CAPTCHA、automation detection、账号异常、login invalidation、`REVIEW_REQUIRED`、`RESTRICTED` 等风险信号立即停止并记录 `RISK_BLOCKED`/`PRECONDITION_BLOCKED`，不得 retry 到成功、换号或代理绕过。
+该证据**不**证明：
+
+- Zhihu 已完成单独 real smoke；
+- Weibo 已完成单独 real smoke；
+- Douyin / Xiaohongshu / Kuaishou / Baidu Tieba 已完成真实验证；
+- 七个平台具备生产规模稳定性。
+
+真实平台仍遵循 isolated low-value test account、visible Chrome/CDP、stable profile、concurrency=1、low-volume 和 risk signal immediate stop。
 
 ## M5-D C. Production AI Provider Validation
 
-当前：**PENDING / NOT_TESTED**。
+**PASS**。
 
-PASS 必须同时具有：
+Production Provider：
 
-1. production-compatible Provider；
-2. 真实 `env://...` credential；
-3. 真实 network；
-4. Provider Connection Test succeeded；
-5. 至少一个正式 AIGateway 业务 Invocation succeeded；
-6. structured output schema validation；
-7. Invocation / Attempt provenance；
-8. AI Budget reservation/settlement；
-9. usage/cost 如实 available/unknown；
-10. 无 credential 泄漏。
+```text
+provider = deepseek-production
+model = deepseek-v4-flash
+```
 
-FakeProvider / MockTransport / stub server 永远不能提升本状态。
+正式业务 Invocation 已验证：
+
+```text
+Evidence Extraction = 943b9268-df55-4eaa-a31a-79f31dafb9ad
+Editorial Scoring = e3717ac1-2b03-4d30-85e5-080348752fdf
+Draft Generation = 37c7c07f-e0ed-48d9-8758-158754f4ad76
+```
+
+这些 invocation 均为正式业务任务、ProviderAttempt succeeded，并通过 `verify_business_invocation`。Mock/Fake 证据没有参与提升真实 Provider 状态。
 
 ## M5-D D. Full Human-in-loop MVP E2E
 
-当前：**PENDING / NOT_RUN**。
+**PASS**。
 
-目标链：
+正式验证链：
 
 ```text
-Real Platform Signal
-→ MediaCrawler Adapter
-→ CollectorRuntime
-→ RawSignal / Checkpoint / CollectionRun
-→ Event / EventSignal
-→ EvidenceClaimSource
+Real Collection
+→ RawSignal
+→ Event
+→ Evidence Extraction
+→ Human Claim Verification
 → Trend
-→ real Provider Editorial Score
-→ Daily Candidate
-→ Human Workbench Review
+→ Production Editorial Scoring
+→ Candidate
 → Human Adopt
-→ Event Card / Editorial Pack
-→ real Provider AI Draft
+→ Card / Pack
+→ Production AI Draft
 → read-only verifier PASS
 ```
 
-Human Adopt 必须由真人执行并存在 actor + reason。脚本不得按 rank 自动 Adopt，也不得自动 confirmed Evidence、创建缺失 Candidate/Card/Pack/Draft 或关闭 Risk/Stale/Citation Gate。
-
-MVP E2E 硬 Gate 到 Draft 即可；不要求真实自动发布。M5-C Publication/Performance 的 optional manual smoke 可使用已有历史发布内容，但不得为了 M5-D 在正式账号主动发布测试内容。
-
-## M5-D MVP Closeout
-
-只有以下全部成立才允许：
+关键 durable provenance：
 
 ```text
-M5-D COMPLETE
-M5 Overall COMPLETE
+Event = bbfb5989-0eb3-4bfc-af31-72f907625d28
+TrendSnapshot = 1b5840f1-35dc-490d-8d60-20bd8157c3cb
+Evidence Extraction Run = 9d32f301-bb04-406c-b390-db7d8f2c578e
+Confirmed Claim = c7cafbd6-1c71-4d8a-989c-fa578e642790
+EditorialScore = 087592c4-53e4-46a2-a63c-22a98104d9ef
+CandidateRun = a70457d0-5fd2-48c8-be6e-2d1873a6d520
+Candidate = ee702c9f-778a-4cbd-a8eb-52a0773ecf47
+Human Decision = e4b58428-0c88-4224-bea5-5d142e47f98b / adopt / actor chengshier
+Card = 827ac0cc-5445-4fad-b8b2-6d80a1811748
+Pack = ad010d85-e316-48c4-913a-a4bdcbea7bd0
+Draft = c905a3be-a977-45f5-b8e8-1d5699e661c4
 ```
 
-条件：
+`verify_m5d_e2e = PASS`。
 
-- M5-A/B/C COMPLETE / MERGED；
-- M5-D Engineering Hardening COMPLETE；
-- Real Platform MVP Gate PASSED；
-- Production AI Provider Validation PASSED；
-- Full Human-in-loop E2E PASSED；
-- sanitized validation report；
-- final exact-head CI success。
+MVP E2E 硬 Gate 到 Draft；真实 external publication / performance 不属于 M5-D 完成前置条件。
 
-缺任一项：`M5 Overall NOT COMPLETE`。
+## Evidence / Risk / Structured Output 最终边界
 
-即使 MVP Closeout 最终完成，也只表示 **MVP Engineering & One-Platform Real E2E Gate COMPLETE**，不表示七平台生产已验证、大规模聚类质量已验证、账号绝对安全、商业 License 已解决或自动发布已完成。
+M5-D 真实验证中暴露并修复三类问题：
 
-## Engineering Gate
+1. Evidence Extraction output budget：2048 → 4096；
+2. Editorial Scoring output budget：1200 → 4096，并让 deterministic guard 与模型 contract 共享 `allowed_risk_levels` / R0 eligibility semantics；
+3. Draft 升级为 `draft-generation-v2`，要求 exactly one JSON object、禁止 Markdown/code fence/prose before/after，并继续使用严格 `json.loads` + schema validation。
 
-M5-D Phase 1 要求：
+这些修复不允许在 Post-MVP 中被回退为：
 
-```bash
-ruff check .
-mypy apps packages
-pytest
+- 两套 risk 规则；
+- malformed JSON repair；
+- 自动 silent coercion。
+
+AI generation 参数配置化属于 Post-MVP 技术债，不回填为新的 M5 历史开发阶段。
+
+## Engineering / Merge Baseline
+
+M5-D Real Validation Report 记录的验证 engineering head 与当时 exact-head CI 作为真实验证 provenance 保持不变。
+
+PR #23：
+
+```text
+feat: 完成 M5-D Hardening与MVP收口
 ```
 
-并继续执行：
+已于 2026-08-13 人工合并到 `main`。
 
-- M3 concurrent reprocess targeted；
-- M3 offline engineering evaluation；
-- M3 performance baseline；
-- Alembic `upgrade head → downgrade -1 → upgrade head → downgrade base → upgrade head`；
-- Definition sync ×2，第二次 `created=0 / updated=0 / failed=0`；
-- Web `lint / typecheck / test -- --run / build`。
+Merge commit：
 
-Engineering Hardening 工程 Gate 已全部通过；文档同步后的 final exact-head CI 仍必须保持 Python/Web success，才能对外报告 `AWAITING HUMAN REAL VALIDATION`。
+```text
+8ab9200172786705f9e73093646e3d3d3507ee2f
+```
+
+该 merge commit 的 GitHub Actions：
+
+```text
+python = success
+web = success
+```
+
+## Final Gate Matrix
+
+| Gate | Status |
+|---|---|
+| M5-A Editorial Workbench | COMPLETE / MERGED |
+| M5-B Daily Candidates / Editorial Workflow | COMPLETE / MERGED |
+| M5-C Publication / Performance Feedback | COMPLETE / MERGED |
+| M5-D A Engineering Hardening | PASS |
+| M5-D B Real Platform Smoke | PASS |
+| M5-D C Production Provider | PASS |
+| M5-D D Human-in-loop E2E | PASS |
+| formal `verify_m5d_e2e` | PASS |
+| M5-D Real Validation Report | PASS / CURRENT |
+| PR #23 | MERGED |
+| merge-head Python CI | success |
+| merge-head Web CI | success |
+| M5-D COMPLETE | YES |
+| M5 Overall COMPLETE | YES |
 
 ## 当前结论
 
-当前不是 M5-D COMPLETE，也不是 MVP COMPLETE：
-
 ```text
-M5-C COMPLETE / MERGED
-M5-D Engineering Hardening COMPLETE
-Real Platform Smoke PENDING / NOT_RUN
-Production AI Provider Validation NOT_TESTED / PENDING
-Full Human-in-loop MVP E2E PENDING / NOT_RUN
-M5 Overall NOT COMPLETE
-M2 Real Smoke Validation DEFERRED / NOT_TESTED
-M2 Real-world Validation NOT COMPLETE
+M5 Overall = COMPLETE
+POST-MVP / V1 READINESS = ACTIVE
+Next formal product stage = V1-A / V1-B / V1-C / V1-D
+There is no M6
 ```
 
-当前阶段仅允许进入 `AWAITING HUMAN REAL VALIDATION`，不代表真实 Gate 已执行。
+后续执行与进度统一记录在：
+
+`docs/POST_MVP_V1_READINESS_CHECKLIST.md`
+
+本结论不扩大为全平台真实采集稳定性、大规模长期运行稳定性或自动发布能力已验证。

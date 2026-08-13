@@ -145,4 +145,18 @@ Confirmed Claim 的事实边界仅为：“**视频简介声称**将串联 LLM�
 | M5-D COMPLETE | YES |
 | M5 Overall COMPLETE | YES |
 
-本结论不扩大为全平台真实采集稳定性或大规模运营稳定性结论。PR #23 保持 Open，最终 merge 仍由真人决定。
+本结论不扩大为全平台真实采集稳定性或大规模运营稳定性结论。
+
+## 9. Post-merge Note — 2026-08-13
+
+PR #23 `feat: 完成 M5-D Hardening与MVP收口` 已由真人合并到 `main`。
+
+```text
+merge commit = 8ab9200172786705f9e73093646e3d3d3507ee2f
+merge-head GitHub Actions python = success
+merge-head GitHub Actions web = success
+```
+
+本节只补充合并后仓库状态；第 1 节中的 validation engineering head 与 CI、真实业务 Invocation、CollectionRun、RawSignal 和其余 durable provenance 均保持原始真实验证记录，不因后续 merge/release baseline 而改写。
+
+后续路线进入 Post-MVP / V1 readiness；不存在 M6。进度见 `docs/POST_MVP_V1_READINESS_CHECKLIST.md`。
