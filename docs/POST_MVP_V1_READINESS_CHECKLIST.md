@@ -271,8 +271,8 @@ M2 Zhihu / Weibo coverage follow-up 是非阻塞旁路线，插入安全窗口�
 | Sync M5-D Report post-merge note | COMPLETE | 保留 validation provenance，并补 PR #23 merge note |
 | Add final CHANGELOG closeout entry | COMPLETE | 新增 2026-08-13 MVP closeout / Post-MVP entry；历史记录保持不改 |
 | Confirm docs consistency | COMPLETE | 核对正式路线、M2/M5-D 语义与上述入口文档，无需重新打开 M2/M5 |
-| Baseline documentation batch | READY_FOR_REVIEW | 当前分支仅文档/规划变更，无业务代码、真实平台、付费 AI 或 DB 写入 |
-| MVP tag / GitHub Release | PENDING | 本 baseline 分支人工合并到 main 后执行 |
+| Baseline documentation PR | OPEN / AWAITING HUMAN MERGE | PR #25 `docs: 建立Post-MVP与V1 readiness基线`；不自动 merge |
+| MVP tag / GitHub Release | PENDING | PR #25 人工合并到 main 后执行 |
 | AI Generation Policy v1 | PENDING | Release baseline 后第一项真正功能开发 |
 | P1-lite | PENDING | AI policy 后 |
 | V1-A | PENDING | 按单平台灰度推进 |
