@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { AdminApi } from '../api'
 import type { AiModel, AiProvider } from '../aiTypes'
+import { enabledLabel, providerTypeLabel, validationStatusLabel } from '../uiLabels'
 
 type Props = { api: AdminApi }
 
@@ -14,7 +15,7 @@ export function AIProvidersPage({ api }: Props) {
   })
   const [modelDraft, setModelDraft] = useState({
     provider_id: '', model_key: '', model_name: '', capabilities: 'text_generation',
-    pricing_version: 'unpriced-v1', dimensions: '',
+    pricing_version: 'unpriced-v1', dimensions: '', structured_output_mode: 'json_schema',
   })
 
   const load = useCallback(async () => {
@@ -61,7 +62,7 @@ export function AIProvidersPage({ api }: Props) {
         enabled: false,
         pricing_version: modelDraft.pricing_version,
         dimensions: modelDraft.dimensions ? Number(modelDraft.dimensions) : null,
-        config: {},
+        config: { structured_output_mode: modelDraft.structured_output_mode },
       })
       setModelDraft({ ...modelDraft, model_key: '', model_name: '', dimensions: '' })
       await load()
@@ -97,30 +98,31 @@ export function AIProvidersPage({ api }: Props) {
 
   return <>
     <section className="panel">
-      <div className="panel-head"><h2>AI Providers</h2><button onClick={() => void load()}>刷新</button></div>
+      <div className="panel-head"><div><h2>AI 服务商</h2><small>配置模型服务连接、凭据引用与可用状态。</small></div><button onClick={() => void load()}>刷新</button></div>
       {error && <div className="error-banner">{error}</div>}
       <div className="form-grid">
-        <label>Provider Key<input value={providerDraft.provider_key} onChange={e => setProviderDraft({ ...providerDraft, provider_key: e.target.value })} /></label>
-        <label>名称<input value={providerDraft.display_name} onChange={e => setProviderDraft({ ...providerDraft, display_name: e.target.value })} /></label>
-        <label>类型<select value={providerDraft.provider_type} onChange={e => setProviderDraft({ ...providerDraft, provider_type: e.target.value })}><option value="openai_compatible">openai_compatible</option><option value="local_openai_compatible">local_openai_compatible</option></select></label>
-        <label>Base URL<input value={providerDraft.base_url} onChange={e => setProviderDraft({ ...providerDraft, base_url: e.target.value })} /></label>
-        <label>Credential Ref<input type="password" autoComplete="off" placeholder="env://AI_PROVIDER_KEY" value={providerDraft.credential_ref} onChange={e => setProviderDraft({ ...providerDraft, credential_ref: e.target.value })} /></label>
+        <label>服务商标识<input value={providerDraft.provider_key} onChange={e => setProviderDraft({ ...providerDraft, provider_key: e.target.value })} /></label>
+        <label>服务商名称<input value={providerDraft.display_name} onChange={e => setProviderDraft({ ...providerDraft, display_name: e.target.value })} /></label>
+        <label>服务类型<select value={providerDraft.provider_type} onChange={e => setProviderDraft({ ...providerDraft, provider_type: e.target.value })}><option value="openai_compatible">OpenAI 兼容服务</option><option value="local_openai_compatible">本地 OpenAI 兼容服务</option></select></label>
+        <label>服务地址（Base URL）<input value={providerDraft.base_url} onChange={e => setProviderDraft({ ...providerDraft, base_url: e.target.value })} /></label>
+        <label>凭据引用<input type="password" autoComplete="off" placeholder="例如 env://AI_PROVIDER_KEY" value={providerDraft.credential_ref} onChange={e => setProviderDraft({ ...providerDraft, credential_ref: e.target.value })} /></label>
       </div>
-      <div className="actions"><button onClick={() => void createProvider()}>创建 Provider</button></div>
-      <div className="table-wrap"><table><thead><tr><th>名称 / Key</th><th>类型</th><th>状态</th><th>Credential</th><th>Validation</th><th>模型</th><th>最近调用 / Error rate</th><th>操作</th></tr></thead><tbody>{providers.map(provider => <tr key={provider.id}><td><strong>{provider.display_name}</strong><br /><small>{provider.provider_key}</small></td><td>{provider.provider_type}</td><td>{provider.enabled ? 'enabled' : 'disabled'}</td><td>{provider.credential_configured ? '已配置' : '未配置'}<br /><small>{provider.credential_ref_masked || '-'}</small></td><td>{provider.validation_status}</td><td>{provider.model_count}</td><td>{provider.last_invocation_at || '-'}<br /><small>{provider.error_rate === null ? '-' : `${(provider.error_rate * 100).toFixed(1)}%`}</small></td><td><div className="actions"><button onClick={() => void toggleProvider(provider)}>{provider.enabled ? '停用' : '启用'}</button><button onClick={() => void replaceCredential(provider)}>Replace Credential</button></div></td></tr>)}</tbody></table></div>
+      <div className="actions"><button className="primary" onClick={() => void createProvider()}>创建服务商</button></div>
+      <div className="table-wrap"><table><thead><tr><th>服务商</th><th>类型</th><th>状态</th><th>凭据</th><th>验证状态</th><th>模型数</th><th>最近调用 / 错误率</th><th>操作</th></tr></thead><tbody>{providers.map(provider => <tr key={provider.id}><td><strong>{provider.display_name}</strong><br /><small>{provider.provider_key}</small></td><td>{providerTypeLabel[provider.provider_type]||provider.provider_type}</td><td>{enabledLabel(provider.enabled)}</td><td>{provider.credential_configured ? '已配置' : '未配置'}<br /><small>{provider.credential_ref_masked || '—'}</small></td><td>{validationStatusLabel[provider.validation_status]}</td><td>{provider.model_count}</td><td>{provider.last_invocation_at || '暂无'}<br /><small>{provider.error_rate === null ? '暂无' : `${(provider.error_rate * 100).toFixed(1)}%`}</small></td><td><div className="actions"><button onClick={() => void toggleProvider(provider)}>{provider.enabled ? '停用' : '启用'}</button><button onClick={() => void replaceCredential(provider)}>更换凭据</button></div></td></tr>)}</tbody></table></div>
     </section>
     <section className="panel">
-      <div className="panel-head"><h2>AI Models</h2></div>
+      <div className="panel-head"><div><h2>AI 模型</h2><small>登记服务商提供的模型与结构化输出能力。</small></div></div>
       <div className="form-grid">
-        <label>Provider<select value={modelDraft.provider_id} onChange={e => setModelDraft({ ...modelDraft, provider_id: e.target.value })}><option value="">请选择</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.provider_key}</option>)}</select></label>
-        <label>Model Key<input value={modelDraft.model_key} onChange={e => setModelDraft({ ...modelDraft, model_key: e.target.value })} /></label>
-        <label>供应商 Model Name<input value={modelDraft.model_name} onChange={e => setModelDraft({ ...modelDraft, model_name: e.target.value })} /></label>
-        <label>Capabilities<input placeholder="text_generation,structured_output" value={modelDraft.capabilities} onChange={e => setModelDraft({ ...modelDraft, capabilities: e.target.value })} /></label>
-        <label>Pricing Version<input value={modelDraft.pricing_version} onChange={e => setModelDraft({ ...modelDraft, pricing_version: e.target.value })} /></label>
-        <label>Dimensions<input value={modelDraft.dimensions} onChange={e => setModelDraft({ ...modelDraft, dimensions: e.target.value })} /></label>
+        <label>所属服务商<select value={modelDraft.provider_id} onChange={e => setModelDraft({ ...modelDraft, provider_id: e.target.value })}><option value="">请选择</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.provider_key}</option>)}</select></label>
+        <label>模型标识<input value={modelDraft.model_key} onChange={e => setModelDraft({ ...modelDraft, model_key: e.target.value })} /></label>
+        <label>服务商模型名称<input value={modelDraft.model_name} onChange={e => setModelDraft({ ...modelDraft, model_name: e.target.value })} /></label>
+        <label>模型能力<input placeholder="如 text_generation,structured_output" value={modelDraft.capabilities} onChange={e => setModelDraft({ ...modelDraft, capabilities: e.target.value })} /></label>
+        <label>结构化输出方式<select value={modelDraft.structured_output_mode} onChange={e => setModelDraft({ ...modelDraft, structured_output_mode: e.target.value })}><option value="json_schema">JSON Schema</option><option value="json_object">JSON Object</option></select></label>
+        <label>计价版本<input value={modelDraft.pricing_version} onChange={e => setModelDraft({ ...modelDraft, pricing_version: e.target.value })} /></label>
+        <label>向量维度<input value={modelDraft.dimensions} onChange={e => setModelDraft({ ...modelDraft, dimensions: e.target.value })} /></label>
       </div>
-      <div className="actions"><button onClick={() => void createModel()}>创建 Model</button></div>
-      <div className="table-wrap"><table><thead><tr><th>Model Key</th><th>Model Name</th><th>Capabilities</th><th>Pricing</th><th>Dimensions</th><th>状态</th><th>操作</th></tr></thead><tbody>{models.map(model => <tr key={model.id}><td>{model.model_key}</td><td>{model.model_name}</td><td>{model.capabilities.join(', ')}</td><td>{model.pricing_version}</td><td>{model.dimensions ?? '-'}</td><td>{model.enabled ? 'enabled' : 'disabled'}</td><td><div className="actions"><button onClick={() => void toggleModel(model)}>{model.enabled ? '停用' : '启用'}</button><button onClick={() => void testModel(model)}>Connection Test</button></div></td></tr>)}</tbody></table></div>
+      <div className="actions"><button className="primary" onClick={() => void createModel()}>创建模型</button></div>
+      <div className="table-wrap"><table><thead><tr><th>模型标识</th><th>模型名称</th><th>能力</th><th>计价版本</th><th>向量维度</th><th>状态</th><th>操作</th></tr></thead><tbody>{models.map(model => <tr key={model.id}><td>{model.model_key}</td><td>{model.model_name}</td><td>{model.capabilities.join(', ')}</td><td>{model.pricing_version}</td><td>{model.dimensions ?? '—'}</td><td>{enabledLabel(model.enabled)}</td><td><div className="actions"><button onClick={() => void toggleModel(model)}>{model.enabled ? '停用' : '启用'}</button><button onClick={() => void testModel(model)}>连接测试</button></div></td></tr>)}</tbody></table></div>
     </section>
   </>
 }

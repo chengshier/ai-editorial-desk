@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import type { JsonSchema, UiSchema, VisibilityRule } from '../types'
+import { capabilityLabel } from '../uiLabels'
 
 type Props = {
   schema: JsonSchema
@@ -37,6 +38,25 @@ function isVisible(rule: VisibilityRule | undefined, value: Record<string, unkno
   return true
 }
 
+type ConfigSection = 'capability' | 'runtime' | 'options' | 'default'
+const sectionOrder: Record<ConfigSection, number> = { capability: 0, runtime: 1, options: 2, default: 1 }
+const sectionLabel: Partial<Record<ConfigSection, string>> = { capability: '采集能力', runtime: '运行参数', options: '附加选项' }
+
+function configSection(key: string): ConfigSection {
+  if (['modes', 'keyword', 'content_ids', 'creator_id'].includes(key)) return 'capability'
+  if (key === 'timeout_seconds') return 'runtime'
+  if (['include_comments', 'comment_limit', 'include_subcomments'].includes(key)) return 'options'
+  return 'default'
+}
+
+function fieldSize(key: string, field: JsonSchema): string {
+  if (field.type === 'boolean' || key === 'modes') return 'field-full'
+  if (field.type === 'integer' || field.type === 'number') return 'field-sm'
+  if (field.type === 'array' || /url|ref|content_ids/i.test(key)) return 'field-lg'
+  if (field.enum) return 'field-md'
+  return 'field-md'
+}
+
 export function validateSchemaValue(
   schema: JsonSchema,
   value: Record<string, unknown>,
@@ -70,29 +90,43 @@ export function validateSchemaValue(
 }
 
 export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
+  const isCollectorConfig = Boolean(schema.properties?.modes && schema.properties?.timeout_seconds)
   const properties = useMemo(() => Object.entries(schema.properties || {}).sort(([a], [b]) => {
+    if (isCollectorConfig) {
+      const categoryDelta = sectionOrder[configSection(a)] - sectionOrder[configSection(b)]
+      if (categoryDelta) return categoryDelta
+    }
     return (uiSchema[a]?.order ?? 999) - (uiSchema[b]?.order ?? 999)
-  }), [schema.properties, uiSchema])
+  }), [schema.properties, uiSchema, isCollectorConfig])
   const errors = validateSchemaValue(schema, value, uiSchema)
+  const visibleProperties = properties.filter(([key]) => isVisible(uiSchema[key]?.visible_when, value))
 
   const set = (key: string, next: unknown) => onChange({ ...value, [key]: next })
 
   return <div className="schema-form" data-testid="schema-form">
-    {properties.map(([key, field]) => {
+    {visibleProperties.map(([key, field], index) => {
       const ui = uiSchema[key] || {}
-      if (!isVisible(ui.visible_when, value)) return null
       const label = ui.label || field.title || key
       const current = value[key] ?? normalizeDefault(field)
       const required = schema.required?.includes(key)
       const secretHint = ui.secret_reference || ui.widget === 'secret_reference'
       const checkboxOptions = field.type === 'array' && ui.widget === 'checkbox_group' ? field.items?.enum : undefined
-      return <div className="field" key={key}>
-        <span>{label}{required ? ' *' : ''}</span>
-        {checkboxOptions ? <div role="group" aria-label={label}>
+      const category = configSection(key)
+      const previousCategory = index > 0 ? configSection(visibleProperties[index - 1][0]) : null
+      const showSection = isCollectorConfig && category !== previousCategory && sectionLabel[category]
+      const helper = ui.help || field.description
+      const fieldClass = `field ${fieldSize(key, field)} field-key-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+      return <Fragment key={key}>
+        {showSection && <div className="schema-section-heading"><strong>{sectionLabel[category]}</strong>{category === 'capability' && <small>选择当前实例允许使用的采集模式。</small>}</div>}
+        <div className={fieldClass}>
+        {field.type !== 'boolean' && <span className="field-label">{label}{required ? ' *' : ''}</span>}
+        {checkboxOptions ? <div className="checkbox-group" role="group" aria-label={label}>
           {checkboxOptions.map((option) => {
             const checked = Array.isArray(current) && current.includes(option)
+            const optionLabel = capabilityLabel[String(option)] || String(option)
             return <label key={String(option)}>
               <input
+                aria-label={optionLabel}
                 type="checkbox"
                 checked={checked}
                 onChange={(event) => {
@@ -103,7 +137,7 @@ export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
                   set(key, next)
                 }}
               />
-              {String(option)}
+              {optionLabel}
             </label>
           })}
         </div> : field.enum ? <select aria-label={label} value={String(current)} onChange={(event) => {
@@ -112,17 +146,24 @@ export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
         }}>
           <option value="">请选择</option>
           {field.enum.map((option) => <option key={String(option)} value={String(option)}>{String(option)}</option>)}
-        </select> : field.type === 'boolean' ? <input
+        </select> : field.type === 'boolean' ? <label className="toggle-row"><span><strong>{label}{required ? ' *' : ''}</strong>{helper && <small>{helper}</small>}</span><input
           aria-label={label}
           type="checkbox"
           checked={Boolean(current)}
           onChange={(event) => set(key, event.target.checked)}
-        /> : field.type === 'array' ? <input
+        /></label> : field.type === 'array' ? <input
           aria-label={label}
           value={Array.isArray(current) ? current.join(', ') : ''}
           placeholder="多项请用逗号分隔"
           onChange={(event) => set(key, parseArray(event.target.value, field.items))}
-        /> : <input
+        /> : key.endsWith('_seconds') ? <span className="input-with-unit"><input
+          aria-label={label}
+          type="number"
+          value={String(current)}
+          min={field.minimum}
+          max={field.maximum}
+          onChange={(event) => set(key, event.target.value === '' ? '' : Number(event.target.value))}
+        /><span>秒</span></span> : <input
           aria-label={label}
           type={field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
           value={String(current)}
@@ -134,10 +175,10 @@ export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
             else set(key, event.target.value)
           }}
         />}
-        {(ui.help || field.description) && <small>{ui.help || field.description}</small>}
+        {helper && field.type !== 'boolean' && <small>{helper}</small>}
         {secretHint && <small className="warning">这里只填写凭据引用，不显示或读取真实 Secret。</small>}
         {errors[key] && <small className="error" role="alert">{errors[key]}</small>}
-      </div>
+      </div></Fragment>
     })}
   </div>
 }

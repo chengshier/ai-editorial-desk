@@ -45,6 +45,7 @@ from packages.editorial.domain import (
     EDITORIAL_SCORE_SCHEMA_V1,
     EDITORIAL_SCORE_TEMPLATE,
     EDITORIAL_SCORE_TEMPLATE_VERSION,
+    EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
     EDITORIAL_SCORING_VERSION,
     GEOGRAPHY_UNAVAILABLE,
     INTERACTION_UNAVAILABLE,
@@ -55,6 +56,7 @@ from packages.editorial.domain import (
     EditorialDimensions,
     EvidenceStateSummary,
     ValidatedEditorialCandidate,
+    allowed_editorial_risk_levels,
     calculate_traffic_total,
     normalize_text,
     stable_hash,
@@ -380,7 +382,7 @@ class EditorialScoringService:
                 messages=snapshot.messages(),
                 schema=EDITORIAL_SCORE_SCHEMA_V1,
                 schema_name=EDITORIAL_SCHEMA_NAME,
-                max_output_tokens=1200,
+                max_output_tokens=EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
                 temperature=0.0,
                 context=InvocationContext(
                     prompt_version=EDITORIAL_PROMPT_VERSION,
@@ -759,22 +761,9 @@ def _enforce_ai_risk_guard(
     candidate: ValidatedEditorialCandidate,
     summary: EvidenceStateSummary,
 ) -> None:
-    if candidate.risk_level is not EditorialRiskLevel.R0:
+    if candidate.risk_level in allowed_editorial_risk_levels(summary):
         return
-    if summary.claim_count == 0:
-        raise EditorialRiskConflictError("无 Evidence 时 AI 不得给出 R0")
-    if summary.confirmed_count == 0:
-        raise EditorialRiskConflictError("没有 confirmed Claim 时 AI 不得给出 R0")
-    if (
-        summary.single_source_count + summary.disputed_count == summary.claim_count
-    ):
-        raise EditorialRiskConflictError(
-            "全部 Evidence 为 single_source/disputed 时 AI 不得给出 R0"
-        )
-    if summary.open_unknown_count > 0:
-        raise EditorialRiskConflictError(
-            "仍存在未解决 Unknown 时 AI 不得给出 R0"
-        )
+    raise EditorialRiskConflictError("当前 Evidence/Unknown 状态不允许 AI 给出 R0")
 
 
 def _validate_override_fields(values: dict[str, Any]) -> dict[str, Any]:

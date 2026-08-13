@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
+
+from packages.ai_gateway.domain import AIUsage
 
 
 class AIErrorCode(StrEnum):
@@ -32,12 +35,35 @@ class AIGatewayError(RuntimeError):
         *,
         retryable: bool = False,
         retry_after_seconds: float | None = None,
+        provider_error_detail: Mapping[str, str] | None = None,
+        provider_response_detail: Mapping[str, object] | None = None,
+        provider_usage: AIUsage | None = None,
+        provider_request_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.retryable = retryable
         self.retry_after_seconds = retry_after_seconds
+        self.provider_error_detail = (
+            dict(provider_error_detail) if provider_error_detail is not None else None
+        )
+        self.provider_response_detail = (
+            dict(provider_response_detail) if provider_response_detail is not None else None
+        )
+        self.provider_usage = provider_usage
+        self.provider_request_id = provider_request_id
+
+
+def provider_error_metadata(error: AIGatewayError) -> dict[str, object]:
+    """Return already-sanitized provider diagnostic fields for invocation audit metadata."""
+
+    metadata: dict[str, object] = {}
+    if error.provider_error_detail is not None:
+        metadata["provider_error_detail"] = dict(error.provider_error_detail)
+    if error.provider_response_detail is not None:
+        metadata["provider_response_detail"] = dict(error.provider_response_detail)
+    return metadata
 
 
 class AIProviderError(AIGatewayError):

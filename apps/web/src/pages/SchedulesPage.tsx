@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AdminApi } from '../api'
-import { ErrorBanner, Panel } from '../components/common'
+import { Empty, ErrorBanner, Panel } from '../components/common'
+import { scheduleTypeLabel } from '../uiLabels'
 import type { Schedule, Source } from '../types'
 
-export function SchedulesPage({ api }: { api: AdminApi }) {
+export function SchedulesPage({ api, onNavigate }: { api: AdminApi; onNavigate?: (page: 'runs') => void }) {
   const [items, setItems] = useState<Schedule[]>([])
   const [sources, setSources] = useState<Source[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
   const [form, setForm] = useState({
     source_id: '',
     name: '',
@@ -39,7 +42,9 @@ export function SchedulesPage({ api }: { api: AdminApi }) {
 
   const create = async () => {
     const source = sources.find((item) => item.id === form.source_id)
-    if (!source) return setError('请选择 Source')
+    if (!source) return setError('请选择信源')
+    setPendingAction('create')
+    setError(null)
     try {
       await api.post('/api/v1/admin/schedules', {
         connector_instance_id: source.connector_instance_id,
@@ -52,14 +57,46 @@ export function SchedulesPage({ api }: { api: AdminApi }) {
         timezone: form.timezone,
         requested_limit: form.requested_limit,
       })
+      setMessage('采集任务已创建，并已从服务端刷新列表。')
       await load()
     } catch (e) {
       setError((e as Error).message)
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  const changeScheduleState = async (item: Schedule) => {
+    const action = item.enabled ? 'pause' : 'resume'
+    setPendingAction(`${action}:${item.id}`)
+    setError(null)
+    try {
+      await api.post(`/api/v1/admin/schedules/${item.id}/${action}`, item.enabled ? { reason: 'Web 管理员暂停' } : {})
+      setMessage(item.enabled ? '采集任务已暂停。' : '采集任务已恢复。')
+      await load()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
+  const runNow = async (item: Schedule) => {
+    setPendingAction(`run:${item.id}`)
+    setError(null)
+    try {
+      const result = await api.post<{ run_id?: string; status?: string }>(`/api/v1/admin/schedules/${item.id}/run-now`, {})
+      setMessage(result.run_id ? `运行已创建：${result.status || '已提交'} / ${result.run_id}` : '运行请求已提交，并已刷新任务状态。')
+      await load()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPendingAction(null)
     }
   }
 
   return <>
-    <Panel title="Schedules"><ErrorBanner error={error}/><div className="form-grid"><label>Source<select value={form.source_id} onChange={(event) => setForm({ ...form, source_id: event.target.value })}>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label>名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label>类型<select value={form.schedule_type} onChange={(event) => setForm({ ...form, schedule_type: event.target.value as 'interval' | 'cron' })}><option value="interval">Interval</option><option value="cron">Cron</option></select></label>{form.schedule_type === 'interval' ? <label>间隔秒数<input type="number" min="300" value={form.interval_seconds} onChange={(event) => setForm({ ...form, interval_seconds: Number(event.target.value) })}/></label> : <label>Cron<input value={form.cron_expression} placeholder="0 */6 * * *" onChange={(event) => setForm({ ...form, cron_expression: event.target.value })}/></label>}<label>时区<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}/></label><label>单次条数<input type="number" min="1" max="100" value={form.requested_limit} onChange={(event) => setForm({ ...form, requested_limit: Number(event.target.value) })}/></label></div><button onClick={create}>创建调度</button></Panel>
-    <Panel title="调度列表" actions={<button onClick={load}>刷新</button>}><div className="table-wrap"><table><thead><tr><th>名称</th><th>类型</th><th>下次运行</th><th>最近 Run</th><th>状态</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{item.schedule_type}{item.interval_seconds ? ` / ${item.interval_seconds}s` : ''}</td><td>{new Date(item.next_run_at).toLocaleString()}</td><td>{item.last_run_id || '-'}</td><td>{item.enabled ? '启用' : '暂停'}{item.paused_reason ? ` · ${item.paused_reason}` : ''}</td><td className="actions"><button onClick={async () => { await api.post(`/api/v1/admin/schedules/${item.id}/${item.enabled ? 'pause' : 'resume'}`, item.enabled ? { reason: 'Web 管理员暂停' } : {}); await load() }}>{item.enabled ? '暂停' : '恢复'}</button><button onClick={async () => { await api.post(`/api/v1/admin/schedules/${item.id}/run-now`, {}); await load() }}>立即运行</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="创建采集任务"><div className="page-intro"><p>为指定信源创建周期性或单次采集任务。</p></div><ErrorBanner error={error}/>{message&&<p className="notice">{message}{message.startsWith('运行已创建')&&onNavigate&&<button className="quiet-action" onClick={()=>onNavigate('runs')}>查看运行记录</button>}</p>}<div className="form-grid"><label>信源<select value={form.source_id} onChange={(event) => setForm({ ...form, source_id: event.target.value })}>{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select></label><label>任务名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })}/></label><label>调度方式<select value={form.schedule_type} onChange={(event) => setForm({ ...form, schedule_type: event.target.value as 'interval' | 'cron' })}><option value="interval">按间隔执行</option><option value="cron">Cron 表达式</option></select></label>{form.schedule_type === 'interval' ? <label>执行间隔<input type="number" min="300" value={form.interval_seconds} onChange={(event) => setForm({ ...form, interval_seconds: Number(event.target.value) })}/><small>当前：{form.interval_seconds} 秒（约 {Math.round(form.interval_seconds/60)} 分钟）</small></label> : <label>Cron 表达式<input value={form.cron_expression} placeholder="0 */6 * * *" onChange={(event) => setForm({ ...form, cron_expression: event.target.value })}/></label>}<label>时区<input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })}/></label><label>单次采集上限<input type="number" min="1" max="100" value={form.requested_limit} onChange={(event) => setForm({ ...form, requested_limit: Number(event.target.value) })}/></label></div><button className="primary" disabled={pendingAction==='create'} onClick={create}>{pendingAction==='create'?'正在保存…':'创建采集任务'}</button></Panel>
+    <Panel title="已有采集任务" actions={<button onClick={load}>刷新</button>}>{items.length===0?<Empty text="暂无采集任务"/>:<div className="table-wrap"><table><thead><tr><th>名称</th><th>调度方式</th><th>下次运行</th><th>最近运行</th><th>状态</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{item.name}</td><td>{scheduleTypeLabel[item.schedule_type]}{item.interval_seconds ? ` · ${item.interval_seconds} 秒` : ''}</td><td>{new Date(item.next_run_at).toLocaleString()}</td><td>{item.last_run_id || '暂无'}</td><td>{item.enabled ? '已启用' : '已暂停'}{item.paused_reason ? ` · ${item.paused_reason}` : ''}</td><td className="actions"><button disabled={Boolean(pendingAction)} onClick={() => void changeScheduleState(item)}>{pendingAction === `${item.enabled ? 'pause' : 'resume'}:${item.id}` ? '正在处理…' : item.enabled ? '暂停' : '恢复'}</button><button disabled={Boolean(pendingAction)} onClick={() => void runNow(item)}>{pendingAction === `run:${item.id}` ? '正在创建…' : '立即运行'}</button></td></tr>)}</tbody></table></div>}<p className="muted-text">创建任务后，可在这里查看下次运行时间、最近运行与当前状态。</p></Panel>
   </>
 }

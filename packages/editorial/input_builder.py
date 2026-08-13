@@ -30,6 +30,7 @@ from packages.editorial.domain import (
     MAX_SCORING_CLAIMS,
     MAX_SCORING_UNKNOWNS,
     EvidenceStateSummary,
+    allowed_editorial_risk_levels,
     stable_hash,
 )
 from packages.editorial.errors import (
@@ -192,6 +193,9 @@ class EditorialScoringInputBuilder:
                     "claims_truncated": len(selected_claims) < len(all_claims),
                     "unknowns_truncated": len(selected_unknowns) < len(all_unknowns),
                 },
+                "allowed_risk_levels": [
+                    item.value for item in allowed_editorial_risk_levels(evidence_summary)
+                ],
                 "claims": [
                     {
                         "id": str(claim.id),

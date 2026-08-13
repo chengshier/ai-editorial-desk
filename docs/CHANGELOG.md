@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-08-10 - M5-D Engineering Hardening / MVP Real Validation Harness
+
+### Added / Hardened
+
+- 新增只读 `packages/validation/`：M5-D Preflight、MVP Doctor、Production business Invocation verifier 与 Full E2E provenance verifier；
+- 新增统一 Validation output/report 脱敏，禁止 Cookie、Authorization、API Key、credential、password、完整 Prompt 与 browser profile 路径进入提交报告；
+- 新增 `scripts/m5d_preflight.py`、`scripts/mvp_doctor.py`、`scripts/run_m5d_platform_smoke.py`、`scripts/run_m5d_provider_validation.py`、`scripts/verify_m5d_e2e.py`；
+- Real Platform wrapper 继续调用既有 M2 MediaCrawler smoke / CollectorRuntime 主链，不建立第二套采集器，并禁止在普通 CI 执行真实平台操作；
+- Production Provider validation 要求显式 `--confirm-paid-call`；Connection Test 单独成功仍保持 `PENDING_BUSINESS_INVOCATION`，必须再核验正式 AIGateway 业务 Invocation/Attempt；
+- Harden `AIConnectionTester`：只要测试注入 ProviderFactory/MockTransport，就不具备提升真实 Provider `validation_status` 的资格；
+- Production business Invocation verifier 额外要求同 `provider_key` 的启用 Provider 已有独立 `validation_status=PASSED`，Fake/Mock identity 或未验证 Provider 均 BLOCK；
+- 新增 PostgreSQL Hardening 回归：Account risk block、显式 Collection Budget、migration mismatch、Fake Provider gate、Mock validation-status guard、secret redaction；
+- 新增 `docs/MVP_RUNBOOK.md` 与初始 `NOT_RUN` 的 `docs/M5D_REAL_VALIDATION_REPORT.md`；
+- 新增 D-030，冻结 Engineering CI、Real Platform、Production Provider、Human E2E 四类独立证据门槛。
+
+### Status / Boundaries
+
+- `M5-A = COMPLETE / MERGED`；`M5-B = COMPLETE / MERGED`；`M5-C = COMPLETE / MERGED`；
+- `M5-D Engineering Hardening = IN PROGRESS / PR #23 OPEN`；
+- `Real Platform Smoke = PENDING / NOT_RUN`；
+- `Production AI Provider Validation = NOT_TESTED`；
+- `Full Human-in-loop E2E = PENDING / NOT_RUN`；
+- `M5 Overall = NOT COMPLETE`；
+- `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；`M2 Real-world Validation = NOT COMPLETE`；
+- GitHub CI、Fake/Mock、synthetic fixture 与 offline E2E 只能证明 Engineering Hardening；真实 Platform/Provider/Human E2E 必须由受控本地环境从绿色 exact-head 执行；
+- M5-D 默认 NO NEW MIGRATION，Alembic head 继续 `20260810_0015_m5c_publication_performance`；
+- 不自动发布、不接平台发布 API、不自动 Adopt、不绕过 Risk/Budget、不做 CAPTCHA 破解、fingerprint spoofing、账号/代理轮换或风险后持续重试。
+
 ## 2026-08-10 - M5-C Publication / Performance Feedback Engineering Closure
 
 ### Added
@@ -14,7 +42,7 @@
 
 - 本地 Python full suite：`511 passed, 1 warning`；M3 concurrent / offline evaluation / performance baseline、ruff、mypy、Alembic 五步、Definition sync ×2 均通过；
 - Web `typecheck`、`test -- --run`（20 passed）、`lint`（0 errors，3 个既有 warning）与 `build` 均通过；
-- `M5-A = COMPLETE / MERGED`；`M5-B = COMPLETE / MERGED`；`M5-C = COMPLETE / PR #22 OPEN`；`M5-D = NOT STARTED`；`M5 Overall = NOT COMPLETE`；
+- `M5-A = COMPLETE / MERGED`；`M5-B = COMPLETE / MERGED`；`M5-C = COMPLETE / MERGED`；M5-D 状态以后续记录为准；
 - `Production AI Provider Validation = NOT_TESTED`；`M2 Real Smoke Validation = DEFERRED / NOT_TESTED`；`M2 Real-world Validation = NOT COMPLETE`。
 
 ## 2026-08-10 - M5-B Daily Candidates / Editorial Workflow Engineering Closure
@@ -30,8 +58,8 @@
 ### Status / Boundaries
 
 - `M5-A = COMPLETE / MERGED`；
-- `M5-B = COMPLETE / PR #21 OPEN`；
-- `M5-C = NOT STARTED`，`M5-D = NOT STARTED`，`M5 Overall = NOT COMPLETE`；
+- `M5-B = COMPLETE / PR #21 OPEN`（历史记录；后续已 merged）；
+- 当时 `M5-C = NOT STARTED`，`M5-D = NOT STARTED`，`M5 Overall = NOT COMPLETE`；
 - `Production AI Provider Validation = NOT_TESTED`；
 - `M2 Real Smoke Validation = DEFERRED / NOT_TESTED`，`M2 Real-world Validation = NOT COMPLETE`；
 - Windows `WinError 1314` symlink privilege 仅记录为本地环境限制；不改变 Linux exact-head CI 的测试语义或验收责任。

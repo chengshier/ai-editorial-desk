@@ -46,6 +46,7 @@ it('renders M2-B mode checkboxes and conditional comment fields', async () => {
       include_comments: { type: 'boolean', default: false },
       comment_limit: { type: 'integer', minimum: 0, maximum: 50, default: 20 },
       include_subcomments: { type: 'boolean', default: false },
+      timeout_seconds: { type: 'integer', minimum: 30, maximum: 1800, default: 900 },
     },
   }
   const ui: UiSchema = {
@@ -55,10 +56,18 @@ it('renders M2-B mode checkboxes and conditional comment fields', async () => {
     include_comments: { label: '采集一级评论' },
     comment_limit: { label: '评论上限', visible_when: { field: 'include_comments', equals: true } },
     include_subcomments: { label: '采集二级评论', visible_when: { field: 'include_comments', equals: true } },
+    timeout_seconds: { label: '运行超时（秒）' },
   }
   let value: Record<string, unknown> = { modes: ['search'], include_comments: false }
   const { rerender } = render(<SchemaForm schema={m2bSchema} uiSchema={ui} value={value} onChange={(next) => { value = next }} />)
   expect(screen.getByRole('group', { name: '采集模式' })).toBeInTheDocument()
+  expect(screen.getByText('采集能力')).toBeInTheDocument()
+  expect(screen.getByText('运行参数')).toBeInTheDocument()
+  expect(screen.getByText('附加选项')).toBeInTheDocument()
+  expect(screen.getByLabelText('搜索采集')).toBeChecked()
+  expect(screen.getByLabelText('运行超时（秒）')).toHaveValue(900)
+  expect(screen.getByText('秒')).toBeInTheDocument()
+  expect(screen.getByLabelText('采集一级评论').closest('label')).toHaveClass('toggle-row')
   expect(screen.getByLabelText('关键词')).toBeInTheDocument()
   expect(screen.queryByLabelText('内容 ID')).not.toBeInTheDocument()
   expect(screen.queryByLabelText('评论上限')).not.toBeInTheDocument()
@@ -66,7 +75,7 @@ it('renders M2-B mode checkboxes and conditional comment fields', async () => {
   rerender(<SchemaForm schema={m2bSchema} uiSchema={ui} value={value} onChange={(next) => { value = next }} />)
   expect(screen.getByLabelText('评论上限')).toBeInTheDocument()
   expect(screen.getByLabelText('采集二级评论')).toBeInTheDocument()
-  await user.click(screen.getByLabelText('detail'))
+  await user.click(screen.getByLabelText('详情采集'))
   rerender(<SchemaForm schema={m2bSchema} uiSchema={ui} value={value} onChange={(next) => { value = next }} />)
   expect(screen.getByLabelText('内容 ID')).toBeInTheDocument()
 })

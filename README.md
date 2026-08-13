@@ -2,11 +2,11 @@
 
 AI 编辑部系统：面向短视频创作者的多来源信息发现、资料整理、编辑判断与内容生产辅助系统。
 
-**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench Engineering COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED；M5-C Publication / Performance Feedback COMPLETE / PR #22 OPEN；M5-D NOT STARTED；M5 Overall = NOT COMPLETE。**
+**当前工程状态：M1 Engineering COMPLETE；M2 Engineering COMPLETE；M2 Real Smoke Validation = DEFERRED / NOT_TESTED；M2 Real-world Validation = NOT COMPLETE；M3 Overall Engineering COMPLETE；M4 Overall Engineering COMPLETE；M5-A Editorial Workbench COMPLETE / MERGED；M5-B Daily Candidates / Editorial Workflow COMPLETE / MERGED；M5-C Publication / Performance Feedback COMPLETE / MERGED；M5-D Engineering Hardening COMPLETE / PR #23 OPEN；Real Platform Smoke PENDING；Production AI Provider Validation = NOT_TESTED / PENDING；Full Human-in-loop E2E PENDING；M5 Overall = NOT COMPLETE。**
 
-> Production AI Provider Validation 继续 `NOT_TESTED`。CI Fake/Mock/MockTransport 只验证工程契约，不能替代真实生产 Provider Validation；M2 真实平台验证状态也不会因为 M3/M4/M5-A 工程完成而自动升级。
+> GitHub CI、Fake Provider、MockTransport、synthetic platform fixture 与 offline E2E 只能证明 Engineering Hardening，不能替代真实平台、真实 Production Provider 或 Human-in-loop E2E 验证。
 
-开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，M5-A 验收见 [`docs/M5_ACCEPTANCE_REPORT.md`](docs/M5_ACCEPTANCE_REPORT.md)，M4 验收见 [`docs/M4_ACCEPTANCE_REPORT.md`](docs/M4_ACCEPTANCE_REPORT.md)，架构决定见 [`docs/DECISIONS.md`](docs/DECISIONS.md)。
+开发入口见 [`docs/START_HERE.md`](docs/START_HERE.md)，MVP 运行与真实验证步骤见 [`docs/MVP_RUNBOOK.md`](docs/MVP_RUNBOOK.md)，M5-D 脱敏验证报告模板见 [`docs/M5D_REAL_VALIDATION_REPORT.md`](docs/M5D_REAL_VALIDATION_REPORT.md)，阶段验收见 [`docs/M5_ACCEPTANCE_REPORT.md`](docs/M5_ACCEPTANCE_REPORT.md)，架构决定见 [`docs/DECISIONS.md`](docs/DECISIONS.md)。
 
 ## 当前处理链
 
@@ -29,45 +29,24 @@ Connector / CollectorRuntime
 → M5-C Publication / Performance Feedback
 ```
 
-## M5-A Editorial Workbench
+M5-D 不新增新的业务主链，而是为这条既有链增加 Engineering Hardening、真实验证 Preflight/Harness、只读 E2E provenance verifier、秘密脱敏与 MVP Runbook。
 
-M5-A 是 M1～M4 后台能力的整合层，不重新实现 Event、Evidence、Trend、Score、Card、Pack 或 Draft 业务逻辑。
+## Editorial Workbench / Candidate / Publication
 
-新增只读 Admin Query API：
-
-```text
-GET /api/v1/admin/workbench/overview
-GET /api/v1/admin/workbench/events
-GET /api/v1/admin/workbench/events/{event_id}
-GET /api/v1/admin/workbench/events/{event_id}/signals
-```
-
-Web 继续使用现有 PageKey 架构，轻量分组为 Editorial / Collection / Configuration / AI。Event Workbench 包含：
-
-```text
-Overview
-Evidence
-Sources & Timeline
-Trend & Score
-Card & Pack
-Drafts
-```
-
-Event Explorer 支持分页、lifecycle/category/merged/risk/evidence/score/draft/updated-time/text 筛选，以及 `last_updated_at`、`first_seen_at`、`traffic_total` 普通排序。这里的 score 排序不是 DailyCandidate ranking。
-
-Workbench Query Service 只读数据库，不调用 AI，不复制业务 Write API。Merge/Split、Evidence verification、Unknown、Trend calculate、AI/manual Score、Human override、Card/Pack、AI Draft、Human Draft/Revision 等操作全部继续调用现有 M3/M4 Admin API。
+M5-A 是 M1～M4 后台能力的整合层，不重新实现 Event、Evidence、Trend、Score、Card、Pack 或 Draft 业务逻辑。M5-B 在其上增加确定性 Daily Candidate snapshot 与 append-only Human Editorial Decision；M5-C 再记录真实 Publication 与 append-only Performance Feedback。
 
 关键边界：
 
-- Event lifecycle 与未来 M5-B Editorial Decision 分离；
-- Overview 不是 Candidate Pool，不生成 TOP10/TOP3，不持久化 DailyCandidate；
+- Event lifecycle、Algorithmic Rank、Human Decision、Publication、Performance 分层保存；
+- Adopt 不等于 Published，Draft 不等于 Published；
 - Unknown 不是 Fact，`single_source` 不是 confirmed；
-- unavailable feature 显示 `Unavailable + reason`，不伪装为数值 0；
-- Original AI Score 与 Effective Score 同时可追溯，Human Override 明确显示；
-- merged Event 历史 artifact 继续可读，新写操作禁用并显示 target Event；
-- AI Score / Draft Preview / Apply 只能由用户显式触发；
-- R3/R4 Risk Gate、stale context、citation 与 verification 仍由原后端 Service/API 最终校验；
-- 不自动发布，不自动 fallback 到 Fake Provider。
+- unavailable feature 为 NULL/Unavailable，不伪装为 0；
+- Human Override / Decision / Revision 保持 append-only；
+- merged Event 历史 artifact 可读，新写操作遵循 `EVENT_MERGED + target_event_id`；
+- AI Score / Draft 只能由用户显式触发；
+- R3/R4、stale context、citation、verification 继续由现有 Service/API 强制校验；
+- Publication 只记录真实已发布结果，不自动向平台发布；
+- Performance 不自动修改 Candidate Rank、Score、Decision、Evidence、Prompt 或模型权重。
 
 ## Evidence / Draft 安全语义
 
@@ -82,35 +61,57 @@ Draft 中的事实只能沿目标 Event 内真实 Evidence Claim citation chain�
 
 Human Draft / Human Revision 使用 append-only version chain，AI 原始版本不会被覆盖。Draft Apply 在 Provider 返回后重新校验 Evidence、Effective Editorial Assessment 与 Event merge 状态；R3/R4 继续受 Risk Gate 约束。
 
-Markdown Export 是 deterministic backend renderer，不再次调用 AI。
+Markdown Export 是 deterministic renderer，不再次调用 AI。
 
 ## Admin Token / Sensitive Data
 
-所有写操作继续要求 Admin Token + `X-Actor-ID`。Web 继续只使用 `sessionStorage` 保存当前会话 Token/Actor，不迁移到长期 `localStorage`。
+所有写操作继续要求 Admin Token + `X-Actor-ID`。Web 只使用 `sessionStorage` 保存当前会话 Token/Actor。
 
-Workbench API/UI 不展示 RawSignal `raw_payload`、credential、Authorization、API Key、Cookie、完整 Prompt 或 embedding vector。Source URL 仅允许 `http/https` 安全外链。
+API/UI/Validation Report 不展示 RawSignal `raw_payload`、credential、Authorization、API Key、Cookie、完整 Prompt、绝对 browser profile 路径或 embedding vector。Provider credential 只能通过受控 opaque ref（例如 `env://OPENAI_API_KEY`）解析。
 
 ## AIGateway 边界
 
-Editorial Scoring 与 AI Draft 继续使用既有 `AIGateway.generate_structured(...)`，完整经过 Route / Budget / Retry / Fallback / Schema / Invocation / Attempt / Usage / Cost。Provider 调用位于数据库长事务之外。Preview 仍可能产生 Invocation/token/cost，但不会写对应正式业务 artifact。
+Editorial Scoring 与 AI Draft 继续使用既有 `AIGateway.generate_structured(...)`，完整经过 Route / Budget / Retry / Fallback / Schema / Invocation / Attempt / Usage / Cost。Provider 调用位于数据库长事务之外。
 
-## M5-B Daily Candidates / Editorial Workflow
+M5-D 进一步冻结：
 
-M5-B 在 M5-A 的只读工作台上增加了确定性的 Daily Candidate snapshot、候选池查询和人工 Editorial Decision history。候选排名与人工 `adopt/watch/drop/archive/restore` 决定分离保存；Apply 具备输入幂等与并发安全，不能自动调用 AI、自动发布或改变 M3/M4 既有语义。
+- 注入 ProviderFactory / MockTransport 的 Connection Test 只属于 Engineering Test；
+- Fake/Mock 成功不能提升 `Production AI Provider Validation`；
+- Production Provider PASS 必须由真实 credential + network 的 Connection Test 与至少一次正式业务 Invocation/Attempt 共同证明；
+- usage/cost 不可用时保持 unknown，不能写 0 冒充已知。
 
-## M5-C Publication / Performance Feedback
+## M5-D Engineering Hardening
 
-M5-C 增加 append-only `PublicationRecord`、手动 Performance snapshot 与 CSV import run。Workflow Publication 必须绑定 exact Draft，并要求当前 Human Editorial Decision 为 `adopt`；Publication/Performance 不回写 Candidate Rank、Event lifecycle、Trend 或 Editorial Score。历史补录必须显式标记 `manual_backfill`；Performance correction 追加新快照，不覆盖已有观测。
+Phase 1 已完成工程收口，并提供：
+
+```bash
+python -m scripts.mvp_doctor
+python -m scripts.m5d_preflight --help
+python -m scripts.run_m5d_platform_smoke --help
+python -m scripts.run_m5d_provider_validation --help
+python -m scripts.verify_m5d_e2e --help
+```
+
+其中：
+
+- `mvp_doctor`：read-only PASS/WARN/BLOCK 运行检查；
+- `m5d_preflight`：真实 Platform / Provider / E2E 前置条件检查；
+- `run_m5d_platform_smoke`：只薄封装既有 M2 MediaCrawler smoke 主链，禁止在 CI 真实运行；
+- `run_m5d_provider_validation`：要求 `--confirm-paid-call`，Connection Test 单独成功仍返回 `PENDING_BUSINESS_INVOCATION`；
+- `verify_m5d_e2e`：只读验证 CollectionRun→RawSignal→Event→Evidence→Trend→real AI Score→Candidate→Human Adopt→Card/Pack→real AI Draft 同链 provenance，不补建缺失 Artifact；
+- verifier 防伪回归明确覆盖 Fake/Mock Provider Invocation 与错误 Human Decision provenance，均必须返回 FAIL。
+
+真实运行细节见 `docs/MVP_RUNBOOK.md`。
 
 ## 数据库迁移
 
-M5-C 新增 migration。当前 migration head：
+M5-D **NO NEW MIGRATION**。当前 migration head 继续：
 
 `20260810_0015_m5c_publication_performance`
 
-0015 增加 Publication、Performance Import 与 Performance Snapshot；不修改 M1～M5-B 既有 artifact 语义。
+M5-D Harness / Doctor / Verifier / Validation Report 不建立第二套业务真相表。
 
-## 基础验收
+## Engineering Gate
 
 ```bash
 ruff check .
@@ -133,8 +134,42 @@ npm test -- --run
 npm run build
 ```
 
-Definition 第二次同步必须 `created=0 / updated=0 / failed=0`；M3 concurrent regression、offline engineering evaluation、performance baseline 继续保留；所有 CI AI 测试保持离线。
+Definition 第二次同步必须 `created=0 / updated=0 / failed=0`；M3 concurrent regression、offline engineering evaluation、performance baseline 继续保留。
 
-## 下一阶段边界
+## M5-D 真实 Gate
 
-M5-A、M5-B 已合并。M5-C 在 PR #22 保持 Open 等待人工审查；**M5-D NOT STARTED**；M5 Overall 仍未完成。
+普通 GitHub Actions 不运行真实账号/浏览器或 Production credential。Phase 1 exact-head Engineering Gate 绿色后，在受控本地同一绿色 HEAD 上执行：
+
+```text
+Preflight
+→ Human confirm
+→ Bilibili（首选）或 Zhihu real low-volume smoke
+→ Provider Connection Test
+→ real AIGateway business invocation
+→ real Event / Evidence / Trend / AI Score
+→ Candidate Pool
+→ Human Workbench review + Adopt
+→ Card / Pack
+→ real AI Draft
+→ read-only verifier
+→ sanitized validation report
+```
+
+出现 403/406/429、CAPTCHA、automation detection、account blocked/abnormal、login invalidation、`REVIEW_REQUIRED`、`RESTRICTED` 或现有 Risk Guard stop 条件时立即停止；不 retry 到成功、不换号、不换代理、不重开 Profile 绕过。
+
+## 当前阶段边界
+
+当前为 **M5-D Engineering Hardening COMPLETE / AWAITING HUMAN REAL VALIDATION**。Real Platform、Production Provider 与 Human E2E 尚未真实 PASS，因此：
+
+```text
+M5-D Real Platform Smoke PENDING / NOT_RUN
+M5-D Production AI Provider Validation PENDING / NOT_TESTED
+M5-D Full Human-in-loop E2E PENDING / NOT_RUN
+M5-D NOT COMPLETE
+M5 Overall NOT COMPLETE
+M2 Real Smoke Validation DEFERRED / NOT_TESTED
+M2 Real-world Validation NOT COMPLETE
+Production AI Provider Validation NOT_TESTED
+```
+
+不开始 M6/V1，不自动发布，不接平台发布 API；一平台 MVP real gate 也不等于七平台生产验证完成。

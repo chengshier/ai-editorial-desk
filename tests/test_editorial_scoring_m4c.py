@@ -15,6 +15,7 @@ from packages.database.models import (
     EditorialScoringRunRecord,
     EditorialScoringStatus,
     EventRecord,
+    EventUnknownStatus,
     EvidenceClaimType,
     EvidenceSourceRole,
     EvidenceVerificationState,
@@ -23,9 +24,15 @@ from packages.database.session import get_async_sessionmaker
 from packages.editorial.domain import (
     EDITORIAL_PROMPT_VERSION,
     EDITORIAL_SCHEMA_VERSION,
+    EDITORIAL_SCORE_SCHEMA_V1,
+    EDITORIAL_SCORING_MAX_OUTPUT_TOKENS,
+    EDITORIAL_SCORING_SYSTEM_PROMPT,
     EDITORIAL_SCORING_VERSION,
+    EvidenceStateSummary,
+    allowed_editorial_risk_levels,
 )
 from packages.editorial.errors import EditorialRiskConflictError
+from packages.editorial.input_builder import EditorialScoringInputBuilder
 from packages.editorial.services import EditorialScoringService
 from packages.evidence.services import EventEvidenceService
 from tests.m4a_helpers import create_ai_stack, mock_factory
@@ -39,6 +46,101 @@ from tests.m4c_helpers import (
 )
 
 RAW_ONLY_SECRET = "secret-never-for-scoring"
+
+
+def _evidence_summary(**overrides: int) -> EvidenceStateSummary:
+    values = {
+        "claim_count": 0,
+        "confirmed_count": 0,
+        "investigating_count": 0,
+        "single_source_count": 0,
+        "disputed_count": 0,
+        "false_count": 0,
+        "open_unknown_count": 0,
+    }
+    values.update(overrides)
+    return EvidenceStateSummary(**values)
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        (_evidence_summary(), ["R1", "R2", "R3", "R4"]),
+        (_evidence_summary(claim_count=1, investigating_count=1), ["R1", "R2", "R3", "R4"]),
+        (
+            _evidence_summary(
+                claim_count=1, confirmed_count=1, open_unknown_count=1
+            ),
+            ["R1", "R2", "R3", "R4"],
+        ),
+        (_evidence_summary(claim_count=1, confirmed_count=1), ["R0", "R1", "R2", "R3", "R4"]),
+        (
+            _evidence_summary(
+                claim_count=2, single_source_count=1, disputed_count=1
+            ),
+            ["R1", "R2", "R3", "R4"],
+        ),
+    ],
+)
+def test_allowed_risk_levels_mirror_r0_evidence_requirements(
+    summary: EvidenceStateSummary, expected: list[str]
+) -> None:
+    assert [item.value for item in allowed_editorial_risk_levels(summary)] == expected
+
+
+def test_scoring_prompt_and_schema_require_input_allowed_risk_levels() -> None:
+    assert (
+        "risk_level MUST be selected from input.allowed_risk_levels"
+        in EDITORIAL_SCORING_SYSTEM_PROMPT
+    )
+    risk_description = EDITORIAL_SCORE_SCHEMA_V1["properties"]["risk_level"][
+        "description"
+    ]
+    assert "allowed_risk_levels" in risk_description
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_scoring_input_serializes_allowed_levels_and_hashes_evidence_state(
+    db_session,  # type: ignore[no-untyped-def]
+) -> None:
+    event, signals = await create_trend_context(
+        db_session,
+        specs=[TrendSignalSpec(text="confirmed but unresolved", published_at=BASE_TIME)],
+    )
+    trend = await create_trend_snapshot(event.id)
+    claim = await EventEvidenceService().create_human_claim(
+        event_id=event.id,
+        actor="reviewer",
+        claim_text="confirmed fact",
+        claim_type=EvidenceClaimType.FACT,
+        sources=[(signals[0].id, EvidenceSourceRole.SUPPORTING)],
+    )
+    await EventEvidenceService().verify_claim(
+        event_id=event.id,
+        claim_id=claim.id,
+        verification_state=EvidenceVerificationState.CONFIRMED,
+        reason="human verified",
+        actor="reviewer",
+    )
+    unknown = await EventEvidenceService().create_unknown(
+        event_id=event.id,
+        unknown_text="unresolved evidence question",
+        actor="reviewer",
+    )
+    builder = EditorialScoringInputBuilder()
+    blocked = await builder.build(event_id=event.id, trend_snapshot_id=trend.id)
+    assert blocked.payload["allowed_risk_levels"] == ["R1", "R2", "R3", "R4"]
+
+    await EventEvidenceService().update_unknown(
+        event_id=event.id,
+        unknown_id=unknown.id,
+        status=EventUnknownStatus.RESOLVED,
+        actor="reviewer",
+        resolution_note="human resolved",
+    )
+    eligible = await builder.build(event_id=event.id, trend_snapshot_id=trend.id)
+    assert eligible.payload["allowed_risk_levels"] == ["R0", "R1", "R2", "R3", "R4"]
+    assert eligible.input_hash != blocked.input_hash
 
 
 @pytest.mark.usefixtures("clean_database")
@@ -76,6 +178,7 @@ async def test_ai_apply_recomputes_total_uses_gateway_and_is_idempotent(db_sessi
     assert len(calls) == 1
     request_body = json.loads(calls[0].content.decode())
     assert request_body["model"] == "model-primary"
+    assert request_body["max_tokens"] == EDITORIAL_SCORING_MAX_OUTPUT_TOKENS
     user_message = request_body["messages"][1]["content"]
     assert "BEGIN UNTRUSTED EVENT DATA" in user_message
     assert '"interaction_velocity":null' in user_message

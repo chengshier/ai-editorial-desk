@@ -36,6 +36,40 @@ from packages.database.models import (
 from packages.database.session import dispose_database, get_async_sessionmaker
 
 _CONFIRMATION = "M2D_REAL_SMOKE"
+_SAFE_RUNTIME_STAGES = frozenset(
+    {
+        "bootstrap",
+        "cdp_connect",
+        "page_navigation",
+        "client_create",
+        "login_state",
+        "search",
+    }
+)
+
+
+def _failure_diagnostic_summary(metadata: object) -> dict[str, object] | None:
+    """Return the CLI-safe projection; never echo arbitrary run metadata."""
+    if not isinstance(metadata, dict):
+        return None
+    category = metadata.get("failure_category")
+    code = metadata.get("failure_code")
+    risk_stop_required = metadata.get("platform_risk_detected")
+    if not isinstance(category, str) or not isinstance(code, str):
+        return None
+    summary: dict[str, object] = {
+        "category": category,
+        "code": code,
+        "risk_stop_required": bool(risk_stop_required),
+    }
+    if category == "DEPENDENCY":
+        for key in ("dependency_module", "dependency_reason"):
+            if isinstance(metadata.get(key), str):
+                summary[key] = metadata[key]
+    runtime_stage = metadata.get("runtime_stage")
+    if isinstance(runtime_stage, str) and runtime_stage in _SAFE_RUNTIME_STAGES:
+        summary["runtime_stage"] = runtime_stage
+    return summary
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -195,16 +229,22 @@ async def _execute(args: argparse.Namespace) -> int:
             created_at=datetime.now(UTC),
         )
     )
-    _print(
-        {
-            "run_id": str(result.run_id),
-            "status": result.status.value,
-            "collected": result.collected_count,
-            "inserted": result.inserted_count,
-            "duplicates": result.duplicate_count,
-            "failed": result.failed_count,
-        }
-    )
+    async with session_factory() as session:
+        run = await session.get(ConnectorRun, result.run_id)
+        diagnostic = _failure_diagnostic_summary(
+            run.run_metadata.get("subprocess_diagnostic") if run is not None else None
+        )
+    payload: dict[str, object] = {
+        "run_id": str(result.run_id),
+        "status": result.status.value,
+        "collected": result.collected_count,
+        "inserted": result.inserted_count,
+        "duplicates": result.duplicate_count,
+        "failed": result.failed_count,
+    }
+    if diagnostic is not None:
+        payload["failure_diagnostic"] = diagnostic
+    _print(payload)
     return 0
 
 

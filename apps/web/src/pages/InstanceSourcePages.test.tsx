@@ -63,7 +63,7 @@ function apiWithCalls(calls: Array<{ path: string; init: RequestInit }>): AdminA
   return new AdminApi({ apiBaseUrl: 'http://api', adminToken: 'token', actorId: 'twelve' })
 }
 
-it('edits an instance and exposes both Test Run and Run Now through the runtime endpoint', async () => {
+it('edits an instance and exposes both localized test and real run actions through the runtime endpoint', async () => {
   const calls: Array<{ path: string; init: RequestInit }> = []
   render(<InstancesPage api={apiWithCalls(calls)} />)
 
@@ -73,8 +73,8 @@ it('edits an instance and exposes both Test Run and Run Now through the runtime 
   await userEvent.clear(name)
   await userEvent.type(name, 'RSS 实例新版')
   await userEvent.click(screen.getByRole('button', { name: '保存修改' }))
-  await userEvent.click(screen.getByRole('button', { name: 'Test Run' }))
-  await userEvent.click(screen.getByRole('button', { name: 'Run Now' }))
+  await userEvent.click(screen.getByRole('button', { name: '测试运行' }))
+  await userEvent.click(screen.getByRole('button', { name: '立即执行' }))
 
   expect(calls.some(({ path, init }) => path.endsWith('/connector-instances/i1') && init.method === 'PATCH')).toBe(true)
   const runBodies = calls
@@ -87,21 +87,43 @@ it('edits an instance and exposes both Test Run and Run Now through the runtime 
   expect(calls.filter(({ init }) => init.method && init.method !== 'GET').every(({ init }) => new Headers(init.headers).get('X-Actor-ID') === 'twelve')).toBe(true)
 })
 
-it('edits a Source and runs a dry Test Run without exposing secret fields', async () => {
+it('edits a source and runs a dry test without exposing secret fields', async () => {
   const calls: Array<{ path: string; init: RequestInit }> = []
   render(<SourcesPage api={apiWithCalls(calls)} />)
 
   await screen.findByText('RSS Source')
   expect(screen.queryByText(/credential_ref|browser_profile_ref|Authorization|Cookie|Token/i)).toBeNull()
   await userEvent.click(screen.getByRole('button', { name: '编辑' }))
-  const name = screen.getByLabelText('名称')
+  const name = screen.getByLabelText('信源名称')
   await userEvent.clear(name)
   await userEvent.type(name, 'RSS Source 新版')
   await userEvent.click(screen.getByRole('button', { name: '保存修改' }))
-  await userEvent.click(screen.getByRole('button', { name: 'Test Run' }))
+  await userEvent.click(screen.getByRole('button', { name: '测试运行' }))
 
   expect(calls.some(({ path, init }) => path.endsWith('/sources/src1') && init.method === 'PATCH')).toBe(true)
   const testRun = calls.find(({ path }) => path.endsWith('/connector-instances/i1/test-runs'))
   expect(testRun).toBeDefined()
   expect(JSON.parse(String(testRun?.init.body))).toMatchObject({ source_id: 'src1', requested_limit: 5, dry_run: true })
+})
+
+it('shows a run result and offers the next navigation step after an instance run', async () => {
+  const calls: Array<{ path: string; init: RequestInit }> = []
+  const onNavigate = vi.fn()
+  render(<InstancesPage api={apiWithCalls(calls)} onNavigate={onNavigate}/>)
+
+  await userEvent.click(await screen.findByRole('button', { name: '测试运行' }))
+  expect(await screen.findByText(/运行已创建：succeeded \/ run1/)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '查看运行记录' }))
+  expect(onNavigate).toHaveBeenCalledWith('runs')
+})
+
+it('shows a run result and offers the next navigation step after a source test', async () => {
+  const calls: Array<{ path: string; init: RequestInit }> = []
+  const onNavigate = vi.fn()
+  render(<SourcesPage api={apiWithCalls(calls)} onNavigate={onNavigate}/>)
+
+  await userEvent.click(await screen.findByRole('button', { name: '测试运行' }))
+  expect(await screen.findByText(/测试运行已创建：succeeded \/ run1/)).toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: '查看运行记录' }))
+  expect(onNavigate).toHaveBeenCalledWith('runs')
 })

@@ -33,6 +33,7 @@ async def create_ai_stack(
     route_retry_limit: int = 0,
     provider_retry_limit: int = 0,
     embedding_version: str | None = None,
+    structured_output_mode: str | None = None,
     dimensions: int | None = None,
     prices: bool = True,
 ) -> tuple[AIProviderRecord, AIModelRecord, AIModelRecord | None, AITaskRouteRecord]:
@@ -56,6 +57,8 @@ async def create_ai_stack(
     config: dict[str, Any] = {}
     if embedding_version is not None:
         config["embedding_version"] = embedding_version
+    if structured_output_mode is not None:
+        config["structured_output_mode"] = structured_output_mode
     primary = AIModelRecord(
         provider_id=provider.id,
         model_key="primary",

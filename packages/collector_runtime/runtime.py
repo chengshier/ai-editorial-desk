@@ -378,6 +378,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                             "actual_comments": 0,
                             "completed": True,
                         },
+                        **self.failure_diagnostic_metadata(exc),
                     },
                 )
             await self.settle(
@@ -451,6 +452,7 @@ class CollectorRuntime(CollectorRuntimeSupport):
                                 "actual_comments": actual_comments,
                                 "completed": True,
                             },
+                            **self.failure_diagnostic_metadata(exc),
                         },
                     )
                 await self.settle(

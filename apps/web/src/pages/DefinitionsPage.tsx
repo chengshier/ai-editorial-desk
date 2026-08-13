@@ -22,14 +22,15 @@ export function DefinitionsPage({ api }: { api: AdminApi }) {
     void load()
   }, [load])
 
-  return <Panel title="Connector Definitions" actions={<button onClick={load}>刷新</button>}>
+  return <Panel title="连接器定义" actions={<button onClick={load}>刷新</button>}>
+    <div className="page-intro"><p>查看系统已注册的数据源连接器及其能力支持情况。</p><span className="readonly-note">只读配置</span></div>
     <ErrorBanner error={error} />
-    {!items.length ? <Empty /> : <div className="split"><div className="table-wrap"><table><thead><tr><th>名称</th><th>类型 / 平台</th><th>状态</th><th>版本</th></tr></thead><tbody>
+    {!items.length ? <Empty text="暂无已注册的连接器定义" /> : <div className="split"><div className="table-wrap"><table><thead><tr><th>名称</th><th>平台 / 实现方式</th><th>支持状态</th><th>版本</th></tr></thead><tbody>
       {items.map((item) => <tr key={item.id} onClick={() => setSelected(item)}>
         <td>{item.display_name}</td><td>{item.connector_type} / {item.platform}</td>
         <td className="badges"><StateBadge ok={item.registered} label="注册"/><StateBadge ok={item.implemented} label="实现"/><StateBadge ok={item.enabled} label="启用"/><StateBadge ok={item.validated} label="验真"/></td>
         <td>{item.implementation_version}</td>
       </tr>)}
-    </tbody></table></div>{selected && <aside><h3>{selected.display_name}</h3><p>Capabilities</p><JsonView value={selected.capabilities}/><p>Config Schema</p><JsonView value={selected.config_schema}/></aside>}</div>}
+    </tbody></table></div>{selected && <aside><h3>{selected.display_name}</h3><p>能力支持（技术详情）</p><JsonView value={selected.capabilities}/><p>配置结构（技术详情）</p><JsonView value={selected.config_schema}/></aside>}</div>}
   </Panel>
 }

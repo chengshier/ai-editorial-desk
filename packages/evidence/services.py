@@ -41,6 +41,7 @@ from packages.evidence.domain import (
     DEFAULT_MAX_CHARS_PER_SIGNAL,
     DEFAULT_MAX_SIGNALS,
     DEFAULT_MAX_TOTAL_CHARS,
+    EVIDENCE_EXTRACTION_MAX_OUTPUT_TOKENS,
     EVIDENCE_EXTRACTION_VERSION,
     EVIDENCE_PROMPT_VERSION,
     EVIDENCE_SCHEMA_NAME,
@@ -582,7 +583,7 @@ class EvidenceExtractionService:
                 messages=snapshot.messages(),
                 schema=EVIDENCE_SCHEMA_V1,
                 schema_name=EVIDENCE_SCHEMA_NAME,
-                max_output_tokens=2048,
+                max_output_tokens=EVIDENCE_EXTRACTION_MAX_OUTPUT_TOKENS,
                 temperature=0.0,
                 context=InvocationContext(
                     prompt_version=EVIDENCE_PROMPT_VERSION,

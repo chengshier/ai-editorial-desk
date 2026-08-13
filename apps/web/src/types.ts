@@ -166,4 +166,6 @@ export type RiskEvent = {
   action_taken?: string | null
   manual_review_required: boolean
   created_at: string
+  resolved_at?: string | null
+  resolution_note?: string | null
 }

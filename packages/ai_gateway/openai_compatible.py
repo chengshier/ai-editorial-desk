@@ -4,6 +4,7 @@ import asyncio
 import ipaddress
 import json
 import math
+import re
 import socket
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -24,6 +25,7 @@ from packages.ai_gateway.domain import (
 )
 from packages.ai_gateway.errors import AIErrorCode, AIGatewayError, AIProviderError
 from packages.ai_gateway.providers import AIProviderAdapter
+from packages.ai_gateway.structured_output import structured_output_mode
 
 HostValidator = Callable[[str, bool], Awaitable[None]]
 
@@ -130,6 +132,73 @@ def _retry_after(response: httpx.Response) -> float | None:
     return seconds if math.isfinite(seconds) and seconds >= 0 else None
 
 
+_MAX_PROVIDER_ERROR_FIELD_LENGTH = 120
+_MAX_PROVIDER_ERROR_MESSAGE_LENGTH = 500
+_PROVIDER_ERROR_BODY_MARKER = re.compile(
+    r"(?i)(authorization|credential_ref|request\s+body|messages\s*[:=]|response_format\s*[:=])"
+)
+_BEARER_VALUE = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
+_NAMED_SECRET_VALUE = re.compile(
+    r"(?i)\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|token|secret|password|"
+    r"authorization|credential)"
+    r"\s*(?:[:=]|is\s+)\s*[^\s,;]+"
+)
+_KEY_LIKE_VALUE = re.compile(r"\b(?:sk|pk|rk|ds|api)-[a-zA-Z0-9_-]{8,}\b")
+
+
+def _sanitize_provider_error_value(value: object, *, limit: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or len(normalized) > limit or _PROVIDER_ERROR_BODY_MARKER.search(normalized):
+        return None
+    normalized = _BEARER_VALUE.sub("Bearer [REDACTED]", normalized)
+    normalized = _NAMED_SECRET_VALUE.sub(r"\1=[REDACTED]", normalized)
+    normalized = _KEY_LIKE_VALUE.sub("[REDACTED]", normalized)
+    return normalized
+
+
+def _provider_error_detail(response: httpx.Response) -> dict[str, str] | None:
+    """Extract a small diagnostic from standard OpenAI-style error JSON only."""
+
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict):
+        return None
+    detail: dict[str, str] = {}
+    for source, destination, limit in (
+        ("type", "provider_error_type", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("code", "provider_error_code", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("param", "provider_error_param", _MAX_PROVIDER_ERROR_FIELD_LENGTH),
+        ("message", "provider_error_message", _MAX_PROVIDER_ERROR_MESSAGE_LENGTH),
+    ):
+        sanitized = _sanitize_provider_error_value(error.get(source), limit=limit)
+        if sanitized is not None:
+            detail[destination] = sanitized
+    return detail or None
+
+
+def _invalid_request_error(response: httpx.Response) -> AIProviderError:
+    detail = _provider_error_detail(response)
+    text = json.dumps(detail, ensure_ascii=True).casefold() if detail is not None else ""
+    if "context" in text and ("length" in text or "token" in text):
+        return AIProviderError(
+            AIErrorCode.CONTEXT_LENGTH_EXCEEDED,
+            "Provider 上下文长度超限",
+            provider_error_detail=detail,
+        )
+    return AIProviderError(
+        AIErrorCode.INVALID_REQUEST,
+        "Provider 拒绝了请求",
+        provider_error_detail=detail,
+    )
+
+
 def _http_error(response: httpx.Response) -> AIProviderError:
     status = response.status_code
     if status in {401, 403}:
@@ -152,18 +221,8 @@ def _http_error(response: httpx.Response) -> AIProviderError:
             AIErrorCode.MODEL_NOT_FOUND,
             "Provider 模型或端点不存在",
         )
-    if status == 400:
-        try:
-            body = response.json()
-        except ValueError:
-            body = None
-        text = json.dumps(body, ensure_ascii=True).casefold() if body is not None else ""
-        if "context" in text and ("length" in text or "token" in text):
-            return AIProviderError(
-                AIErrorCode.CONTEXT_LENGTH_EXCEEDED,
-                "Provider 上下文长度超限",
-            )
-        return AIProviderError(AIErrorCode.INVALID_REQUEST, "Provider 拒绝了请求")
+    if status in {400, 422}:
+        return _invalid_request_error(response)
     if 500 <= status < 600:
         return AIProviderError(
             AIErrorCode.PROVIDER_UNAVAILABLE,
@@ -334,20 +393,49 @@ class OpenAICompatibleProvider(AIProviderAdapter):
         request: StructuredProviderRequest,
         timeout_seconds: float,
     ) -> StructuredProviderResponse:
-        body: dict[str, Any] = {
-            "model": target.model_name,
-            "messages": [
-                {"role": message.role, "content": message.content}
-                for message in request.messages
-            ],
-            "response_format": {
+        try:
+            mode = structured_output_mode(target.model_config)
+        except ValueError as exc:
+            raise AIProviderError(
+                AIErrorCode.INVALID_REQUEST,
+                "AI Model structured_output_mode 配置无效",
+            ) from exc
+        messages = [
+            {"role": message.role, "content": message.content}
+            for message in request.messages
+        ]
+        response_format: dict[str, Any]
+        if mode == "json_schema":
+            response_format = {
                 "type": "json_schema",
                 "json_schema": {
                     "name": request.schema_name,
                     "strict": True,
                     "schema": request.schema,
                 },
-            },
+            }
+        else:
+            response_format = {"type": "json_object"}
+            messages.insert(
+                0,
+                {
+                    "role": "system",
+                    "content": (
+                        "Return only a JSON object. Do not include Markdown or code fences. "
+                        "The JSON object must conform to this JSON Schema: "
+                        + json.dumps(
+                            request.schema,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        )
+                    ),
+                },
+            )
+        body: dict[str, Any] = {
+            "model": target.model_name,
+            "messages": messages,
+            "response_format": response_format,
         }
         if request.max_output_tokens is not None:
             body["max_tokens"] = request.max_output_tokens
@@ -367,6 +455,13 @@ class OpenAICompatibleProvider(AIProviderAdapter):
                 AIErrorCode.STRUCTURED_OUTPUT_INVALID,
                 "Provider structured output 不是合法 JSON",
                 retryable=True,
+                provider_response_detail=self._structured_response_detail(
+                    payload=payload,
+                    provider_request_id=request_id,
+                    content=content,
+                ),
+                provider_usage=_usage(payload.get("usage")),
+                provider_request_id=request_id,
             ) from exc
         if not isinstance(structured, dict):
             raise AIProviderError(
@@ -379,6 +474,39 @@ class OpenAICompatibleProvider(AIProviderAdapter):
             usage=_usage(payload.get("usage")),
             provider_request_id=request_id,
         )
+
+    @staticmethod
+    def _structured_response_detail(
+        *,
+        payload: dict[str, Any],
+        provider_request_id: str | None,
+        content: str,
+    ) -> dict[str, object]:
+        detail: dict[str, object] = {
+            "content_empty": not content,
+            "content_length": len(content),
+        }
+        if provider_request_id is not None:
+            detail["provider_request_id"] = provider_request_id
+        choices = payload.get("choices")
+        choice = choices[0] if isinstance(choices, list) and choices else None
+        if isinstance(choice, dict) and isinstance(choice.get("finish_reason"), str):
+            detail["finish_reason"] = choice["finish_reason"][:120]
+        message = choice.get("message") if isinstance(choice, dict) else None
+        reasoning_content = (
+            message.get("reasoning_content") if isinstance(message, dict) else None
+        )
+        detail["reasoning_content_present"] = isinstance(reasoning_content, str)
+        if isinstance(reasoning_content, str):
+            detail["reasoning_content_length"] = len(reasoning_content)
+        usage = _usage(payload.get("usage"))
+        if usage.input_tokens is not None:
+            detail["input_tokens"] = usage.input_tokens
+        if usage.output_tokens is not None:
+            detail["output_tokens"] = usage.output_tokens
+        if usage.total_tokens is not None:
+            detail["total_tokens"] = usage.total_tokens
+        return detail
 
     @staticmethod
     def _message_content(payload: dict[str, Any]) -> str:

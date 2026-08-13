@@ -38,7 +38,12 @@ from packages.ai_gateway.domain import (
     TextProviderRequest,
     TextProviderResponse,
 )
-from packages.ai_gateway.errors import AIErrorCode, AIGatewayError, AIProviderError
+from packages.ai_gateway.errors import (
+    AIErrorCode,
+    AIGatewayError,
+    AIProviderError,
+    provider_error_metadata,
+)
 from packages.ai_gateway.invocations import AIInvocationStore
 from packages.ai_gateway.openai_compatible import DefaultProviderAdapterFactory
 from packages.ai_gateway.providers import AIProviderAdapter, ProviderAdapterFactory
@@ -406,13 +411,30 @@ class AIGateway:
                     return target, response, cost, inv_id
                 except AIGatewayError as exc:
                     last_error = exc
+                    failure_usage = exc.provider_usage
+                    cost = (
+                        estimate_cost(
+                            target=target,
+                            capability=capability,
+                            usage=failure_usage,
+                        )
+                        if failure_usage is not None
+                        else None
+                    )
                     if reservation is not None:
-                        possibly_billed = exc.code in _POSSIBLY_BILLED_ERRORS
+                        possibly_billed = (
+                            exc.code in _POSSIBLY_BILLED_ERRORS
+                            or failure_usage is not None
+                        )
                         await self.budgets.settle(
                             reservation,
                             completed=possibly_billed,
-                            actual_cost=None,
-                            actual_tokens=None,
+                            actual_cost=cost,
+                            actual_tokens=(
+                                _actual_tokens(failure_usage)
+                                if failure_usage is not None
+                                else None
+                            ),
                         )
                     latency_ms = max(0, round((perf_counter() - attempt_started) * 1000))
                     await self.invocations.add_attempt(
@@ -425,13 +447,14 @@ class AIGateway:
                         status="blocked" if exc.code is AIErrorCode.BUDGET_EXCEEDED else "failed",
                         started_at=started_at,
                         finished_at=datetime.now(UTC),
-                        usage=None,
-                        estimated_cost=None,
+                        usage=failure_usage,
+                        estimated_cost=cost,
                         pricing_snapshot=pricing_snapshot(target),
                         latency_ms=latency_ms,
-                        provider_request_id=None,
+                        provider_request_id=exc.provider_request_id,
                         error_code=exc.code.value,
                         error_message=exc.message,
+                        metadata=provider_error_metadata(exc),
                     )
                     can_retry = exc.retryable and retry_index < max_retries
                     if can_retry:
@@ -459,6 +482,18 @@ class AIGateway:
             latency_ms=total_latency,
             retry_count=retry_total,
             fallback_index=last_fallback_index,
+            usage=error.provider_usage,
+            estimated_cost=(
+                estimate_cost(
+                    target=last_target,
+                    capability=capability,
+                    usage=error.provider_usage,
+                )
+                if last_target is not None and error.provider_usage is not None
+                else None
+            ),
+            pricing_snapshot=pricing_snapshot(last_target) if last_target is not None else None,
+            provider_request_id=error.provider_request_id,
         )
         if last_target is not None:
             self._log_final(

@@ -124,3 +124,35 @@ async def test_connection_test_without_credential_is_explicit_not_tested() -> No
     assert tested.json()["status"] == "failed"
     assert tested.json()["error_code"] == "CREDENTIAL_NOT_CONFIGURED"
     assert fetched.json()["validation_status"] == "NOT_TESTED"
+
+
+@pytest.mark.usefixtures("clean_database")
+async def test_model_api_rejects_unknown_structured_output_mode() -> None:
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        provider = await client.post(
+            "/api/v1/admin/ai/providers",
+            headers=ADMIN_HEADERS,
+            json={
+                "provider_key": "mode-provider",
+                "display_name": "Mode Provider",
+                "provider_type": "openai_compatible",
+                "base_url": "https://provider.example/v1",
+                "enabled": False,
+                "config": {},
+            },
+        )
+        assert provider.status_code == 201, provider.text
+        response = await client.post(
+            "/api/v1/admin/ai/models",
+            headers=ADMIN_HEADERS,
+            json={
+                "provider_id": provider.json()["id"],
+                "model_key": "mode-model",
+                "model_name": "mode-model",
+                "capabilities": ["structured_output"],
+                "config": {"structured_output_mode": "vendor_default"},
+            },
+        )
+    assert response.status_code == 400
+    assert "vendor_default" not in response.text
