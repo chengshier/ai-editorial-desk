@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from apps.api.routers.admin.ai_gateway import router as ai_gateway_router
+from apps.api.routers.admin.browser_runtime import router as browser_runtime_router
 from apps.api.routers.admin.checkpoints import router as checkpoints_router
 from apps.api.routers.admin.clustering import router as clustering_router
 from apps.api.routers.admin.collection_budgets import router as budgets_router
@@ -28,6 +29,7 @@ router = APIRouter(prefix="/api/v1/admin")
 router.include_router(definitions_router)
 router.include_router(instances_router)
 router.include_router(accounts_router)
+router.include_router(browser_runtime_router)
 router.include_router(sources_router)
 router.include_router(raw_signals_router)
 router.include_router(events_router)
