@@ -26,17 +26,19 @@ def test_provider_credentials_load_project_dotenv_without_overriding_process_env
     monkeypatch.setenv(process_key, "from-process")
     load_provider_environment.cache_clear()
 
-    try:
-        resolver = EnvironmentCredentialResolver()
+    resolver = EnvironmentCredentialResolver()
 
-        assert resolver.configured(f"env://{provider_key}") is True
-        assert resolver.resolve(f"env://{provider_key}").get_secret_value() == "from-dotenv"
-        assert resolver.resolve(f"env://{process_key}").get_secret_value() == "from-process"
-        assert os.getenv(process_key) == "from-process"
-        assert load_provider_environment() == env_file
-    finally:
-        os.environ.pop(provider_key, None)
-        load_provider_environment.cache_clear()
+    assert resolver.configured(f"env://{provider_key}") is True
+    assert resolver.resolve(f"env://{provider_key}").get_secret_value() == "from-dotenv"
+    assert resolver.resolve(f"env://{process_key}").get_secret_value() == "from-process"
+    assert os.getenv(process_key) == "from-process"
+    assert os.getenv(provider_key) is None
+    loaded_path, loaded_values = load_provider_environment()
+    assert loaded_path == env_file
+    assert loaded_values[provider_key] == "from-dotenv"
+    assert loaded_values[process_key] == "from-dotenv"
+
+    load_provider_environment.cache_clear()
 
 
 def test_provider_credentials_support_explicit_env_file(
@@ -51,12 +53,13 @@ def test_provider_credentials_support_explicit_env_file(
     monkeypatch.delenv(provider_key, raising=False)
     load_provider_environment.cache_clear()
 
-    try:
-        resolver = EnvironmentCredentialResolver()
+    resolver = EnvironmentCredentialResolver()
 
-        assert resolver.configured(f"env://{provider_key}") is True
-        assert resolver.resolve(f"env://{provider_key}").get_secret_value() == "explicit-secret"
-        assert load_provider_environment() == env_file
-    finally:
-        os.environ.pop(provider_key, None)
-        load_provider_environment.cache_clear()
+    assert resolver.configured(f"env://{provider_key}") is True
+    assert resolver.resolve(f"env://{provider_key}").get_secret_value() == "explicit-secret"
+    assert os.getenv(provider_key) is None
+    loaded_path, loaded_values = load_provider_environment()
+    assert loaded_path == env_file
+    assert loaded_values == {provider_key: "explicit-secret"}
+
+    load_provider_environment.cache_clear()
