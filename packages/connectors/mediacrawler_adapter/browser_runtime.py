@@ -11,6 +11,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 from uuid import UUID
 
 from packages.common.config import Settings, get_settings
@@ -81,22 +82,27 @@ class LocalBrowserRuntimeSnapshot:
 class LocalBrowserRuntimeManager:
     """Manage one local dedicated Chrome/Edge CDP process for human-operated login.
 
-    This manager never accepts executable paths, shell commands, ports, URLs, or profile
-    paths from Web requests. The executable is auto-detected or deployment-configured;
-    the CDP host is loopback-only; profile paths are opaque refs below the controlled
-    MediaCrawler profile root; login URLs are selected from a server-side allow-list.
+    Web requests never provide executable paths, shell commands, ports, URLs, or
+    profile paths. The executable is auto-detected or deployment-configured; CDP is
+    loopback-only; profiles are opaque refs under the controlled runtime root; and
+    login URLs come from a server-side allow-list.
     """
 
-    _process: asyncio.subprocess.Process | None = None
-    _account_id: UUID | None = None
-    _browser_name: str | None = None
-    _profile_ref: str | None = None
-    _lock = asyncio.Lock()
+    _process: ClassVar[asyncio.subprocess.Process | None] = None
+    _account_id: ClassVar[UUID | None] = None
+    _browser_name: ClassVar[str | None] = None
+    _profile_ref: ClassVar[str | None] = None
+    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
 
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
 
-    def status(self, *, account_id: UUID, profile_ref: str | None) -> LocalBrowserRuntimeSnapshot:
+    def status(
+        self,
+        *,
+        account_id: UUID,
+        profile_ref: str | None,
+    ) -> LocalBrowserRuntimeSnapshot:
         enabled = self._enabled()
         executable = self._discover_browser()
         browser_name = self._browser_label(executable) if executable is not None else None
@@ -123,7 +129,10 @@ class LocalBrowserRuntimeManager:
             )
             status = "UNAVAILABLE"
         elif executable is None:
-            message = "未检测到可用的 Chrome / Edge。可安装浏览器或通过部署配置指定白名单浏览器路径。"
+            message = (
+                "未检测到可用的 Chrome / Edge。可安装浏览器，或通过部署配置指定"
+                "白名单浏览器路径。"
+            )
             status = "BROWSER_NOT_FOUND"
         elif managed_other:
             message = "本地专用浏览器正在服务另一个平台账号。请先结束当前会话后再切换账号。"
@@ -141,7 +150,10 @@ class LocalBrowserRuntimeManager:
             message = "平台账号尚未配置专用 Browser Profile 引用。请先编辑账号配置。"
             status = "PROFILE_REQUIRED"
         else:
-            message = "专用浏览器尚未启动。点击“启动专用浏览器”即可自动准备 Profile 与本地调试环境。"
+            message = (
+                "专用浏览器尚未启动。点击“启动专用浏览器”即可自动准备 Profile "
+                "与本地调试环境。"
+            )
             status = "STOPPED"
 
         return LocalBrowserRuntimeSnapshot(
@@ -160,7 +172,12 @@ class LocalBrowserRuntimeManager:
             message=message,
         )
 
-    async def start(self, *, account_id: UUID, profile_ref: str | None) -> LocalBrowserRuntimeSnapshot:
+    async def start(
+        self,
+        *,
+        account_id: UUID,
+        profile_ref: str | None,
+    ) -> LocalBrowserRuntimeSnapshot:
         async with self.__class__._lock:
             current = self.status(account_id=account_id, profile_ref=profile_ref)
             if current.status == "RUNNING":
@@ -190,7 +207,9 @@ class LocalBrowserRuntimeManager:
                     env=self._safe_browser_environment(),
                 )
             except OSError as exc:
-                raise LocalBrowserRuntimeError("专用浏览器启动失败，请检查浏览器安装与运行权限。") from exc
+                raise LocalBrowserRuntimeError(
+                    "专用浏览器启动失败，请检查浏览器安装与运行权限。"
+                ) from exc
 
             self.__class__._process = process
             self.__class__._account_id = account_id
@@ -200,7 +219,9 @@ class LocalBrowserRuntimeManager:
             for _ in range(40):
                 if process.returncode is not None:
                     self._clear_managed_state()
-                    raise LocalBrowserRuntimeError("浏览器进程已退出，未能建立本地调试连接。")
+                    raise LocalBrowserRuntimeError(
+                        "浏览器进程已退出，未能建立本地调试连接。"
+                    )
                 if self._cdp_reachable():
                     return self.status(account_id=account_id, profile_ref=profile_ref)
                 await asyncio.sleep(0.2)
@@ -208,9 +229,16 @@ class LocalBrowserRuntimeManager:
             process.terminate()
             await self._wait_for_exit(process)
             self._clear_managed_state()
-            raise LocalBrowserRuntimeError("浏览器已启动，但本地调试环境在等待时间内没有就绪。")
+            raise LocalBrowserRuntimeError(
+                "浏览器已启动，但本地调试环境在等待时间内没有就绪。"
+            )
 
-    async def stop(self, *, account_id: UUID, profile_ref: str | None) -> LocalBrowserRuntimeSnapshot:
+    async def stop(
+        self,
+        *,
+        account_id: UUID,
+        profile_ref: str | None,
+    ) -> LocalBrowserRuntimeSnapshot:
         async with self.__class__._lock:
             process = self.__class__._process
             if (
@@ -221,7 +249,8 @@ class LocalBrowserRuntimeManager:
                 snapshot = self.status(account_id=account_id, profile_ref=profile_ref)
                 if snapshot.cdp_ready:
                     raise LocalBrowserRuntimeError(
-                        "当前浏览器不是由本后端进程启动，出于安全原因不会强制结束；请在浏览器窗口中人工关闭。"
+                        "当前浏览器不是由本后端进程启动，出于安全原因不会强制结束；"
+                        "请在浏览器窗口中人工关闭。"
                     )
                 self._clear_managed_state()
                 return snapshot
@@ -250,7 +279,9 @@ class LocalBrowserRuntimeManager:
         try:
             await asyncio.to_thread(self._open_cdp_tab, login_url)
         except (OSError, TimeoutError, ValueError) as exc:
-            raise LocalBrowserRuntimeError("无法在专用浏览器中打开平台登录页，请刷新运行状态后重试。") from exc
+            raise LocalBrowserRuntimeError(
+                "无法在专用浏览器中打开平台登录页，请刷新运行状态后重试。"
+            ) from exc
         return self.status(account_id=account_id, profile_ref=profile_ref)
 
     def _enabled(self) -> bool:
@@ -261,7 +292,8 @@ class LocalBrowserRuntimeManager:
             return True
         return (
             env not in {"prod", "production"}
-            and self.settings.app_host.strip().casefold() in {_CDP_HOST, "localhost", "::1"}
+            and self.settings.app_host.strip().casefold()
+            in {_CDP_HOST, "localhost", "::1"}
         )
 
     def _discover_browser(self) -> Path | None:
@@ -377,7 +409,7 @@ class LocalBrowserRuntimeManager:
             f"http://{_CDP_HOST}:{_CDP_PORT}/json/new?{encoded}",
             method="PUT",
         )
-        with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310 - fixed loopback URL
+        with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310
             if response.status >= 400:
                 raise OSError("CDP refused to open a new tab")
 
