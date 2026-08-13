@@ -2,6 +2,7 @@ from packages.connector_management.services.accounts import PlatformAccountServi
 from packages.connector_management.services.checkpoints import ConnectorCheckpointService
 from packages.connector_management.services.definitions import (
     ConnectorDefinitionQueryService,
+    ConnectorDefinitionStateService,
     ConnectorDefinitionSyncService,
     DefinitionSyncResult,
 )
@@ -12,6 +13,7 @@ from packages.connector_management.services.runs import ConnectorRunService
 __all__ = [
     "ConnectorCheckpointService",
     "ConnectorDefinitionQueryService",
+    "ConnectorDefinitionStateService",
     "ConnectorDefinitionSyncService",
     "ConnectorInstanceService",
     "ConnectorRunService",
