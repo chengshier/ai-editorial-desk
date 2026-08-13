@@ -1,0 +1,216 @@
+/* Final workbench polish: balance two-column editorial tools and add breathing room to dense forms. */
+
+/* Sources / timeline and trend / score tabs share a balanced working grid. */
+.workbench-tabs + .wb-two-col:not(.artifact-workspace) {
+  grid-template-columns: minmax(0, 1.04fr) minmax(420px, .96fr) !important;
+  gap: 26px !important;
+  align-items: start;
+}
+.workbench-tabs + .wb-two-col:not(.artifact-workspace) > .panel {
+  min-width: 0;
+  padding: 26px 28px !important;
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  background: #fff;
+}
+.workbench-tabs + .wb-two-col:not(.artifact-workspace) > .panel > .panel-head {
+  margin-bottom: 20px;
+}
+
+/* Source list and deterministic timeline. */
+.source-list { display: grid; gap: 10px; }
+.timeline-source {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 12px !important;
+  margin: 0 !important;
+  padding: 15px 16px !important;
+  border: 1px solid var(--border-soft) !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+}
+.timeline-source:hover { border-color: #d7deeb !important; background: #fcfdff !important; }
+.timeline-source .signal-select { align-self: start; padding-top: 2px; }
+.timeline-source .badges { margin-bottom: 7px; }
+.timeline-source a { display: inline-block; margin: 2px 0 5px; line-height: 1.6; }
+.timeline-source small { display: block; line-height: 1.6; }
+.split-box {
+  margin-top: 22px !important;
+  padding: 20px !important;
+  border: 1px solid var(--border-soft) !important;
+  border-radius: 13px;
+  background: #fbfcfe;
+}
+.split-box h3 { margin: 0 0 6px !important; }
+.split-box > p { margin: 0 0 16px; line-height: 1.65; }
+.split-box label { margin-top: 12px; gap: 7px; }
+.split-box > button { margin-top: 14px; }
+.timeline-note {
+  margin-bottom: 18px;
+  padding: 11px 13px;
+  border-radius: 10px;
+  color: #52627a;
+  background: #f6f8fc;
+  font-size: 12px;
+  line-height: 1.6;
+}
+ol.timeline {
+  gap: 0 !important;
+  margin: 0;
+  padding-left: 20px !important;
+}
+ol.timeline li {
+  position: relative;
+  min-height: 68px;
+  padding: 5px 0 19px 17px !important;
+  border-left: 1px solid #dfe5ef;
+}
+ol.timeline li:last-child { padding-bottom: 4px !important; }
+ol.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px #eef3ff;
+}
+ol.timeline time { display: block; margin-bottom: 5px; color: var(--text-tertiary); font-size: 11px; }
+ol.timeline li > div { line-height: 1.65; }
+
+/* Trend and score: cards, actions and manual inputs need separation. */
+.trend-grid {
+  grid-template-columns: repeat(3, minmax(120px, 1fr)) !important;
+  gap: 10px !important;
+}
+.trend-value {
+  min-height: 82px;
+  padding: 14px 15px !important;
+  border: 1px solid var(--border-soft);
+  border-radius: 11px !important;
+  background: #fbfcfe !important;
+  align-content: center;
+}
+.trend-value small { margin-bottom: 3px; }
+.trend-value strong { font-size: 15px; line-height: 1.45; }
+.action-box {
+  margin-top: 24px !important;
+  padding: 20px !important;
+  border: 1px solid var(--border-soft) !important;
+  border-radius: 13px;
+  background: #fbfcfe;
+}
+.action-box h3 { margin: 0 0 7px !important; }
+.action-box > p { margin: 0 0 16px; line-height: 1.65; }
+.action-box > label { display: grid; gap: 7px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+.action-box .inline-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+  gap: 14px;
+  align-items: end;
+}
+.action-box .inline-form label { gap: 7px; }
+.action-box .inline-form > button { white-space: nowrap; }
+.dimension-inputs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.dimension-inputs label { display: grid; gap: 7px; font-size: 12px; font-weight: 600; }
+.score-comparison { gap: 14px !important; }
+.score-block {
+  padding: 18px !important;
+  border-radius: 13px !important;
+}
+.score-block h4 { margin: 0 0 13px; }
+.score-block .badges { margin-bottom: 13px; }
+.score-block p { line-height: 1.7; }
+.score-dims {
+  grid-template-columns: repeat(4, minmax(90px, 1fr)) !important;
+  gap: 8px !important;
+}
+.score-dims span { min-height: 62px; padding: 10px !important; align-content: center; }
+.preview-box { margin-top: 16px; padding: 17px; border: 1px solid #dfe6f4; border-radius: 12px; background: #fff; }
+.override-history { margin-top: 16px; padding: 16px; border: 1px solid var(--border-soft); border-radius: 12px; background: #fbfcfe; }
+.override-history h4 { margin: 0 0 10px; }
+
+/* Draft tab: separate context, generation, version reading and manual editing. */
+.workbench-tabs + .panel .draft-context {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(160px, .8fr) auto auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 22px;
+  padding: 18px 20px;
+  border: 1px solid var(--border-soft);
+  border-radius: 13px;
+  background: #fbfcfe;
+}
+.draft-context label { gap: 7px; }
+.draft-context > strong { align-self: center; padding-bottom: 8px; white-space: nowrap; }
+.draft-context > .badge { align-self: center; margin-bottom: 8px; }
+.workbench-tabs + .panel .wb-two-col {
+  grid-template-columns: minmax(300px, .78fr) minmax(0, 1.22fr);
+  gap: 22px;
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: #fbfcfe;
+}
+.workbench-tabs + .panel .wb-two-col h3 { margin: 0 0 14px; }
+.draft-chain { gap: 8px !important; }
+.draft-version {
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 9px;
+}
+.draft-reader {
+  padding: 20px !important;
+  border-radius: 13px !important;
+  background: #fff;
+}
+.draft-reader h2 { margin: 15px 0 10px; line-height: 1.5; }
+.draft-reader blockquote { margin: 14px 0; padding: 12px 15px; border-left: 3px solid #b8c7ff; background: #f7f9ff; }
+.draft-reader pre { margin: 16px 0; line-height: 1.8 !important; }
+.markdown-view { margin-top: 16px; padding: 18px !important; border-radius: 12px; line-height: 1.75 !important; }
+
+/* Generic workbench form controls should never glue together. */
+.workbench-tabs ~ .panel .inline-form,
+.workbench-tabs ~ .wb-two-col .inline-form { column-gap: 14px; row-gap: 14px; }
+.workbench-tabs ~ .panel input,
+.workbench-tabs ~ .panel select,
+.workbench-tabs ~ .panel textarea,
+.workbench-tabs ~ .wb-two-col input,
+.workbench-tabs ~ .wb-two-col select,
+.workbench-tabs ~ .wb-two-col textarea { line-height: 1.45; }
+.workbench-tabs ~ .panel textarea,
+.workbench-tabs ~ .wb-two-col textarea { padding: 12px 13px; }
+
+@media (max-width: 1400px) {
+  .workbench-tabs + .wb-two-col:not(.artifact-workspace) { grid-template-columns: 1fr 1fr !important; gap: 20px !important; }
+  .trend-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)) !important; }
+  .dimension-inputs { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+  .action-box .inline-form { grid-template-columns: repeat(2, minmax(160px, 1fr)); }
+  .workbench-tabs + .panel .draft-context { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
+}
+
+@media (max-width: 1100px) {
+  .workbench-tabs + .wb-two-col:not(.artifact-workspace) { grid-template-columns: 1fr !important; }
+  .workbench-tabs + .panel .wb-two-col { grid-template-columns: 1fr; }
+  .source-columns { grid-template-columns: 1fr !important; }
+}
+
+@media (max-width: 760px) {
+  .workbench-tabs + .wb-two-col:not(.artifact-workspace) > .panel { padding: 20px !important; }
+  .trend-grid,
+  .dimension-inputs,
+  .score-dims,
+  .workbench-tabs + .panel .draft-context,
+  .action-box .inline-form { grid-template-columns: 1fr !important; }
+  .workbench-tabs + .panel .wb-two-col { padding: 14px; }
+}
