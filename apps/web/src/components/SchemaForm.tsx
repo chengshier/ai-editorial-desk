@@ -64,6 +64,7 @@ export function validateSchemaValue(
 ): Record<string, string> {
   const errors: Record<string, string> = {}
   for (const required of schema.required || []) {
+    if (uiSchema[required]?.widget === 'hidden') continue
     if (!isVisible(uiSchema[required]?.visible_when, value)) continue
     const current = value[required]
     if (current === undefined || current === null || current === '' || (Array.isArray(current) && current.length === 0)) {
@@ -71,6 +72,7 @@ export function validateSchemaValue(
     }
   }
   for (const [key, field] of Object.entries(schema.properties || {})) {
+    if (uiSchema[key]?.widget === 'hidden') continue
     if (!isVisible(uiSchema[key]?.visible_when, value) || errors[key]) continue
     const current = value[key]
     if (typeof current === 'number') {
@@ -99,7 +101,7 @@ export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
     return (uiSchema[a]?.order ?? 999) - (uiSchema[b]?.order ?? 999)
   }), [schema.properties, uiSchema, isCollectorConfig])
   const errors = validateSchemaValue(schema, value, uiSchema)
-  const visibleProperties = properties.filter(([key]) => isVisible(uiSchema[key]?.visible_when, value))
+  const visibleProperties = properties.filter(([key]) => uiSchema[key]?.widget !== 'hidden' && isVisible(uiSchema[key]?.visible_when, value))
 
   const set = (key: string, next: unknown) => onChange({ ...value, [key]: next })
 
@@ -117,7 +119,7 @@ export function SchemaForm({ schema, uiSchema = {}, value, onChange }: Props) {
       const helper = ui.help || field.description
       const fieldClass = `field ${fieldSize(key, field)} field-key-${key.replace(/[^a-zA-Z0-9_-]/g, '-')}`
       return <Fragment key={key}>
-        {showSection && <div className="schema-section-heading"><strong>{sectionLabel[category]}</strong>{category === 'capability' && <small>选择当前实例允许使用的采集模式。</small>}</div>}
+        {showSection && <div className="schema-section-heading"><strong>{sectionLabel[category]}</strong>{category === 'capability' && <small>选择当前实例允许使用的采集模式；具体关键词、内容或创作者目标在“信源”中配置。</small>}</div>}
         <div className={fieldClass}>
         {field.type !== 'boolean' && <span className="field-label">{label}{required ? ' *' : ''}</span>}
         {checkboxOptions ? <div className="checkbox-group" role="group" aria-label={label}>
