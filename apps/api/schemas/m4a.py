@@ -221,7 +221,7 @@ class AIInvocationAttemptResponse(BaseModel):
 
 
 class AIInvocationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     id: UUID
     task_key: str
