@@ -1,0 +1,81 @@
+/* Interaction hotfixes found during real browser validation. */
+
+/* Native details menus must never install a full-screen click-blocking layer. */
+.more-actions {
+  position: relative;
+  display: inline-block;
+  overflow: visible;
+}
+
+.more-actions > summary {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 11px;
+  cursor: pointer;
+  list-style: none;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.more-actions > summary::-webkit-details-marker { display: none; }
+.more-actions > summary::marker { content: ''; }
+
+.more-actions[open] {
+  z-index: 80;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Override the previous fixed overlay which intercepted every page click. */
+.more-actions[open]::after { content: none !important; display: none !important; }
+
+.more-actions[open] > summary {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: var(--text-primary);
+}
+
+/* Existing markup has direct button children, so position them as a compact popover. */
+.more-actions[open] > button {
+  position: absolute !important;
+  right: 0;
+  z-index: 81 !important;
+  width: 124px;
+  min-width: 124px;
+  min-height: 36px;
+  margin: 0 !important;
+  justify-content: flex-start;
+  background: #fff;
+  border-color: #dbe2ea;
+  border-radius: 0;
+  box-shadow: 0 10px 24px rgb(15 23 42 / 12%);
+}
+
+.more-actions[open] > button:nth-of-type(1) {
+  top: calc(100% + 6px);
+  border-radius: 10px 10px 0 0;
+}
+
+.more-actions[open] > button:nth-of-type(2) {
+  top: calc(100% + 41px);
+  border-radius: 0 0 10px 10px;
+}
+
+.more-actions[open] > button + button { border-top-color: transparent; }
+.more-actions[open] > button.danger { color: var(--color-danger, #c83b3b); }
+
+/* Make account configuration affordances easier to spot in operation tables. */
+.field-helper .inline-link,
+.status-stack + .inline-link {
+  margin-left: 4px;
+  font-weight: 700;
+}
