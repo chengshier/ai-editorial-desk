@@ -5,5 +5,6 @@ import './styles.css'
 import './editorial.css'
 import './workspace.css'
 import './visual-fidelity.css'
+import './product-ux.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
