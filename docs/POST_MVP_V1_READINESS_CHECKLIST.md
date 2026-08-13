@@ -263,16 +263,17 @@ M2 Zhihu / Weibo coverage follow-up 是非阻塞旁路线，插入安全窗口�
 
 | Item | Status | Notes |
 |---|---|---|
-| Post-MVP/V1 readiness audit | COMPLETE | 2026-08-13；结论：工程 PASS，文档/release baseline 需收口 |
+| Post-MVP/V1 readiness audit | COMPLETE | 2026-08-13；结论：M5 工程/真实验证 PASS，需完成 post-merge 文档与 release baseline 收口 |
 | Create readiness baseline branch | COMPLETE | `chore/post-mvp-v1-readiness-baseline` |
-| Add this checklist | COMPLETE | 本文件 |
-| Sync START_HERE post-merge status | IN_PROGRESS | 本分支处理 |
-| Sync M5 Acceptance final status | IN_PROGRESS | 本分支处理 |
-| Sync M5-D Report post-merge note | IN_PROGRESS | 本分支处理 |
-| Add final CHANGELOG closeout entry | PENDING | 本分支处理 |
-| Confirm docs consistency | PENDING | 修改后重新审计 |
-| MVP tag / GitHub Release | PENDING | checklist branch 合并后执行 |
-| AI Generation Policy v1 | PENDING | 下一真正功能开发 |
+| Add this checklist | COMPLETE | `docs/POST_MVP_V1_READINESS_CHECKLIST.md` |
+| Sync START_HERE post-merge status | COMPLETE | 已切换到 M5 COMPLETE / Post-MVP/V1 readiness |
+| Sync M5 Acceptance final status | COMPLETE | 已记录 M5-D A/B/C/D PASS 与 M5 Overall COMPLETE |
+| Sync M5-D Report post-merge note | COMPLETE | 保留 validation provenance，并补 PR #23 merge note |
+| Add final CHANGELOG closeout entry | COMPLETE | 新增 2026-08-13 MVP closeout / Post-MVP entry；历史记录保持不改 |
+| Confirm docs consistency | COMPLETE | 核对正式路线、M2/M5-D 语义与上述入口文档，无需重新打开 M2/M5 |
+| Baseline documentation batch | READY_FOR_REVIEW | 当前分支仅文档/规划变更，无业务代码、真实平台、付费 AI 或 DB 写入 |
+| MVP tag / GitHub Release | PENDING | 本 baseline 分支人工合并到 main 后执行 |
+| AI Generation Policy v1 | PENDING | Release baseline 后第一项真正功能开发 |
 | P1-lite | PENDING | AI policy 后 |
 | V1-A | PENDING | 按单平台灰度推进 |
 
